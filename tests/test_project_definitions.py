@@ -372,7 +372,7 @@ class CliTests(_Workspace):
         self.assertFalse({"role set", "role reset", "workflow set", "workflow reset"} & MANAGER_SESSION_COMMANDS)
 
 
-ROLE_FIELDS = ("name", "description", "models", "escalate_after", "tools", "ends", "decisions", "timeout_minutes", "max_cost_usd", "prompt")
+ROLE_FIELDS = ("name", "description", "models", "escalate_after", "tools", "ends", "decisions", "timeout_minutes", "max_cost_usd", "prompt", "approve_needs")
 
 
 def fields_of(described: dict) -> dict:
@@ -491,6 +491,42 @@ class ApiTests(_Workspace):
         self.assertTrue(saved.completion.output.approve_needs_reading)
         self.assertEqual(self.role("code_reviewer")["origin"], "changed")
         self.assertEqual(self.role("code_reviewer", "p2")["origin"], "shipped")
+
+    def test_what_an_approval_needs_is_saved_for_a_project_and_for_the_workspace(self) -> None:
+        reviewer = self.role("code_reviewer")
+        self.assertEqual(reviewer["approve_needs"], "checked")
+        self.assertIsNone(self.role("developer")["approve_needs"])
+        fields = fields_of(reviewer)
+
+        fields["approve_needs"] = "ran"
+        self.assertEqual(
+            self.request("PUT", "/projects/p1/roles/code_reviewer", json={"fields": fields}).status_code, 200
+        )
+        self.assertEqual(self.role("code_reviewer")["approve_needs"], "ran")
+        self.assertEqual(self.role("code_reviewer", "p2")["approve_needs"], "checked")
+        saved = project_definitions(self.store, "p1").roles["code_reviewer"]
+        self.assertEqual(saved.completion.output.approve_needs, "ran")
+
+        fields["approve_needs"] = "stated"
+        response = self.request("PUT", "/roles/code_reviewer", json={"fields": fields})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(self.role("code_reviewer", "p2")["approve_needs"], "stated")
+        # The project's own role overrides the workspace's.
+        self.assertEqual(self.role("code_reviewer")["approve_needs"], "ran")
+
+        fields["approve_needs"] = "whatever"
+        self.assertEqual(
+            self.request("PUT", "/projects/p1/roles/code_reviewer", json={"fields": fields}).status_code, 400
+        )
+
+    def test_a_role_that_does_not_return_a_verdict_has_no_such_field_to_save(self) -> None:
+        fields = fields_of(self.role("developer"))
+        fields["approve_needs"] = "ran"
+        self.assertEqual(
+            self.request("PUT", "/projects/p1/roles/developer", json={"fields": fields}).status_code, 200
+        )
+        saved = project_definitions(self.store, "p1").roles["developer"]
+        self.assertEqual(saved.completion.output.approve_needs, "checked")
 
     def test_models_cheapest_first_and_failures_before_moving_up_are_saved_for_a_project(self) -> None:
         fields = fields_of(self.role("developer"))

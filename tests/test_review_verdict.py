@@ -14,11 +14,17 @@ from foreman.engine.verdict import VERDICT_PROBLEM_PREFIX
 REVIEWERS = ("code_reviewer", "security_reviewer", "triage_reviewer", "frontier_reviewer")
 
 
+def basis(entry: dict) -> dict:
+    """A criterion with the basis fields it must carry, empty unless it names them."""
+
+    return {"ran": [], "read": [], "from_report": False, **entry}
+
+
 def verdict(criteria=None, findings=None) -> str:
+    if criteria is None:
+        criteria = [{"criterion": "It works", "status": "verified", "evidence": "tests/x.py:12", "read": ["tests/x.py"]}]
     payload = {
-        "criteria": criteria if criteria is not None else [
-            {"criterion": "It works", "status": "verified", "evidence": "tests/x.py:12"},
-        ],
+        "criteria": [basis(entry) for entry in criteria],
         "findings": findings or [],
     }
     return "```foreman-record\n" + json.dumps(payload) + "\n```"
@@ -40,7 +46,7 @@ class ShippedRolesTests(unittest.TestCase):
                 assert record is not None
                 self.assertEqual(record.kind, "review_verdict")
                 criteria, findings = record.fields
-                self.assertEqual([f.name for f in criteria.fields], ["criterion", "status", "evidence"])
+                self.assertEqual([f.name for f in criteria.fields], ["criterion", "status", "evidence", "ran", "read", "from_report"])
                 self.assertEqual(criteria.fields[1].choices, ("verified", "not_verified", "judgement"))
                 self.assertEqual([f.name for f in findings.fields], ["severity", "finding"])
                 self.assertEqual(findings.fields[0].choices, ("S1", "S2", "S3", "S4"))
@@ -60,6 +66,141 @@ class ShippedRolesTests(unittest.TestCase):
                 self.assertNotIn("judge model", role.prompt_template.lower())
 
 
+def with_needs(role, needs: str):
+    """The role with its ``approve_needs`` set."""
+
+    from dataclasses import replace
+
+    output = replace(role.completion.output, approve_needs=needs)
+    return replace(role, completion=replace(role.completion, output=output))
+
+
+class BasisTests(unittest.TestCase):
+    """How each criterion was verified, and what an approval needs of it (ADR-0041 section 2)."""
+
+    def setUp(self) -> None:
+        self.role = load_roles(default_roles_dir())["code_reviewer"]
+
+    def approve(self, criteria, needs=None, commands=None, decision="APPROVE"):
+        role = with_needs(self.role, needs) if needs else self.role
+        return read_completion(role, f"Looked.\n\n{verdict(criteria)}\n{decision}", commands=commands)
+
+    def test_every_shipped_reviewer_asks_for_checked_and_carries_the_basis_fields(self) -> None:
+        for role_id in REVIEWERS:
+            with self.subTest(role_id):
+                role = load_roles(default_roles_dir())[role_id]
+                self.assertEqual(role.completion.output.approve_needs, "checked")
+                entry = role.completion.record.fields[0]
+                self.assertEqual(
+                    [(f.name, f.type) for f in entry.fields[3:]],
+                    [("ran", "text_list"), ("read", "text_list"), ("from_report", "bool")],
+                )
+                prompt = role.render_prompt({"developer_report": "r", "acceptance_criteria": "c"})
+                for word in ("`ran`", "`read`", "`from_report`", "`approve_needs`"):
+                    self.assertIn(word, prompt)
+
+    def test_a_command_the_review_did_not_run_disagrees_with_the_outcome(self) -> None:
+        criteria = [
+            {"criterion": "a", "status": "verified", "evidence": "e", "ran": ["pytest tests/test_a.py"]},
+            {"criterion": "b", "status": "verified", "evidence": "e", "ran": ["pytest tests/test_x.py"]},
+        ]
+        recorded = ["cd /w && pytest   tests/test_a.py -q"]
+        reading = self.approve(criteria, commands=recorded)
+        self.assertEqual(reading.outcome, "error")
+        self.assertTrue(reading.detail.startswith(VERDICT_PROBLEM_PREFIX))
+        self.assertIn("criterion 2 cites `pytest tests/test_x.py`, which the review did not run", reading.detail)
+        self.assertNotIn("criterion 1", reading.detail)
+        # The record stays, and the correction is the verdict one.
+        self.assertIsNotNone(reading.record)
+        result = AgentExecutionResult(outcome=reading.outcome, detail=reading.detail)
+        self.assertEqual(contract_retry_reason(self.role, result), "verdict_agreement")
+
+    def test_a_denial_is_checked_the_same_way(self) -> None:
+        criteria = [{"criterion": "a", "status": "not_verified", "evidence": "e", "ran": ["make x"]}]
+        text = f"Looked.\n\n{verdict(criteria, findings=[finding('S2')])}\nDENY: no"
+        reading = read_completion(self.role, text, commands=[])
+        self.assertIn("cites `make x`", reading.detail)
+        self.assertEqual(read_completion(self.role, text, commands=["make x"]).outcome, "deny")
+
+    def test_commands_that_were_run_are_confirmed_and_unknown_commands_are_not_checked(self) -> None:
+        criteria = [{"criterion": "a", "status": "verified", "evidence": "e", "ran": ["pytest -q"]}]
+        self.assertEqual(self.approve(criteria, commands=["pytest -q"]).outcome, "approve")
+        # A caller that does not know the commands (a resumed session) skips the lookup.
+        self.assertEqual(self.approve(criteria, commands=None).outcome, "approve")
+
+    def test_checked_needs_a_command_or_a_file_or_a_judgement(self) -> None:
+        ran = {"criterion": "a", "status": "verified", "evidence": "e", "ran": ["t"]}
+        read = {"criterion": "b", "status": "verified", "evidence": "e", "read": ["f.py"]}
+        judged = {"criterion": "c", "status": "judgement", "evidence": "a reason", "from_report": True}
+        self.assertEqual(self.approve([ran, read, judged], "checked", ["t"]).outcome, "approve")
+        report = {"criterion": "d", "status": "verified", "evidence": "the report says so", "from_report": True}
+        reading = self.approve([ran, report], "checked", ["t"])
+        self.assertEqual(reading.outcome, "error")
+        self.assertIn("a command it ran or a file it read", reading.detail)
+        self.assertIn("d", reading.detail)
+
+    def test_ran_needs_a_command_or_a_judgement(self) -> None:
+        ran = {"criterion": "a", "status": "verified", "evidence": "e", "ran": ["t"]}
+        read = {"criterion": "b", "status": "verified", "evidence": "e", "read": ["f.py"]}
+        judged = {"criterion": "c", "status": "judgement", "evidence": "a reason"}
+        self.assertEqual(self.approve([ran, judged], "ran", ["t"]).outcome, "approve")
+        reading = self.approve([ran, read], "ran", ["t"])
+        self.assertEqual(reading.outcome, "error")
+        self.assertIn("a command it ran for none", reading.detail)
+        self.assertIn("b", reading.detail)
+
+    def test_stated_is_the_reviewers_word(self) -> None:
+        report = {"criterion": "d", "status": "verified", "evidence": "the report", "from_report": True}
+        self.assertEqual(self.approve([report], "stated").outcome, "approve")
+        # A cited command is still looked for.
+        cited = {"criterion": "d", "status": "verified", "evidence": "e", "ran": ["x"]}
+        self.assertEqual(self.approve([cited], "stated", commands=[]).outcome, "error")
+
+    def test_a_role_names_what_an_approval_needs_or_gets_the_default(self) -> None:
+        from foreman.definitions.roles import RoleLoadError, load_role_text
+
+        text = (default_roles_dir() / "code_reviewer.toml").read_text(encoding="utf-8")
+        for needs in ("checked", "ran", "stated"):
+            role = load_role_text(text.replace('approve_needs = "checked"', f'approve_needs = "{needs}"'), "r.toml")
+            self.assertEqual(role.completion.output.approve_needs, needs)
+        bare = load_role_text(text.replace('approve_needs = "checked"\n', ""), "r.toml")
+        self.assertEqual(bare.completion.output.approve_needs, "checked")
+        with self.assertRaises(RoleLoadError):
+            load_role_text(text.replace('approve_needs = "checked"', 'approve_needs = "trust"'), "r.toml")
+
+
+class RecordedCommandsTests(unittest.TestCase):
+    """The commands Foreman recorded during the review run are what ``ran`` is checked against."""
+
+    def tally(self, session_id=None):
+        from foreman.engine.agent_step import _NativeRunTally
+
+        role = load_roles(default_roles_dir())["code_reviewer"]
+        return _NativeRunTally(role=role, session_id=session_id, task_criteria=1)
+
+    def finish(self, tally, cited, ran):
+        for command in ran:
+            tally.absorb("agent.command", {"command": command, "cwd": "/w"})
+        criteria = [{"criterion": "a", "status": "verified", "evidence": "e", "ran": cited}]
+        message = f"Looked.\n\n{verdict(criteria)}\nAPPROVE"
+        tally.absorb("agent.message", {"text": message, "phase": "final_answer"})
+        tally.absorb("agent.completed", {})
+        return tally
+
+    def test_a_command_the_run_made_is_confirmed(self) -> None:
+        tally = self.finish(self.tally(), ["pytest tests/test_x.py"], ["ls", "./venv/bin/python -m pytest tests/test_x.py"])
+        self.assertEqual(tally.outcome, "approve")
+
+    def test_a_command_the_run_did_not_make_ends_the_step_as_a_disagreement(self) -> None:
+        tally = self.finish(self.tally(), ["pytest tests/test_x.py"], ["ls"])
+        self.assertEqual(tally.outcome, "error")
+        self.assertIn("criterion 1 cites `pytest tests/test_x.py`, which the review did not run", tally.detail)
+
+    def test_a_run_that_resumes_a_session_is_not_checked_against_its_own_commands_alone(self) -> None:
+        tally = self.finish(self.tally(session_id="s1"), ["pytest tests/test_x.py"], [])
+        self.assertEqual(tally.outcome, "approve")
+
+
 class AgreementTests(unittest.TestCase):
     def setUp(self) -> None:
         self.role = load_roles(default_roles_dir())["code_reviewer"]
@@ -76,7 +217,7 @@ class AgreementTests(unittest.TestCase):
     def test_an_approval_with_no_serious_finding_and_every_criterion_checked_stands(self) -> None:
         record = verdict(
             criteria=[
-                {"criterion": "a", "status": "verified", "evidence": "e"},
+                {"criterion": "a", "status": "verified", "evidence": "e", "read": ["f.py"]},
                 {"criterion": "b", "status": "judgement", "evidence": "read it"},
             ],
             findings=[finding("S3"), finding("S4")],

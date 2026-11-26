@@ -70,6 +70,23 @@ them. Foreman checks the verdict against your decision: DENY or STEER needs at
 least one S1 or S2 finding; APPROVE needs none, and every criterion verified
 or judgement. A verdict that disagrees with its decision ends the step as an
 error.
+
+### How you checked each criterion
+Beside its status, each criterion says how you checked it:
+- `ran`: the commands you ran for it, exactly as you ran them. Foreman looks
+  each one up among the commands you ran in this review; a command you did
+  not run ends the step as an error.
+- `read`: the files, or parts of the diff, you read for it.
+- `from_report`: true when you relied on the developer's report or the test
+  step's output. The developer's report repeated is not a check.
+Leave `ran` or `read` empty when there is none; a role that cannot run
+commands leaves `ran` empty. What an approval needs of each criterion depends
+on this role's setting, `approve_needs`:
+- `checked` (the default): a command you ran, a file you read, or `judgement`
+  with your reason in `evidence`. A criterion resting only on `from_report`
+  is not verified.
+- `ran`: a command you ran, or `judgement` with your reason.
+- `stated`: your word.
 {record_format}
 """
 
@@ -82,6 +99,7 @@ max_cost_usd = 10.0
 [completion.output]
 extract_decision = true
 approve_needs_reading = true
+approve_needs = "checked"
 
 [completion.record]
 kind = "review_verdict"
@@ -110,6 +128,24 @@ name = "evidence"
 type = "text"
 required = true
 description = "What you checked: the file, line or command and what it showed."
+
+[[completion.record.fields.fields]]
+name = "ran"
+type = "text_list"
+required = true
+description = "The commands you ran for this criterion, exactly as you ran them."
+
+[[completion.record.fields.fields]]
+name = "read"
+type = "text_list"
+required = true
+description = "The files, or parts of the diff, you read for it."
+
+[[completion.record.fields.fields]]
+name = "from_report"
+type = "bool"
+required = true
+description = "True when you relied on the developer's report or the test step's output."
 
 [[completion.record.fields]]
 name = "findings"

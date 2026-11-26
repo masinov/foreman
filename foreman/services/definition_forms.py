@@ -25,9 +25,10 @@ from ..definitions.layers import (
     save_role,
     save_workflow,
 )
+from ..engine.verdict import REVIEW_VERDICT
 from ..runner.model_check import check_model
 from ..domain.outcomes import CANONICAL_OUTCOMES
-from ..definitions.roles import DEFAULT_ESCALATE_AFTER, KNOWN_TOOLS, RoleDefinition, load_role_text
+from ..definitions.roles import APPROVE_NEEDS, DEFAULT_ESCALATE_AFTER, KNOWN_TOOLS, RoleDefinition, load_role_text
 from ..domain.settings import settings_of
 from ..definitions.workflows import _BUILTIN_OUTCOMES, WorkflowDefinition, load_workflow_text
 
@@ -219,6 +220,13 @@ def _describe_role(role: RoleDefinition, definitions: ProjectDefinitions) -> dic
         "tools": _tools(role),
         "ends": "decides" if decides else "done",
         "decisions": [word for word in DECISIONS if decides and word in role.completion.outcomes],
+        # What an approval needs of each criterion; only a role that returns a
+        # review verdict has one.
+        "approve_needs": (
+            role.completion.output.approve_needs
+            if role.completion.record is not None and role.completion.record.kind == REVIEW_VERDICT
+            else None
+        ),
         "marker": role.completion.marker,
         "timeout_minutes": role.completion.timeout_minutes,
         "max_cost_usd": role.completion.max_cost_usd,
@@ -436,11 +444,18 @@ def role_text_from_fields(base_text: str, role_id: str, fields: Mapping[str, Any
         completion["marker"] = ""
         completion["outcomes"] = decisions
         output["extract_decision"] = True
+        record_kind = (completion.get("record") or {}).get("kind")
+        if record_kind == REVIEW_VERDICT and fields.get("approve_needs") is not None:
+            needs = fields["approve_needs"]
+            if needs not in APPROVE_NEEDS:
+                raise DefinitionError(f"'approve_needs' must be one of {', '.join(APPROVE_NEEDS)}.")
+            output["approve_needs"] = needs
     elif ends == "done":
         completion["marker"] = str(completion.get("marker") or "") or DEFAULT_MARKER
         completion.pop("outcomes", None)
         output["extract_decision"] = False
         output.pop("approve_needs_reading", None)
+        output.pop("approve_needs", None)
     else:
         raise DefinitionError("'ends' must be 'done' or 'decides'.")
 

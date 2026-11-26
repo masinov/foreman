@@ -8,6 +8,7 @@ functions find and validate that in text; they know nothing about runs.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -150,6 +151,7 @@ def read_completion(
     *,
     transcript: str | None = None,
     task_criteria: int = 0,
+    commands: Sequence[str] | None = None,
 ) -> CompletionReading:
     """Apply the role's completion contract to the agent's final message.
 
@@ -185,7 +187,13 @@ def read_completion(
         # the record stays, so the page shows what the reviewer returned.
         if declaration.kind != REVIEW_VERDICT:
             return CompletionReading(outcome, detail, record)
-        disagreement = check_verdict(outcome, fields, task_criteria=task_criteria)
+        disagreement = check_verdict(
+            outcome,
+            fields,
+            task_criteria=task_criteria,
+            approve_needs=output_config.approve_needs,
+            commands=commands,
+        )
         if disagreement:
             return CompletionReading(ERROR, disagreement, record)
         # A review that sends work back carries its S1 and S2 findings in the

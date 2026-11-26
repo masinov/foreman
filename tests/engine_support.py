@@ -54,7 +54,10 @@ def reviewed(message: str) -> str:
     verdict = {
         # An approval lists the task's criteria (a task with criteria may not be
         # approved with none listed); one judgement entry stands for them here.
-        "criteria": [{"criterion": "The task's criteria", "status": "judgement", "evidence": "scripted"}],
+        "criteria": [{
+            "criterion": "The task's criteria", "status": "judgement", "evidence": "scripted",
+            "ran": [], "read": [], "from_report": False,
+        }],
         "findings": [{"severity": "S2", "finding": "A criterion is not met."}] if blocking else [],
     }
     return "```foreman-record\n" + json.dumps(verdict) + "\n```\n" + message

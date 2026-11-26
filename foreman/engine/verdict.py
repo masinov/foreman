@@ -9,7 +9,7 @@ sends work back; S3 and S4 findings are kept with the review.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 #: The kind of record a reviewer role declares.
@@ -47,8 +47,54 @@ def count_criteria(text: str | None) -> int:
     return sum(1 for line in (text or "").splitlines() if line.strip())
 
 
+def _texts(entry: Mapping[str, Any], key: str) -> list[str]:
+    value = entry.get(key)
+    return [item for item in (value if isinstance(value, list) else []) if isinstance(item, str) and item.strip()]
+
+
+def command_was_run(command: str, run: Sequence[str]) -> bool:
+    """Whether a cited command is among the commands the review ran.
+
+    Compared with whitespace collapsed; a command the review ran inside a
+    longer line (``cd x && pytest y``) counts.
+    """
+
+    wanted = " ".join(command.split())
+    return any(wanted in " ".join(done.split()) for done in run)
+
+
+def unconfirmed_commands(
+    fields: Mapping[str, Any], commands: Sequence[str]
+) -> list[tuple[int, str]]:
+    """The commands the criteria cite under ``ran`` that the review did not run."""
+
+    criteria = fields.get("criteria")
+    return [
+        (number, command)
+        for number, entry in enumerate(criteria if isinstance(criteria, list) else [], start=1)
+        if isinstance(entry, Mapping)
+        for command in _texts(entry, "ran")
+        if not command_was_run(command, commands)
+    ]
+
+
+def _without_basis(entry: Mapping[str, Any], approve_needs: str) -> bool:
+    """Whether a criterion marked verified lacks what ``approve_needs`` asks."""
+
+    if approve_needs == "stated" or entry.get("status") != VERIFIED:
+        return False
+    if _texts(entry, "ran"):
+        return False
+    return approve_needs == "ran" or not _texts(entry, "read")
+
+
 def check_verdict(
-    outcome: str, fields: Mapping[str, Any], *, task_criteria: int = 0
+    outcome: str,
+    fields: Mapping[str, Any],
+    *,
+    task_criteria: int = 0,
+    approve_needs: str = "checked",
+    commands: Sequence[str] | None = None,
 ) -> str | None:
     """Why the verdict and the outcome disagree, or None when they agree.
 
@@ -56,6 +102,13 @@ def check_verdict(
     - approve needs none, and every criterion verified or the reviewer's
       judgement; the verdict lists as many criteria as the task has, so
       none is skipped;
+    - approve also needs, for each criterion marked verified, what the role's
+      ``approve_needs`` asks: ``checked`` a command it ran or a file it read,
+      ``ran`` a command it ran, ``stated`` nothing; a criterion resting only on
+      the developer's report is not verified. A criterion marked judgement
+      says why in its evidence;
+    - every command a criterion cites under ``ran`` is among ``commands``, the
+      commands the review ran (None when they are not known: not checked);
     - any other outcome (escalate) hands the decision on and is not checked.
     """
 
@@ -72,6 +125,17 @@ def check_verdict(
             f"criteria and the task has {task_criteria}. List each one of the task's "
             "acceptance criteria, in order, with its status and what you checked."
         )
+    if outcome in ("approve", "deny", "steer") and commands is not None:
+        missing = unconfirmed_commands(fields, commands)
+        if missing:
+            cited = "; ".join(
+                f"criterion {number} cites `{command}`, which the review did not run"
+                for number, command in missing
+            )
+            return (
+                f"{VERDICT_PROBLEM_PREFIX}: {cited}. List under `ran` only the commands "
+                "you ran, exactly as you ran them."
+            )
     if outcome == "approve":
         if blocking:
             names = ", ".join(str(finding.get("severity")) for finding in blocking)
@@ -96,6 +160,23 @@ def check_verdict(
             return (
                 f"{VERDICT_PROBLEM_PREFIX}: the reviewer returned APPROVE with "
                 f"criteria not verified: {'; '.join(unchecked)}."
+            )
+        bare = [
+            str(entry.get("criterion", "")).strip() or f"#{number}"
+            for number, entry in enumerate(criteria if isinstance(criteria, list) else [], start=1)
+            if isinstance(entry, Mapping) and _without_basis(entry, approve_needs)
+        ]
+        if bare:
+            needs = (
+                "a command it ran"
+                if approve_needs == "ran"
+                else "a command it ran or a file it read"
+            )
+            return (
+                f"{VERDICT_PROBLEM_PREFIX}: the reviewer returned APPROVE with criteria "
+                f"marked verified that name {needs} for none of them: {'; '.join(bare)}. "
+                "The developer's report is not a check: run something, read the code, "
+                "or mark the criterion judgement and say why."
             )
     return None
 

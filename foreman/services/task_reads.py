@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..engine.verdict import REVIEW_VERDICT, command_was_run
 from ..repo import git
 from .task_models import (
     DIFF_CAP_CHARS,
@@ -451,6 +452,7 @@ class TaskReads:
             changes=self._step_changes(run, events),
             reads=self._step_reads(events),
             merge=self._merge_facts(run, events),
+            confirmed_commands=_confirmed_commands(run, events),
         )
 
     # ── what a step did to the repository (recorded when it ended, ADR-0038) ──
@@ -589,6 +591,27 @@ def _clipped(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_clipped(item) for item in value]
     return value
+
+
+def _confirmed_commands(run: Run, events: list[Event]) -> list[str]:
+    """The commands a review's verdict cites that the run made, as the engine checked them."""
+
+    record = run.record
+    if not record or record.get("kind") != REVIEW_VERDICT or not isinstance(record.get("fields"), dict):
+        return []
+    made = [
+        str(event.payload.get("command") or "")
+        for event in events
+        if event.event_type == "agent.command"
+    ]
+    cited = {
+        command
+        for entry in record["fields"].get("criteria") or []
+        if isinstance(entry, dict)
+        for command in (entry.get("ran") if isinstance(entry.get("ran"), list) else [])
+        if isinstance(command, str)
+    }
+    return sorted(command for command in cited if command.strip() and command_was_run(command, made))
 
 
 def _run_fields(run: Run) -> dict[str, Any]:

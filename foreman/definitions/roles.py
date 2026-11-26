@@ -37,6 +37,13 @@ _AGENT_DEFAULT_OUTCOMES: tuple[str, ...] = ("done", "blocked", "error")
 RUN_SCOPES: tuple[str, ...] = ("none", "sandbox", "branch")
 DEFAULT_RUN_SCOPE = "branch"
 
+#: What an approval needs of each criterion of a verdict (ADR-0041 section 2):
+#: ``checked``, a command it ran, a file it read, or its judgement with a
+#: reason; ``ran``, a command it ran or its judgement; ``stated``, the
+#: reviewer's word.
+APPROVE_NEEDS: tuple[str, ...] = ("checked", "ran", "stated")
+DEFAULT_APPROVE_NEEDS = "checked"
+
 
 class RoleLoadError(ForemanError):
     """Raised when a role definition cannot be loaded or validated."""
@@ -90,6 +97,9 @@ class CompletionOutputConfig:
     #: was cut, with no file opened, is not accepted. The role is asked once
     #: to read the change; an approval still unread stops the task.
     approve_needs_reading: bool = False
+    #: For a role that returns a ``review_verdict``: what an approval needs
+    #: of each criterion (``APPROVE_NEEDS``).
+    approve_needs: str = DEFAULT_APPROVE_NEEDS
 
 
 @dataclass(slots=True)
@@ -302,6 +312,7 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
                 approve_needs_reading=_require_bool(
                     output_data, "approve_needs_reading", role_path, default=False
                 ),
+                approve_needs=_approve_needs(output_data, role_path),
             ),
             outcomes=outcomes,
             review_kind=review_kind,
@@ -434,6 +445,16 @@ def _escalate_after(data: Mapping[str, Any], path: Path) -> int:
         raise RoleLoadError(
             f"{path}: agent.escalate_after must be a whole number, 1 or more "
             f"(failures on one model before the step moves up); got {value!r}."
+        )
+    return value
+
+
+def _approve_needs(data: Mapping[str, Any], path: Path) -> str:
+    value = data.get("approve_needs", DEFAULT_APPROVE_NEEDS)
+    if value not in APPROVE_NEEDS:
+        raise RoleLoadError(
+            f"{path}: completion.output.approve_needs must be one of "
+            f"{', '.join(APPROVE_NEEDS)}; got {value!r}."
         )
     return value
 

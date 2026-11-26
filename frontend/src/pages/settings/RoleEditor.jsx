@@ -82,10 +82,18 @@ function ModelPicker({ label, value, models, defaultLabel, onChange, onRemove })
  * ends, its limits and its prompt. `role` is the role being edited; with
  * `isNew` it is the role a new one starts as a copy of.
  */
+/** What an approval needs of each criterion of a review, in words (ADR-0041 section 2). */
+const APPROVE_NEEDS = [
+  ["checked", "Each criterion checked: a check it ran, a file it read, or its judgement with a reason"],
+  ["ran", "A check that ran for each criterion, or its judgement with a reason"],
+  ["stated", "The reviewer's word"],
+];
+
 export function RoleEditor({ open, projectId, role, isNew = false, vocabulary, onClose, onSaved }) {
   const escalateId = useId();
   const endsId = useId();
   const everyId = useId();
+  const needsId = useId();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   // Its models, cheapest first; the first may be empty (the project's default).
@@ -95,6 +103,7 @@ export function RoleEditor({ open, projectId, role, isNew = false, vocabulary, o
   const [tools, setTools] = useState([]);
   const [ends, setEnds] = useState("done");
   const [decisions, setDecisions] = useState([]);
+  const [approveNeeds, setApproveNeeds] = useState("checked");
   const [minutes, setMinutes] = useState("");
   const [cost, setCost] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -109,6 +118,7 @@ export function RoleEditor({ open, projectId, role, isNew = false, vocabulary, o
     setTools(role.tools.chosen);
     setEnds(role.ends);
     setDecisions(role.decisions);
+    setApproveNeeds(role.approve_needs ?? "checked");
     setMinutes(String(role.timeout_minutes));
     setCost(String(role.max_cost_usd));
     setPrompt(role.prompt);
@@ -140,6 +150,8 @@ export function RoleEditor({ open, projectId, role, isNew = false, vocabulary, o
       tools: { every, chosen: every ? [] : tools },
       ends,
       decisions: ends === "decides" ? decisions : [],
+      // Only a role that returns a review verdict has one.
+      ...(role.approve_needs && ends === "decides" ? { approve_needs: approveNeeds } : {}),
       timeout_minutes: timeout,
       max_cost_usd: limit,
       prompt,
@@ -246,6 +258,21 @@ export function RoleEditor({ open, projectId, role, isNew = false, vocabulary, o
           />
         ) : null}
       </div>
+
+      {role.approve_needs && ends === "decides" ? (
+        <div className="field">
+          <label className="field__label" htmlFor={needsId}>
+            An approval needs
+          </label>
+          <select id={needsId} className="field__input" value={approveNeeds} onChange={(event) => setApproveNeeds(event.target.value)}>
+            {APPROVE_NEEDS.map(([value, words]) => (
+              <option key={value} value={value}>
+                {words}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
 
       <div className="field-pair">
         <Field label="Time limit, minutes" inputMode="numeric" value={minutes} onChange={(event) => setMinutes(event.target.value)} />

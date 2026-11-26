@@ -21,6 +21,7 @@ const STATUSES = {
 };
 
 const text = (value) => String(value ?? "").trim();
+const texts = (value) => (Array.isArray(value) ? value.map(text).filter(Boolean) : []);
 
 /** What a step's record says, when it is a reviewer's verdict; otherwise null. */
 export function reviewVerdict(record) {
@@ -33,6 +34,10 @@ export function reviewVerdict(record) {
       criterion: text(entry.criterion),
       status: STATUSES[entry.status] ? entry.status : "not_verified",
       evidence: text(entry.evidence),
+      // How it was checked (ADR-0041 section 2); a verdict from before has none.
+      ran: texts(entry.ran),
+      read: texts(entry.read),
+      fromReport: entry.from_report === true,
     })),
     // Most serious first; the reviewer's own order within a severity.
     findings: findings
@@ -41,13 +46,63 @@ export function reviewVerdict(record) {
   };
 }
 
+function Basis({ entry, confirmed }) {
+  if (!entry.ran.length && !entry.read.length && !entry.fromReport) return null;
+  return (
+    <dl className="run-report__basis" aria-label="How it was checked">
+      {entry.ran.length ? (
+        <>
+          <dt>Ran</dt>
+          <dd>
+            <ul className="run-report__list">
+              {entry.ran.map((command, index) => (
+                <li key={index}>
+                  <code className="mono">{command}</code>{" "}
+                  {confirmed.includes(command) ? (
+                    <StatusDot tone="passed">Foreman saw it run</StatusDot>
+                  ) : (
+                    <StatusDot tone="idle">Not seen by Foreman</StatusDot>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </dd>
+        </>
+      ) : null}
+      {entry.read.length ? (
+        <>
+          <dt>Read</dt>
+          <dd>
+            <ul className="run-report__list">
+              {entry.read.map((path, index) => (
+                <li key={index}>
+                  <code className="mono">{path}</code>
+                </li>
+              ))}
+            </ul>
+          </dd>
+        </>
+      ) : null}
+      {entry.fromReport ? (
+        <>
+          <dt>From</dt>
+          <dd>The developer's report or the test step's output</dd>
+        </>
+      ) : null}
+    </dl>
+  );
+}
+
 /**
  * The reviewer's verdict, in the review step's details: each acceptance
  * criterion as verified, not verified or the reviewer's judgement, with what
  * it checked, and the findings with their severities. Only S1 and S2 sent
- * work back; S3 and S4 stay here when the review approved.
+ * work back; S3 and S4 stay here when the review approved. Each criterion's
+ * basis is shown: the commands it ran (marked when Foreman found them among
+ * the commands the run made, `confirmed`), the files it read, and whether it
+ * relied on the developer's report.
  */
-export function ReviewVerdict({ record }) {
+export function ReviewVerdict({ record, confirmed = [] }) {
   const verdict = reviewVerdict(record);
   if (!verdict) return null;
   return (
@@ -68,6 +123,7 @@ export function ReviewVerdict({ record }) {
                     {entry.evidence}
                   </LongText>
                 ) : null}
+                <Basis entry={entry} confirmed={confirmed} />
               </li>
             );
           })}

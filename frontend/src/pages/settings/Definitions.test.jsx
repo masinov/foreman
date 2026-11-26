@@ -234,6 +234,45 @@ describe("A role's model", () => {
   });
 });
 
+describe("What an approval needs", () => {
+  const REVIEWER = { approve_needs: "checked" };
+  const reviewerRoutes = (fields = REVIEWER) => {
+    const routes = settingsRoutes();
+    routes[DEFINITIONS_URL] = definitionsPayload({ roles: [editableRole(fields)] });
+    return routes;
+  };
+
+  it("is a field of a reviewer role, with its three values in words", async () => {
+    const { dialog } = await openRole("Code Reviewer", reviewerRoutes());
+    const field = within(dialog).getByLabelText("An approval needs");
+    expect(field).toHaveValue("checked");
+    expect(within(field).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Each criterion checked: a check it ran, a file it read, or its judgement with a reason",
+      "A check that ran for each criterion, or its judgement with a reason",
+      "The reviewer's word",
+    ]);
+  });
+
+  it("is not shown for a role that does not return a verdict", async () => {
+    const { dialog } = await openRole("Code Reviewer");
+    expect(within(dialog).queryByLabelText("An approval needs")).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText("Its run ends when"), { target: { value: "done" } });
+    expect(within(dialog).queryByLabelText("An approval needs")).toBeNull();
+  });
+
+  it("is saved with the project's role", async () => {
+    const { fetchImpl, dialog } = await openRole("Code Reviewer", reviewerRoutes({ approve_needs: "ran" }));
+    expect(within(dialog).getByLabelText("An approval needs")).toHaveValue("ran");
+    fetchImpl.routes[`PUT ${ROLE_URL}/code_reviewer`] = definitionsPayload();
+    fireEvent.change(within(dialog).getByLabelText("An approval needs"), { target: { value: "stated" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(sent(fetchImpl, "PUT")).toHaveLength(1));
+    expect(sent(fetchImpl, "PUT")[0].url).toBe(`${ROLE_URL}/code_reviewer`);
+    expect(sent(fetchImpl, "PUT")[0].body.fields.approve_needs).toBe("stated");
+  });
+});
+
 describe("A role's models and when a step moves up", () => {
   it("has one model that never moves up, and no number to set", async () => {
     const { dialog } = await openRole();

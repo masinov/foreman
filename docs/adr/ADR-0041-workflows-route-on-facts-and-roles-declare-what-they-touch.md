@@ -252,3 +252,37 @@ from its records: the task, the report, the findings.
 own work, the send-backs by review and the moves up to it, with the cost.
 The word "escalate" stays the reviewer's ESCALATE signal; users read "moves up"
 and "models".
+
+## Amendment (2026-11-26, FOR-92; `docs/directions/assay-and-foreman.md`): a review says how it verified each criterion, and Foreman checks what it can
+
+Section 2 says the reviewer's verdict is a record per criterion. A criterion
+had a status and free-text evidence; nothing said whether the reviewer ran a
+check, read the code or took the developer's report. An agent's word about
+its own work is one line of evidence, and the developer's report repeated by
+the reviewer adds nothing.
+
+**Each criterion records its basis.** Three plain fields beside `criterion`,
+`status` and `evidence` (records nest one level, ADR-0042): `ran` (a list of
+the commands it ran for the criterion), `read` (a list of the files or parts
+of the diff it read) and `from_report` (true when it relied on the
+developer's report or the test step's output).
+
+**Foreman checks what it can.** Each command under `ran` is looked for among
+the `agent.command` events of the review run. One that was not run makes the
+verdict disagree with its outcome, as the other verdict checks do, with the
+reason, and the step is replayed once. A replay that resumes the session
+cannot see the commands of the run before it, so it is not checked this way.
+
+**What an approval needs is a property of the reviewer role,** in
+`[completion.output]`, beside `approve_needs_reading`:
+
+- `checked` (default): each criterion marked verified has a command it ran or
+  a file it read; or is marked `judgement` with its reason in `evidence`. A
+  criterion whose only basis is `from_report` is not verified.
+- `ran`: each has a command it ran, or is marked `judgement` with its reason.
+- `stated`: the reviewer's word, as before.
+
+It is set where models are: the workspace's role is every project's default
+and a project's own role overrides it (ADR-0024). There is no separate project
+setting and no rule per task type. The role editor shows it only for a role
+whose record is a `review_verdict`.
