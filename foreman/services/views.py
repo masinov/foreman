@@ -126,3 +126,25 @@ def task_filed_from(store: Any, events: list[Event]) -> dict[str, Any] | None:
             "exists": origin is not None,
         }
     return None
+
+
+def waits_for(store: ForemanStore, task: Task) -> list[str]:
+    """The keys of the unfinished tasks ``task`` waits for, in its order."""
+
+    keys: list[str] = []
+    for dependency_id in task.depends_on_task_ids or []:
+        dependency = store.get_task(dependency_id)
+        if dependency is None or dependency.status == "done":
+            continue
+        keys.append(dependency.task_key or dependency.id)
+    return keys
+
+
+def needed_by(store: ForemanStore, task: Task) -> list[dict[str, Any]]:
+    """The tasks of its sprint that wait for ``task``: what holding it holds."""
+
+    return [
+        {"id": other.id, "task_key": other.task_key, "title": other.title, "status": other.status}
+        for other in store.list_tasks(sprint_id=task.sprint_id)
+        if task.id in (other.depends_on_task_ids or [])
+    ]

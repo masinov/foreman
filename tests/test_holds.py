@@ -534,6 +534,63 @@ class HoldsApiTests(_Store):
         self.assertEqual(listed["t1"]["hold"]["scope"], "sprint", "a block above is what is shown")
 
 
+class StatusLineTests(_Store):
+    """What a sprint's status line says (ADR-0043 §6)."""
+
+    def status(self, sprint_id: str) -> dict:
+        from foreman.services.work_status import sprint_work_status
+
+        return sprint_work_status(self.store, self.store.get_sprint(sprint_id), resident=True)
+
+    def test_the_first_true_state_is_said(self) -> None:
+        sprint = self.sprint("s1")
+        first = self.task("t1", "s1", status="in_progress", workflow_current_step="develop")
+        self.task("t2", "s1")
+        self.assertEqual(self.status("s1")["state"], "waiting")
+
+        self.running(first)
+        working = self.status("s1")
+        self.assertEqual((working["state"], working["task_id"], working["step"]), ("working", "t1", "develop"))
+
+        self.mutations.pause_task(self.fresh("t2"))
+        self.assertEqual(self.status("s1")["paused"], 1)
+        self.mutations.pause_task(self.fresh("t1"))
+        self.assertEqual(self.status("s1")["state"], "pausing")
+        self.mutations.pause_task(self.fresh("t1"), mode="now")
+        self.assertEqual(self.status("s1")["state"], "stopping")
+
+        self.store.save_run(
+            Run(
+                id="run-t1", task_id="t1", project_id="p1", role_id="developer",
+                workflow_step="develop", agent_backend="claude_code", status="killed",
+            )
+        )
+        stopped = self.status("s1")
+        self.assertEqual((stopped["state"], stopped["paused"]), ("stopped", 2))
+
+        self.mutations.block_sprint(sprint, "design review")
+        blocked = self.status("s1")
+        self.assertEqual((blocked["state"], blocked["scope"], blocked["reason"]), ("blocked", "sprint", "design review"))
+
+    def test_no_worker_is_said_only_when_work_could_run(self) -> None:
+        from foreman.services.work_status import sprint_work_status
+
+        self.sprint("s1")
+        self.task("t1", "s1")
+        self.assertTrue(sprint_work_status(self.store, self.store.get_sprint("s1"))["no_worker"])
+        self.mutations.pause_sprint(self.store.get_sprint("s1"))
+        self.assertFalse(sprint_work_status(self.store, self.store.get_sprint("s1"))["no_worker"])
+
+    def test_a_blocked_sprint_waits_for_a_user(self) -> None:
+        from foreman.services.workspace import WorkspaceService
+
+        sprint = self.sprint("s1")
+        self.mutations.block_sprint(sprint, "design review")
+        items = WorkspaceService(self.store).list_needs_you()["items"]
+        (item,) = [entry for entry in items if entry["kind"] == "unblock_sprint"]
+        self.assertEqual((item["sprint_id"], item["blocked"]["reason"]), ("s1", "design review"))
+
+
 class HoldsCliTests(_Store):
     def run_cli(self, *args: str):
         import subprocess

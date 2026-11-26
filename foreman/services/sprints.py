@@ -20,7 +20,8 @@ from ..mutations import MutationError
 from ..store.overview import SPRINT_LIST_ORDERS, SPRINT_LIST_STATUSES
 from .base import Service
 from .errors import InvalidRequestError, NotFoundError
-from .views import HoldReader, serialize_level_block, task_source
+from .views import HoldReader, serialize_level_block, task_source, waits_for
+from .work_status import sprint_work_status
 
 ACTIVITY_EVENT_LIMIT = 50
 
@@ -153,6 +154,10 @@ class SprintService(Service):
             # A user's block on this sprint, and on the workspace (ADR-0043).
             "block": serialize_level_block(self.store.get_sprint_block(sprint.id)),
             "workspace_block": serialize_level_block(self.store.get_workspace_block()),
+            # What its work is doing now, for the status line (ADR-0043).
+            "work": sprint_work_status(
+                self.store, sprint, workspace_block=self.store.get_workspace_block()
+            ),
         }
 
     def _checkpoint(self, sprint: Sprint) -> dict[str, Any] | None:
@@ -268,6 +273,8 @@ class SprintService(Service):
                     "blocked_reason": task.blocked_reason,
                     "hold": holds.hold(task),
                     "step_running": task.id in running,
+                    # The unfinished tasks it waits for, by key ("Waiting · FOR-65").
+                    "waits_for": waits_for(self.store, task),
                     "acceptance_criteria": task.acceptance_criteria,
                     "workflow_current_step": task.workflow_current_step,
                     "step_visit_counts": dict(task.step_visit_counts),

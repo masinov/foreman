@@ -27,7 +27,7 @@ from .errors import (
     NotFoundError,
 )
 from .task_models import test_counts
-from .views import HoldReader, task_filed_from, task_source
+from .views import HoldReader, needed_by, task_filed_from, task_source
 from .workspace import foreman_starts_backlog_work
 
 
@@ -216,6 +216,8 @@ class TaskService(Service):
             "step_visit_counts": task.step_visit_counts or {},
             "depends_on_task_ids": task.depends_on_task_ids or [],
             "dependencies": self._dependencies(task),
+            # What waits for it, so a user sees what holding it holds (ADR-0043).
+            "needed_by": needed_by(self.store, task),
             "complexity": task.complexity,
             "executor_overrides": task.executor_overrides or {},
             "awaiting_human_gate": self._at_human_gate(task, gates),
