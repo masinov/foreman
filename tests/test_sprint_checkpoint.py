@@ -87,7 +87,7 @@ class SprintCheckpointTests(unittest.TestCase):
         self.assertEqual(git(self.repo, "rev-parse", "main"), head)
         # The sprint page names it.
         checkpoint = SprintService(self.store).get_sprint("s")["checkpoint"]
-        self.assertEqual(checkpoint, {"tag": tag, "sha": head, "note_path": None, "problem": None})
+        self.assertEqual(checkpoint, {"tag": tag, "sha": head, "note_path": None, "changelog_path": None, "problem": None})
 
     def test_the_note_is_committed_on_the_default_branch_before_the_tag(self) -> None:
         self.project(write_checkpoint_notes=True)

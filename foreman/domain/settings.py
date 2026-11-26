@@ -122,6 +122,10 @@ class ProjectSettings:
     # When a sprint is finished, a note listing its tasks is committed to
     # ``docs/checkpoints/<tag>.md`` before the sprint is tagged (spec 6.4).
     write_checkpoint_notes: bool = False
+    # When a sprint is finished, ``CHANGELOG.md`` gets a section built from the
+    # ``changes/`` files, which are removed, in the checkpoint's commit
+    # (ADR-0040). Off: the file and ``changes/`` are left as they are.
+    generate_changelog: bool = False
     # The git remote the default branch is pushed to after each merge.
     # Empty: merges stay on this machine. Host-level: it makes the engine
     # write to another machine with this host's git credentials.
@@ -199,6 +203,7 @@ class ProjectSettings:
             ),
             completion_guard_enabled=bool(raw.get("completion_guard_enabled", True)),
             write_checkpoint_notes=_validate_bool(raw.get("write_checkpoint_notes"), key="write_checkpoint_notes"),
+            generate_changelog=_validate_bool(raw.get("generate_changelog"), key="generate_changelog"),
             merge_push_remote=_validate_remote_name(raw.get("merge_push_remote")),
             agent_env_passthrough=_validate_env_names(raw.get("agent_env_passthrough")),
             merge_approval=_validate_policy_default(raw, "merge_approval"),

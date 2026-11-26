@@ -225,7 +225,12 @@ Keep these docs current when relevant:
 - `docs/BRANCHING.md`
 - `docs/TESTING.md`
 - `docs/RELEASES.md`
-- `CHANGELOG.md`
+
+`CHANGELOG.md` is generated: never edit it. Describe your change in its own
+file, `changes/<task key>.md` (a branch made by hand uses its branch name,
+slashes as dashes): a title line, then a few bullets for a reader of the
+changelog (see `changes/README.md`). Foreman folds the files into
+`CHANGELOG.md` when a sprint finishes and removes them (ADR-0040).
 
 Create ADRs in `docs/adr/ADR-XXXX-title.md` when a decision becomes an active
 implementation constraint. Good ADR candidates in this repo include:

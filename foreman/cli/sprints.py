@@ -151,6 +151,8 @@ def handle_sprint_complete(args: argparse.Namespace) -> int:
         lines.append(f"Tagged: {checkpoint['tag']} at {str(checkpoint['sha'] or '')[:7]}")
         if checkpoint.get("note_path"):
             lines.append(f"Note: {checkpoint['note_path']}")
+        if checkpoint.get("changelog_path"):
+            lines.append(f"Changelog: {checkpoint['changelog_path']}")
     print_lines(*lines)
     return 0
 

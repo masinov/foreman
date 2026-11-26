@@ -105,6 +105,17 @@ def branch_summary_path(branch_name: str) -> Path:
     return Path("docs/prs") / f"{branch_name.replace('/', '-')}.md"
 
 
+def change_files(root: Path) -> list[Path]:
+    """The change files on a branch: ``changes/*.md`` besides the README."""
+
+    directory = root / "changes"
+    if not directory.is_dir():
+        return []
+    return sorted(
+        path for path in directory.glob("*.md") if path.name.lower() != "readme.md"
+    )
+
+
 def validate_repo_scaffold(
     root: Path, branch_name: str | None = None
 ) -> list[ValidationIssue]:
@@ -156,6 +167,16 @@ def validate_repo_scaffold(
                 ValidationIssue(
                     str(branch_summary_path(branch_name)),
                     "branch-specific PR summary is missing",
+                )
+            )
+
+        if not change_files(root):
+            issues.append(
+                ValidationIssue(
+                    "changes",
+                    "a branch describes its change in changes/<task key>.md "
+                    "(a branch made by hand uses its branch name, slashes as dashes); "
+                    "CHANGELOG.md is generated and is not edited",
                 )
             )
 

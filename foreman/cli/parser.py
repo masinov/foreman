@@ -14,6 +14,7 @@ from ..manager.proposals import manager_session
 from . import (
     backlog,
     catalog,
+    changelog,
     db,
     definitions,
     engine,
@@ -105,6 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
     engine.register_serve(subparsers)
     engine.register_engine(subparsers)
     holds.register_holds(subparsers)
+    changelog.register_changelog(subparsers)
     monitor.register_status(subparsers)
     monitor.register_board(subparsers)
     monitor.register_watch(subparsers)

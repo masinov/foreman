@@ -55,6 +55,11 @@ Read it if you need to understand the broader product direction.
 - Commit small, coherent changes with conventional prefixes
   (feat:, fix:, refactor:, test:, docs:, chore:)
 - Create ADRs in docs/adr/ for meaningful architectural decisions
+- Describe your change in its own file, `changes/<task key>.md` (the task's
+  key is the one in the sprint context, for example `FOR-67`; slashes in a
+  branch name become dashes when there is no key): a title line, then a few
+  bullets for a reader of the changelog. Never edit `CHANGELOG.md`: Foreman
+  generates it from the change files.
 - Create or update docs/ARCHITECTURE.md and docs/ROADMAP.md when your
   work changes the codebase structure or project direction
 - Interactive programs are not available, and nobody will type input. A
