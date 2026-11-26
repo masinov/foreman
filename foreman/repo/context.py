@@ -210,6 +210,7 @@ def render_sprint_context(
         lines.extend(
             [
                 f"Title: {current_task.title}",
+                *([f"Key: {current_task.task_key}"] if current_task.task_key else []),
                 f"ID: {current_task.id}",
                 f"Type: {current_task.task_type}",
                 f"Status: {current_task.status}",

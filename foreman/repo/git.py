@@ -236,11 +236,20 @@ def merge_branch(
     )
     if result.returncode == 0:
         if finish and merge_in_progress(repo_path):
-            refusal = finish(Path(repo_path))
+            try:
+                refusal = finish(Path(repo_path))
+            except Exception as exc:  # noqa: BLE001 - the tree must never be left mid-merge
+                # A merge left half made would refuse every merge after it.
+                run_git(repo_path, "reset", "--hard", "HEAD", check=False)
+                return GitMergeResult(
+                    success=False,
+                    detail=f"The merge was undone: finishing it failed ({type(exc).__name__}: {exc}).",
+                )
             if refusal is not None:
                 run_git(repo_path, "reset", "--hard", "HEAD", check=False)
                 return GitMergeResult(success=False, detail=refusal, refused=True)
-            committed = run_git(repo_path, "commit", "--no-edit", check=False)
+            # A plain merge runs no pre-commit hook; this commit is that merge's.
+            committed = run_git(repo_path, "commit", "--no-edit", "--no-verify", check=False)
             if committed.returncode != 0:
                 run_git(repo_path, "reset", "--hard", "HEAD", check=False)
                 detail = committed.stderr or committed.stdout or "git commit failed"

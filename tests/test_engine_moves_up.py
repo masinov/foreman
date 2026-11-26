@@ -221,3 +221,99 @@ class MovesUpTests(OrchestratorTestCase):
             "Develop moves up to model-B · the review sent it back once",
             self._lines(store, task),
         )
+
+    # Ends that are not the step's own work block for a person as before
+    # (the review of sprint 65).
+
+    def test_a_run_a_limit_stopped_blocks_and_does_not_move_up(self) -> None:
+        for status in ("killed", "timeout"):
+            with self.subTest(status=status):
+                store, project, task, roles = self._start(escalate_after=1)
+                killed = AgentExecutionResult(
+                    outcome="error", status=status, detail="Run exceeded cost limit ($5.00 spent).", cost_usd=5.0
+                )
+                self._run(store, project, roles, {("developer", n): (lambda **_: killed) for n in range(1, 5)})
+                stored = store.get_task(task.id)
+                self.assertEqual(stored.status, "blocked")
+                self.assertEqual(stored.step_failures, {})
+                self.assertEqual(self._models(store, task), ["model-A"])
+
+    def test_a_runner_that_cannot_start_blocks_and_does_not_move_up(self) -> None:
+        store, project, task, roles = self._start(escalate_after=1)
+
+        def missing(**_):
+            raise FileNotFoundError("claude: command not found")
+
+        self._run(store, project, roles, {("developer", n): missing for n in range(1, 5)})
+        stored = store.get_task(task.id)
+        self.assertEqual(stored.status, "blocked")
+        self.assertEqual(stored.step_failures, {})
+        self.assertEqual(len(self._models(store, task)), 1)
+
+    def test_a_user_stop_does_not_count(self) -> None:
+        from foreman.domain.errors import TaskStoppedInterrupt
+
+        store, project, task, roles = self._start(escalate_after=1)
+
+        def stopped(**_):
+            raise TaskStoppedInterrupt("Stopped by a user")
+
+        orchestrator = ForemanOrchestrator(
+            store, roles=roles, workflows=self.workflows,
+            agent_executor=ScriptedAgentExecutor({("developer", 1): stopped}),
+        )
+        try:
+            orchestrator.run_project(project.id)
+        except EngineCommandInterrupt:
+            pass
+        self.assertEqual(store.get_task(task.id).step_failures, {})
+
+    def test_a_step_with_models_is_still_bounded_by_visits(self) -> None:
+        store, project, task, roles = self._start(escalate_after=2)
+        stored = store.get_task(task.id)
+        stored.status = "in_progress"
+        stored.workflow_current_step = "develop"
+        stored.step_visit_counts = {"develop": 40}
+        store.save_task(stored)
+        self._run(store, project, roles, {("developer", n): self._developer() for n in range(1, 3)})
+        blocked = store.get_task(task.id)
+        self.assertEqual(blocked.status, "blocked")
+        self.assertIn("visited", blocked.blocked_reason or "")
+        self.assertEqual(self._models(store, task), [])
+
+    def test_a_step_run_again_keeps_the_review_findings(self) -> None:
+        store, project, task, roles = self._start(escalate_after=1)
+        deny = AgentExecutionResult(outcome="deny", detail="S2: FINDING-XYZ criterion not met")
+        failed = AgentExecutionResult(outcome="error", detail="No completion after the retry.")
+        executor = self._run(
+            store,
+            project,
+            roles,
+            {
+                ("developer", 1): self._developer(ready=True),
+                ("code_reviewer", 1): lambda **_: deny,
+                ("developer", 2): self._developer(result=failed),
+                ("developer", 3): self._developer(ready=True),
+                ("code_reviewer", 2): lambda **_: AgentExecutionResult(outcome="approve", detail="ok"),
+            },
+        )
+        third = next(c for c in executor.captures if c.role_id == "developer" and c.call_index == 3)
+        self.assertIn("FINDING-XYZ", third.carried_output or "")
+        self.assertIn("No completion after the retry.", third.carried_output or "")
+
+    def test_tests_that_fail_after_the_branch_was_brought_up_to_date_do_not_count(self) -> None:
+        from foreman.domain.models import Run
+
+        store, project, task, roles = self._start(escalate_after=1)
+        orchestrator = ForemanOrchestrator(
+            store, roles=roles, workflows=self.workflows, agent_executor=ScriptedAgentExecutor({})
+        )
+        runner = orchestrator.runner
+        base = {"task_id": task.id, "project_id": project.id, "status": "completed", "agent_backend": "claude_code"}
+        store.save_run(Run(id="r1", role_id="developer", workflow_step="develop", started_at="2026-11-26T10:00:00Z", **base))
+        store.save_run(Run(id="r2", role_id="_builtin:merge", workflow_step="merge", started_at="2026-11-26T10:05:00Z", **base))
+        after_merge = store.save_run(Run(id="r3", role_id="_builtin:run_tests", workflow_step="test", started_at="2026-11-26T10:06:00Z", **base))
+        self.assertTrue(runner._after_branch_update(after_merge))
+        store.save_run(Run(id="r4", role_id="developer", workflow_step="develop", started_at="2026-11-26T10:10:00Z", **base))
+        after_develop = store.save_run(Run(id="r5", role_id="_builtin:run_tests", workflow_step="test", started_at="2026-11-26T10:12:00Z", **base))
+        self.assertFalse(runner._after_branch_update(after_develop))

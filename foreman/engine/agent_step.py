@@ -191,10 +191,13 @@ class AgentStepRunner:
         except LeaseLostError:
             raise
         except Exception as exc:  # pragma: no cover - defensive fallback
+            # Foreman could not run the agent at all (the runner is missing, the
+            # process failed to start): not the step's own work (ADR-0041).
             return AgentExecutionResult(
                 outcome="error",
                 detail=str(exc),
                 status="failed",
+                failure_type="infrastructure",
                 events=(
                     AgentEventRecord(
                         event_type="agent.error",
@@ -557,6 +560,9 @@ class _NativeRunTally:
             gate_type = optional_string(payload.get("gate_type")) or "gate"
             self.final_status = "timeout" if gate_type == "time" else "killed"
             self.outcome = "error"
+            # A limit the project set, not the step's own work (ADR-0041): the
+            # task blocks for a person rather than moving up a model.
+            self.failure_type = "gate"
             self.detail = optional_string(payload.get("reason")) or "Agent run was killed by a gate."
             # A backend that stops a run at its budget reports what the run
             # cost; a kill must not erase that from the books.

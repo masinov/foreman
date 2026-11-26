@@ -47,8 +47,12 @@ def handle_copies(args: argparse.Namespace) -> int:
             sprint = resolve_sprint_or_print(store, args.sprint)
             if sprint is None:
                 return 1
+            if sprint.project_id != project.id:
+                print(f"{args.sprint} is not a sprint of project {project.id}.", file=sys.stderr)
+                return 1
         else:
-            sprint = checkpoints.sprint_for_changelog(project)
+            # The writing is recorded on the active sprint, else the last finished.
+            sprint = checkpoints.active_sprint(project) or checkpoints.sprint_for_changelog(project)
             if sprint is None:
                 print(f"Project {project.id} has no sprint yet; there is nothing to write.", file=sys.stderr)
                 return 1

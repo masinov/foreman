@@ -332,4 +332,4 @@ in both modes. In autonomous mode the agent still chooses the work and
 names it with `signal.task_started`; a branch it reports is accepted only
 when it is a valid name, exists, and is not the default branch. This
 deviates from the letter of spec §6.2 and is recorded as a documented
-conflict in `docs/STATUS.md`.
+conflict in `docs/guide/conflicts-spec-design-code.md` (in `docs/STATUS.md` until 2026-11-26).

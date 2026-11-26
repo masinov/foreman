@@ -34,7 +34,7 @@ from ..repo.git import (
 )
 from ..repo.worktrees import WorktreeError, WorktreeManager
 from ..store import ForemanStore
-from .changelog import CHANGELOG_FILE, stage_changelog, unstage_changelog
+from .changelog import CHANGELOG_FILE, stage_changelog
 from .copies import render_copies, stage_copies
 
 #: Where checkpoint notes go, in the repository.
@@ -126,7 +126,7 @@ class SprintCheckpoints:
         records: list[tuple[str, dict[str, Any]]] = []
         try:
             checkpoint = self._make(project, sprint, records)
-        except (GitError, WorktreeError, SettingsError, OSError) as exc:
+        except (GitError, WorktreeError, SettingsError, OSError, ValueError) as exc:
             checkpoint = Checkpoint(problem=str(exc))
         if checkpoint.problem is None:
             records.append(
@@ -255,6 +255,9 @@ class SprintCheckpoints:
         paths: list[str] = []
         changelog_path: str | None = None
         written: list[Path] = []
+        dirty = _dirty(integration)
+        if dirty:
+            return Checkpoint(problem=dirty)
         try:
             if note_path is not None:
                 tasks = self.store.list_tasks(sprint_id=sprint.id)
@@ -277,7 +280,8 @@ class SprintCheckpoints:
                 changed, created = stage_copies(integration, files)
                 paths += changed
                 written += created
-        except (GitError, OSError) as exc:
+        except (GitError, OSError, ValueError) as exc:
+            # ValueError: a change file that is not UTF-8 text.
             self._undo(integration, paths, written)
             return Checkpoint(problem=f"The changelog, the copies or the checkpoint note could not be written: {exc}")
         what = "checkpoint note" if note_path else "changelog" if changelog_path else "status and sprint copies"
@@ -307,20 +311,27 @@ class SprintCheckpoints:
 
     @staticmethod
     def _undo(integration: Path, paths: list[str], written: list[Path]) -> None:
-        """Leave the integration tree as it was after a commit that did not happen."""
+        """Leave the integration tree as it was after a commit that did not happen.
 
-        if paths:
-            unstage_changelog(integration, paths)
+        The tree was clean before (``_dirty`` is checked first), so putting it
+        back at its head, and removing what was created, restores it exactly,
+        whatever was half written. A tree left dirty would block every merge.
+        """
+
+        run_git(integration, "reset", "--quiet", "--hard", "HEAD", check=False)
+        run_git(integration, "clean", "--quiet", "-fd", check=False)
         for path in written:
             path.unlink(missing_ok=True)
 
+    def active_sprint(self, project: Project) -> Sprint | None:
+        """The project's active sprint, if one is."""
+
+        return next((each for each in self.store.list_sprints(project.id) if each.status == "active"), None)
+
     def sprint_for_changelog(self, project: Project) -> Sprint | None:
-        """The sprint a hand-written section is named after: the active one, else the last finished."""
+        """The sprint a section written by hand is named after: the last finished."""
 
         sprints = self.store.list_sprints(project.id)
-        active = next((sprint for sprint in sprints if sprint.status == "active"), None)
-        if active is not None:
-            return active
         finished = [sprint for sprint in sprints if sprint.status == "completed"]
         return max(finished, key=lambda sprint: sprint.completed_at or "", default=None)
 
@@ -350,7 +361,7 @@ class SprintCheckpoints:
                 pushed = push_branch(integration, remote=remote, branch=project.default_branch)
                 records.append(_push_record(pushed, {"remote": remote, "branch": project.default_branch, "sha": sha}))
             return Checkpoint(sha=sha, changelog_path=changelog_path)
-        except (GitError, WorktreeError, SettingsError, OSError) as exc:
+        except (GitError, WorktreeError, SettingsError, OSError, ValueError) as exc:
             return Checkpoint(problem=str(exc))
         finally:
             self._emit(project, sprint, records)
@@ -386,7 +397,15 @@ class SprintCheckpoints:
                 finished=sprint if archive and sprint.status == "completed" else None,
                 backlog=backlog,
             )
-            changed, created = stage_copies(integration, files)
+            dirty = _dirty(integration)
+            if dirty:
+                records.append(("engine.copies_failed", {"sprint_id": sprint.id, "reason": dirty}))
+                return Checkpoint(problem=dirty)
+            try:
+                changed, created = stage_copies(integration, files)
+            except (GitError, OSError):
+                self._undo(integration, [], [])
+                raise
             if not changed:
                 return Checkpoint()
             done = self._commit(
@@ -404,7 +423,7 @@ class SprintCheckpoints:
                 records.append(_push_record(pushed, {"remote": remote, "branch": project.default_branch, "sha": done}))
             records.append(("engine.copies_written", {"sprint_id": sprint.id, "sha": done, "paths": changed, "why": why}))
             return Checkpoint(sha=done, changelog_path=None)
-        except (GitError, WorktreeError, SettingsError, OSError) as exc:
+        except (GitError, WorktreeError, SettingsError, OSError, ValueError) as exc:
             records.append(("engine.copies_failed", {"sprint_id": sprint.id, "reason": str(exc)}))
             return Checkpoint(problem=str(exc))
         finally:
@@ -462,3 +481,19 @@ def _push_record(result: Any, payload: dict[str, Any]) -> tuple[str, dict[str, A
     if result.returncode == 0:
         return ("engine.push", payload)
     return ("engine.push_failed", {**payload, "error": result.stderr or result.stdout or "git push failed"})
+
+
+def _dirty(integration: Path) -> str | None:
+    """Why Foreman will not write in the integration tree now, or ``None`` when it is clean."""
+
+    status = run_git(integration, "status", "--porcelain", "--untracked-files=all", check=False)
+    if status.returncode != 0:
+        return f"git could not read the integration worktree's state: {status.stderr or status.stdout}".strip()
+    if status.stdout.strip():
+        lines = status.stdout.strip().splitlines()
+        shown = ", ".join(line[3:] for line in lines[:5]) + (" …" if len(lines) > 5 else "")
+        return (
+            f"The integration worktree ({integration}) has changes that are not committed ({shown}). "
+            "Commit or discard them there, then try again."
+        )
+    return None

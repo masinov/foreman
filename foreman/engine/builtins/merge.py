@@ -316,9 +316,10 @@ class MergeStep(BuiltinExecutorBase):
 
         def number_adrs(tree: Path) -> str | None:
             staged = run_git(tree, "diff", "--cached", "--name-only", "-z", "HEAD", check=False)
-            if not touches_adrs(staged.stdout.split("\0"), adr_dir):
+            changed = [path for path in staged.stdout.split("\0") if path]
+            if not touches_adrs(changed, adr_dir):
                 return None
-            settlement = settle(tree, adr_dir)
+            settlement = settle(tree, adr_dir, changed)
             if settlement is None:
                 return None
             settled.append(settlement)
@@ -328,7 +329,8 @@ class MergeStep(BuiltinExecutorBase):
             integration_path,
             source_branch=task.branch_name,
             target_branch=project.default_branch,
-            finish=number_adrs if adr_dir else None,
+            # Only a branch that brings a decision is merged in two steps.
+            finish=number_adrs if _brings_adrs(integration_path, project, task, adr_dir) else None,
             message=_merge_message(project, task),
         )
         if result.refused:
@@ -339,7 +341,9 @@ class MergeStep(BuiltinExecutorBase):
                 payload={
                     "branch": task.branch_name,
                     "target": project.default_branch,
-                    "reason": "duplicate_adr_numbers",
+                    "reason": next(
+                        ("adr_not_text" for s in settled if s.problem), "duplicate_adr_numbers"
+                    ),
                     "duplicates": [
                         {"number": number, "files": list(files)}
                         for s in settled
@@ -502,3 +506,24 @@ class MergeStep(BuiltinExecutorBase):
             run.workflow_step == "merge" and run.status == "completed" and run.outcome == "success"
             for run in store.list_runs(task_id=task.id)
         )
+
+
+def _brings_adrs(integration_path: Path, project: Project, task: Task, adr_dir: str) -> bool:
+    """Whether the task's branch changes the project's decisions since the default branch."""
+
+    if not adr_dir:
+        return False
+    changed = run_git(
+        integration_path,
+        "diff",
+        "--name-only",
+        "-z",
+        f"{project.default_branch}...{task.branch_name}",
+        "--",
+        adr_dir,
+        check=False,
+    )
+    if changed.returncode != 0:
+        # Unknown: take the careful path, which numbers what it finds.
+        return True
+    return touches_adrs([path for path in changed.stdout.split("\0") if path], adr_dir)

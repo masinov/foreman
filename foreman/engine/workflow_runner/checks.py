@@ -95,17 +95,19 @@ class StepChecks(WorkflowRunnerBase):
         visit_count: int,
         settings: ProjectSettings,
         *,
-        visits_counted: bool = True,
+        extra_visits: int = 0,
     ) -> dict[str, Any] | None:
         """Return how to block the task when a project limit is reached.
 
         Checked in order: visits to this step, the task's cost, the sprint's
         cost, the task's time. A limit of 0 is off. The result is the keyword
-        arguments for ``_block_at_step``.
+        arguments for ``_block_at_step``. ``extra_visits`` raises the visit
+        limit of a step that moves up its models (each of its models gets its
+        failures); visits still bound a step that keeps dying without failing.
         """
 
-        max_step_visits = settings.max_step_visits
-        if visits_counted and visit_count > max_step_visits:
+        max_step_visits = settings.max_step_visits + max(extra_visits, 0)
+        if visit_count > max_step_visits:
             return {
                 "detail": (
                     f"Step '{step}' visited {visit_count} times "

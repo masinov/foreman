@@ -267,8 +267,9 @@ one as `docs/adr/new-<slug>.md` with the title line `# ADR-XXXX: <Title>` and a
 `- Status:` line, and refer to it elsewhere by that path. Never pick a number:
 when the task merges, Foreman renames the file to `ADR-NNNN-<slug>.md` (the next
 free number), sets the number in the title, rewrites the references and
-regenerates the index in `docs/adr/README.md`, which is never edited above its
-`foreman:adr-index` line (ADR-0040). Good ADR candidates in this repo include:
+regenerates the index in `docs/adr/README.md`: its list, below the
+`foreman:adr-index` line, is generated and never edited; the introduction above
+the line is written by hand (ADR-0040). Good ADR candidates in this repo include:
 
 - SQLite schema shape,
 - orchestrator loop semantics,
