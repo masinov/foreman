@@ -51,6 +51,8 @@ class TaskCreate(_Body):
     task_type: str = "feature"
     acceptance_criteria: str | None = None
     description: str | None = None
+    #: Documents the task rests on: each `path`, `path#heading` or `{path, heading}`.
+    rests_on: list[Any] | None = None
     depends_on: list[str] | None = None
 
 
@@ -87,6 +89,7 @@ class BacklogFile(_Body):
     task_type: str = "feature"
     description: str | None = None
     acceptance_criteria: str | None = None
+    rests_on: list[Any] | None = None
     priority: int = 0
     #: File it already accepted: the person filing it is the one deciding.
     accept: bool = False

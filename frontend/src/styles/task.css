@@ -614,3 +614,22 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* The documents a task rests on: a path that opens the file as it was named. */
+.rests-on__open {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rests-on__text {
+  margin: 0;
+  max-height: 60vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-body);
+}

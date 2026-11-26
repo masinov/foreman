@@ -9,6 +9,7 @@ import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
 import { Field } from "../../ui/Field";
 import { humanize } from "../../ui/format";
+import { documentsFromText } from "../shared/restsOn";
 import { WaitsFor } from "../shared/WaitsFor";
 
 /**
@@ -25,6 +26,7 @@ export function NewTaskDialog({ projectId, sprint = null, open, onClose, onFiled
   const [taskType, setTaskType] = useState(TASK_TYPES[0]);
   const [description, setDescription] = useState("");
   const [criteria, setCriteria] = useState("");
+  const [restsOn, setRestsOn] = useState("");
   const [waitsFor, setWaitsFor] = useState(() => new Set());
   // Only unfinished tasks of the same sprint can be waited for.
   const siblings = useResource(
@@ -43,6 +45,7 @@ export function NewTaskDialog({ projectId, sprint = null, open, onClose, onFiled
     setTaskType(TASK_TYPES[0]);
     setDescription("");
     setCriteria("");
+    setRestsOn("");
     setWaitsFor(new Set());
     setTitleError(null);
     setError(null);
@@ -62,6 +65,7 @@ export function NewTaskDialog({ projectId, sprint = null, open, onClose, onFiled
         taskType,
         description: description.trim(),
         acceptanceCriteria: criteria.trim(),
+        restsOn: documentsFromText(restsOn),
       };
       if (sprint) fields.dependsOn = [...waitsFor];
       const task = sprint
@@ -128,6 +132,13 @@ export function NewTaskDialog({ projectId, sprint = null, open, onClose, onFiled
           multiline
           value={criteria}
           onChange={(event) => setCriteria(event.target.value)}
+        />
+        <Field
+          label="Documents it rests on"
+          hint="Optional. One per line: a path in the repository, or path#heading. Each must be on the default branch."
+          multiline
+          value={restsOn}
+          onChange={(event) => setRestsOn(event.target.value)}
         />
         {sprint ? <WaitsFor candidates={candidates} value={waitsFor} onChange={setWaitsFor} /> : null}
         {error ? (

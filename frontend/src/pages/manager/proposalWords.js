@@ -15,9 +15,14 @@ const TASK_FIELDS = {
   task_type: "type",
   description: "description",
   acceptance_criteria: "acceptance criteria",
+  rests_on: "documents it rests on",
   priority: "priority",
   depends_on_task_ids: "dependencies",
 };
+
+function documentWords(document) {
+  return document.heading ? `${document.path}, ${document.heading}` : document.path;
+}
 
 function taskOf(names, taskId) {
   const known = names?.tasks?.[taskId];
@@ -79,6 +84,7 @@ function rowsOf(operation, names) {
       const rows = [{ term: "Add", text: `${operation.title}, to ${sprint}${after}` }];
       if (operation.description) rows.push({ term: "What", text: operation.description });
       if (operation.acceptance_criteria) rows.push({ term: "Done when", text: operation.acceptance_criteria });
+      if ((operation.rests_on || []).length) rows.push({ term: "Rests on", text: operation.rests_on.map(documentWords).join(", ") });
       return rows;
     }
     case "accept_task":

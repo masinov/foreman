@@ -51,6 +51,7 @@ def build_router(ctx: ApiContext) -> APIRouter:
                 title=str(data.get("title", "")),
                 description=data.get("description"),
                 acceptance_criteria=data.get("acceptance_criteria"),
+                rests_on=data.get("rests_on"),
                 task_type=str(data.get("task_type", "fix")),
                 priority=data.get("priority") or 0,
                 source=source,

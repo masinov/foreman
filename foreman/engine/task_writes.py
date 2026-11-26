@@ -73,6 +73,7 @@ class TaskWrites:
             "title",
             "description",
             "acceptance_criteria",
+            "rests_on",
             "task_type",
             "priority",
             "order_index",

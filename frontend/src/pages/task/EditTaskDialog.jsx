@@ -10,6 +10,7 @@ import { Button } from "../../ui/Button";
 import { Dialog } from "../../ui/Dialog";
 import { Field } from "../../ui/Field";
 import { humanize } from "../../ui/format";
+import { documentsFromText, documentsText } from "../shared/restsOn";
 import { WaitsFor } from "../shared/WaitsFor";
 
 // What a task waits for can change only before it starts, and only among
@@ -30,6 +31,7 @@ export function EditTaskDialog({ open, task, onClose, onSaved }) {
   const [taskType, setTaskType] = useState(TASK_TYPES[0]);
   const [description, setDescription] = useState("");
   const [criteria, setCriteria] = useState("");
+  const [restsOn, setRestsOn] = useState("");
   const [priority, setPriority] = useState("0");
   const [priorityError, setPriorityError] = useState(null);
   const [waitsFor, setWaitsFor] = useState(() => new Set());
@@ -55,6 +57,7 @@ export function EditTaskDialog({ open, task, onClose, onSaved }) {
     setTaskType(task.task_type ?? TASK_TYPES[0]);
     setDescription(task.description ?? "");
     setCriteria(task.acceptance_criteria ?? "");
+    setRestsOn(documentsText(task.rests_on));
     setPriority(String(task.priority ?? 0));
     setWaitsFor(new Set(task.depends_on_task_ids ?? []));
     setTitleError(null);
@@ -63,7 +66,7 @@ export function EditTaskDialog({ open, task, onClose, onSaved }) {
     // The list it waits for is compared by content: the page reads the task
     // again while the dialog is open, and a new array is not a new answer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, task.title, task.task_type, task.description, task.acceptance_criteria, task.priority, waitedFor.join(" ")]);
+  }, [open, task.title, task.task_type, task.description, task.acceptance_criteria, documentsText(task.rests_on), task.priority, waitedFor.join(" ")]);
 
   async function submit(event) {
     event.preventDefault();
@@ -84,6 +87,7 @@ export function EditTaskDialog({ open, task, onClose, onSaved }) {
         taskType,
         description: description.trim(),
         acceptanceCriteria: criteria.trim(),
+        restsOn: documentsFromText(restsOn),
         priority: priorityNumber,
       };
       if (canWait) fields.dependsOn = [...waitsFor];
@@ -136,6 +140,13 @@ export function EditTaskDialog({ open, task, onClose, onSaved }) {
           multiline
           value={criteria}
           onChange={(event) => setCriteria(event.target.value)}
+        />
+        <Field
+          label="Documents it rests on"
+          hint="One per line: a path in the repository, or path#heading. A new one must be on the default branch; those already named keep their commit."
+          multiline
+          value={restsOn}
+          onChange={(event) => setRestsOn(event.target.value)}
         />
         <Field
           label="Priority"

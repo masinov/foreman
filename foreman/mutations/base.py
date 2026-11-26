@@ -24,7 +24,9 @@ from ..domain.models import (
     Task,
 )
 from ..domain.policy import PolicyMatrix
+from ..domain.rests_on import DocumentRef, RestsOnError
 from ..notifications.delivery import NotificationDispatcher
+from ..repo.rests_on import name_documents
 from ..repo.worktrees import WorktreeError, WorktreeManager
 from ..store import ForemanStore
 
@@ -75,6 +77,21 @@ class MutationBase:
         self.defer_side_effects = defer_side_effects
         self.deferred: list[Callable[[], str | None]] = []
         self._now = now or (lambda: datetime.now(timezone.utc))
+
+    def _name_documents(
+        self, project: Project | None, wanted: object, already: list[DocumentRef] | None = None
+    ) -> list[DocumentRef]:
+        """The documents a task rests on, checked on the default branch and
+        stamped with its commit (a document already named keeps its own)."""
+
+        try:
+            if project is None:
+                raise RestsOnError("The task's project does not exist.")
+            return name_documents(
+                project.repo_path, project.default_branch, wanted, already or ()
+            )
+        except RestsOnError as exc:
+            raise MutationError(str(exc)) from exc
 
     def _attention(self, task: Task, project: Project, *, trigger: str, run_id: str) -> Event:
         """Raise one attention turn for a task that waits for a person."""

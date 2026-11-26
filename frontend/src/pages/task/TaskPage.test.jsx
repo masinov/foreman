@@ -122,6 +122,7 @@ describe("the task page header", () => {
       task_type: "fix",
       description: taskDetail().description,
       acceptance_criteria: taskDetail().acceptance_criteria,
+      rests_on: [],
       priority: taskDetail().priority ?? 0,
     });
     await waitFor(() => expect(taskReads(fetchImpl)).toBeGreaterThan(1));
@@ -697,6 +698,62 @@ describe("the task's actions beside its title", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete task" }));
     await waitFor(() => expect(window.location.pathname).toBe("/dashboard/sprints/sprint-56"));
     expect(fetchImpl.calls.filter((call) => `${call.method} ${call.url}` === url)).toHaveLength(2);
+  });
+});
+
+describe("the documents a task rests on", () => {
+  const RESTS_ON = [
+    { path: "docs/adr/ADR-0041.md", heading: "6", commit: "a4c45fa" + "0".repeat(33) },
+    { path: "docs/specs/engine-design-v3.md", heading: "", commit: "e1bfd96" + "0".repeat(33) },
+  ];
+
+  it("lists each with the commit it was named at, and says nothing when there are none", async () => {
+    const { unmount } = await renderTask(BASE, taskRoutes({ task: taskDetail({ rests_on: RESTS_ON }) }));
+    const section = (await screen.findByRole("heading", { name: "Rests on" })).closest("section");
+    const items = within(section).getAllByRole("listitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      "docs/adr/ADR-0041.md, 6 named at a4c45fa",
+      "docs/specs/engine-design-v3.md named at e1bfd96",
+    ]);
+    unmount();
+    await renderTask();
+    expect(screen.queryByRole("heading", { name: "Rests on" })).toBeNull();
+  });
+
+  it("opens a document as it was at the commit it was named at", async () => {
+    const routes = taskRoutes({ task: taskDetail({ rests_on: RESTS_ON }) });
+    routes[`GET /api/v1/tasks/${TASK_ID}/documents?path=${encodeURIComponent("docs/adr/ADR-0041.md")}`] = {
+      task_id: TASK_ID,
+      path: "docs/adr/ADR-0041.md",
+      heading: "6",
+      commit: RESTS_ON[0].commit,
+      text: "# ADR-0041\nThe task layer.",
+      truncated: false,
+      cap_chars: 200000,
+      total_chars: 26,
+    };
+    await renderTask(BASE, routes);
+    fireEvent.click(await screen.findByRole("button", { name: "docs/adr/ADR-0041.md" }));
+    const dialog = await screen.findByRole("dialog", { name: "docs/adr/ADR-0041.md" });
+    expect(await within(dialog).findByText(/The task layer\./)).toBeInTheDocument();
+    expect(dialog).toHaveTextContent("As it was at a4c45fa.");
+  });
+
+  it("is edited from the task's dialog, one per line, and a refusal is shown as a sentence", async () => {
+    const routes = taskRoutes({ task: taskDetail({ rests_on: RESTS_ON }) });
+    routes[`PATCH /api/v1/tasks/${TASK_ID}`] = reply(422, {
+      error: "docs/nope.md does not exist on main (at a4c45fa0); name a file that is committed there.",
+      code: "invalid_request",
+    });
+    const { fetchImpl } = await renderTask(BASE, routes);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const dialog = screen.getByRole("dialog", { name: "Edit task" });
+    const field = within(dialog).getByLabelText("Documents it rests on");
+    expect(field).toHaveValue("docs/adr/ADR-0041.md#6\ndocs/specs/engine-design-v3.md");
+    fireEvent.change(field, { target: { value: "docs/nope.md" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("docs/nope.md does not exist on main");
+    expect(calls(fetchImpl, "PATCH", `/api/v1/tasks/${TASK_ID}`)[0].body.rests_on).toEqual(["docs/nope.md"]);
   });
 });
 

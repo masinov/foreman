@@ -33,6 +33,7 @@ from ..definitions.gate_steps import HUMAN_GATE_ROLE
 from ..definitions.layers import project_definitions
 from ..domain.errors import ForemanError
 from ..domain.models import PROPOSAL_STATES, Project, Proposal
+from ..domain.rests_on import RestsOnError, parse_documents
 from ..mutations import MutationError, Mutations
 from ..store import ForemanStore
 
@@ -64,7 +65,7 @@ class ProposalNotFound(ProposalError):
 @dataclass(frozen=True)
 class _Field:
     name: str
-    type: str  # "id", "text", "words", "int", "bool", "ids", "new_sprint"
+    type: str  # "id", "text", "words", "int", "bool", "ids", "documents", "new_sprint"
     required: bool = False
 
 
@@ -94,6 +95,7 @@ _TASK_EDITS = (
     _opt("task_type", "words"),
     _opt("description", "text"),
     _opt("acceptance_criteria", "text"),
+    _opt("rests_on", "documents"),
     _opt("priority", "int"),
     _opt("depends_on_task_ids", "id_list"),
 )
@@ -125,6 +127,7 @@ OPERATION_KINDS: dict[str, OperationKind] = {
                 _opt("task_type", "words"),
                 _opt("description", "text"),
                 _opt("acceptance_criteria", "text"),
+                _opt("rests_on", "documents"),
                 _opt("priority", "int"),
                 _opt("accept", "bool"),
                 _opt("ref", "words"),
@@ -139,6 +142,7 @@ OPERATION_KINDS: dict[str, OperationKind] = {
                 _opt("task_type", "words"),
                 _opt("description", "text"),
                 _opt("acceptance_criteria", "text"),
+                _opt("rests_on", "documents"),
                 _opt("priority", "int"),
                 # A name other operations of the same proposal use for this
                 # task, which has no id until the proposal is confirmed.
@@ -231,6 +235,15 @@ def _check_value(field: _Field, value: Any, where: str) -> Any:
         ):
             raise ValueError(f"{where}: {field.name} must be a list of ids.")
         return [item.strip() for item in value]
+    if field.type == "documents":
+        # May be empty: an empty list clears them. Whether each path exists on
+        # the default branch is checked when the proposal is confirmed.
+        if not isinstance(value, list):
+            raise ValueError(f"{where}: {field.name} must be a list of documents.")
+        try:
+            return [ref.as_dict() for ref in parse_documents(value)]
+        except RestsOnError as exc:
+            raise ValueError(f"{where}: {field.name}: {exc}") from exc
     if field.type == "new_sprint":
         if not isinstance(value, Mapping):
             raise ValueError(f"{where}: new_sprint must be an object with a title.")
@@ -387,6 +400,7 @@ def apply_operation(
                 task_type=operation.get("task_type", "feature"),
                 description=operation.get("description"),
                 acceptance_criteria=operation.get("acceptance_criteria"),
+                rests_on=operation.get("rests_on"),
                 priority=operation.get("priority", 0),
                 accept=bool(operation.get("accept", False)),
             )
@@ -400,6 +414,7 @@ def apply_operation(
                 task_type=operation.get("task_type", "feature"),
                 description=operation.get("description"),
                 acceptance_criteria=operation.get("acceptance_criteria"),
+                rests_on=operation.get("rests_on"),
                 priority=operation.get("priority", 0),
                 accept=True,
             )

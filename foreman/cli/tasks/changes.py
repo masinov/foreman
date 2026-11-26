@@ -7,7 +7,7 @@ import argparse
 import json
 import sys
 
-from ...domain.models import GATE_POLICY_NAMES, TASK_TYPES
+from ...domain.models import GATE_POLICY_NAMES, TASK_TYPES, Task
 from ...domain.policy import POLICY_VALUES, is_valid_value
 from ...mutations import MutationError
 from ...store import ForemanStore
@@ -76,6 +76,7 @@ def handle_task_add(args: argparse.Namespace) -> int:
                 task_type=args.task_type,
                 description=getattr(args, "description", None),
                 acceptance_criteria=args.criteria,
+                rests_on=getattr(args, "rests_on", None),
                 depends_on=(getattr(args, "depends_on", None) or "").split(","),
             )
         except MutationError as exc:
@@ -91,6 +92,7 @@ def handle_task_add(args: argparse.Namespace) -> int:
         f"Task: {task.id} | {task.title}",
         f"Type: {task.task_type}",
         f"Criteria: {task.acceptance_criteria or 'n/a'}",
+        *_rests_on_lines(task),
         f"Depends on: {', '.join(task.depends_on_task_ids) if task.depends_on_task_ids else 'none'}",
         f"Status: {task.status}",
     )
@@ -235,6 +237,13 @@ def handle_task_edit(args: argparse.Namespace) -> int:
         changes["task_type"] = args.task_type
     if args.priority is not None:
         changes["priority"] = args.priority
+    if args.no_rests_on and args.rests_on:
+        print("Give --rests-on or --no-rests-on, not both.", file=sys.stderr)
+        return 1
+    if args.no_rests_on:
+        changes["rests_on"] = []
+    elif args.rests_on:
+        changes["rests_on"] = list(args.rests_on)
     if args.no_dependencies and args.depends_on:
         print("Give --depends-on or --no-dependencies, not both.", file=sys.stderr)
         return 1
@@ -254,7 +263,7 @@ def handle_task_edit(args: argparse.Namespace) -> int:
     if not changes and args.edit is None:
         print(
             "Nothing to change. Give --title, --type, --priority, --description, "
-            "--criteria, --depends-on or --no-dependencies, or --edit description|criteria.",
+            "--criteria, --rests-on or --no-rests-on, --depends-on or --no-dependencies, or --edit description|criteria.",
             file=sys.stderr,
         )
         return 1
@@ -276,6 +285,7 @@ def handle_task_edit(args: argparse.Namespace) -> int:
             "acceptance_criteria": task.acceptance_criteria,
             "priority": task.priority,
             "depends_on_task_ids": list(task.depends_on_task_ids or []),
+            "rests_on": [ref.as_dict() for ref in task.rests_on],
         }
         if args.edit is not None:
             field = text_field(args.edit)
@@ -304,6 +314,7 @@ def handle_task_edit(args: argparse.Namespace) -> int:
         f"Task: {task.id} | {task.title}",
         *(f"{label} unchanged." for label in unchanged),
         *_describe_changes(before, changed),
+        *_rests_on_lines(task),
         f"Priority: {task.priority}",
         "Waits for: "
         + (", ".join(task.depends_on_task_ids) if task.depends_on_task_ids else "nothing"),
@@ -316,8 +327,19 @@ _CHANGE_LABELS = {
     "task_type": "Type",
     "description": "Description",
     "acceptance_criteria": "Acceptance criteria",
+    "rests_on": "Documents",
 }
 # Priority and what a task waits for are shown in full on the lines after.
+
+
+def _rests_on_lines(task: Task) -> list[str]:
+    """``Rests on:`` with each document and the commit it was named at."""
+
+    if not task.rests_on:
+        return ["Rests on: nothing named"]
+    return ["Rests on:"] + [
+        f"  {ref.label()} (named at {ref.commit[:10]})" for ref in task.rests_on
+    ]
 
 
 def _describe_changes(before: dict[str, object], changed: dict[str, object]) -> list[str]:
@@ -328,7 +350,9 @@ def _describe_changes(before: dict[str, object], changed: dict[str, object]) -> 
         if field not in changed:
             continue
         old, new = before[field], changed[field]
-        if field in ("description", "acceptance_criteria"):
+        if field == "rests_on":
+            lines.append(f"{label}: {len(old)} -> {len(new)} documents")
+        elif field in ("description", "acceptance_criteria"):
             if not new:
                 lines.append(f"{label}: cleared")
             else:

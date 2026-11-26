@@ -1140,6 +1140,13 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         SELECT 1;
         """,
     ),
+    (
+        34,
+        "tasks: the documents a task rests on, with the commit each was named at",
+        """
+        ALTER TABLE tasks ADD COLUMN rests_on_json TEXT NOT NULL DEFAULT '[]';
+        """,
+    ),
 ]
 
 

@@ -15,7 +15,7 @@ export function getTask(client, taskId, options) {
 export function updateTask(
   client,
   taskId,
-  { title, taskType, description, acceptanceCriteria, priority, dependsOn },
+  { title, taskType, description, acceptanceCriteria, restsOn, priority, dependsOn },
   options,
 ) {
   const body = {
@@ -24,6 +24,7 @@ export function updateTask(
     description: description || null,
     acceptance_criteria: acceptanceCriteria || null,
   };
+  if (restsOn !== undefined) body.rests_on = restsOn;
   if (priority !== undefined) body.priority = priority;
   if (dependsOn !== undefined) body.depends_on_task_ids = dependsOn;
   return client.patch(task(taskId), body, options);
@@ -103,6 +104,11 @@ export function getTaskChanges(client, taskId, options) {
 /** One changed file's unified diff. */
 export function getFileDiff(client, taskId, path, options) {
   return client.get(`${task(taskId)}/changes/diff${queryString({ path })}`, options);
+}
+
+/** A document the task rests on, as it was at the commit it was named at. */
+export function getTaskDocument(client, taskId, path, options) {
+  return client.get(`${task(taskId)}/documents${queryString({ path })}`, options);
 }
 
 /** Checks as facts (measured by the engine) and claims (reported by an agent). */

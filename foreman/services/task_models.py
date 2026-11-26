@@ -69,6 +69,20 @@ class FileDiff(BaseModel):
     total_chars: int
 
 
+class TaskDocument(BaseModel):
+    """``GET /tasks/{id}/documents``: a document the task rests on, as it was
+    at the commit it was named at."""
+
+    task_id: str
+    path: str
+    heading: str
+    commit: str
+    text: str
+    truncated: bool
+    cap_chars: int
+    total_chars: int
+
+
 class FailedTest(BaseModel):
     """A test that failed: its suite (class or file) and its name."""
 

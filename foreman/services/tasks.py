@@ -220,6 +220,7 @@ class TaskService(Service):
             "hold": HoldReader(self.store).hold(task),
             "step_running": bool(self.store.list_runs(task_id=task.id, status="running")),
             "acceptance_criteria": task.acceptance_criteria,
+            "rests_on": [ref.as_dict() for ref in task.rests_on],
             "workflow_current_step": task.workflow_current_step,
             "step_visit_counts": task.step_visit_counts or {},
             "depends_on_task_ids": task.depends_on_task_ids or [],
@@ -264,6 +265,7 @@ class TaskService(Service):
         acceptance_criteria: str | None = None,
         description: str | None = None,
         depends_on: list[str] | None = None,
+        rests_on: list[Any] | None = None,
     ) -> dict[str, Any]:
         """Create one task in a sprint.
 
@@ -280,6 +282,7 @@ class TaskService(Service):
                 acceptance_criteria=acceptance_criteria,
                 description=description,
                 depends_on=depends_on or (),
+                rests_on=rests_on,
             )
         except MutationError as exc:
             raise InvalidRequestError(str(exc)) from exc
@@ -291,6 +294,7 @@ class TaskService(Service):
             "task_type": task.task_type,
             "acceptance_criteria": task.acceptance_criteria,
             "description": task.description,
+            "rests_on": [ref.as_dict() for ref in task.rests_on],
             "depends_on_task_ids": task.depends_on_task_ids,
             "order_index": task.order_index,
             "created_at": task.created_at,

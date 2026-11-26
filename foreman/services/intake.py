@@ -73,6 +73,7 @@ class IntakeService(Service):
         title: str,
         description: str | None = None,
         acceptance_criteria: str | None = None,
+        rests_on: Any = None,
         task_type: str = "fix",
         priority: int = 0,
         source: dict[str, Any] | None = None,
@@ -141,6 +142,7 @@ class IntakeService(Service):
                 task_type=task_type,
                 description=description,
                 acceptance_criteria=acceptance_criteria,
+                rests_on=rests_on,
                 priority=priority_value,
                 # The audit trail names the token, never the secret.
                 created_by=f"api:{token.name}",

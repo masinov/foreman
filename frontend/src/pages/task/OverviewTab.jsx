@@ -16,6 +16,7 @@ import { Spend } from "../../ui/Spend";
 import { useProjectEngine } from "../shared/useProjectEngine";
 import { stageOf } from "../sprint/taskStage";
 import { Overrides } from "./Overrides";
+import { RestsOn } from "./RestsOn";
 import { filedBy, stepRows, whoDecides } from "./taskWords";
 
 function Steps({ task, workflow }) {
@@ -258,6 +259,7 @@ export function OverviewTab({ task, changed }) {
       <div className="page-overview__main">
         <Steps task={task} workflow={workflow} />
         <Filed task={task} />
+        <RestsOn task={task} />
       </div>
       <aside className="page-overview__aside" aria-label="Details and overrides">
         <Details task={task} workflow={workflow} />

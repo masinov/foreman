@@ -286,3 +286,30 @@ It is set where models are: the workspace's role is every project's default
 and a project's own role overrides it (ADR-0024). There is no separate project
 setting and no rule per task type. The role editor shows it only for a role
 whose record is a `review_verdict`.
+
+## Amendment (2026-11-27, FOR-93; `docs/directions/assay-and-foreman.md`): a task names the documents it rests on, with the commit it named them at
+
+Section 6's task layer says the ADRs and spec sections that apply are given
+"by path and heading", and until now that was prose in the description:
+nothing checked the path and nothing recorded which version the work was
+planned against.
+
+**A task names what it rests on.** It has a list of documents of the
+repository: a path, and optionally a heading (`docs/adr/ADR-0041-....md`,
+section 6; `docs/specs/engine-design-v3.md`, a section). For each, Foreman
+records the commit of the project's default branch at the moment it was named.
+The commit is captured, not typed. A document already on the list keeps its
+commit when the list is edited; only a new one is stamped.
+
+**A path that is not a file on the default branch is refused,** with the
+reason, wherever the list is set: the task form and page, `foreman task add`
+and `foreman task edit`, `foreman backlog add`, the manager's proposals (the
+check runs when the proposal is made, as the others do), the planning prompt
+and the intake API (where the field `rests_on` is optional).
+
+**Each agent step is given them in the task layer:** a section
+"Documents this task rests on" with the path, the heading and the commit, as
+pointers and not the text. It is added to every role's prompt, a project's own
+templates included, unless the template places `{task_documents}` itself. The
+task page's Overview lists them with their commits and opens each as it was at
+that commit.
