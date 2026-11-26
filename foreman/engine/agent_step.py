@@ -497,6 +497,11 @@ class _NativeRunTally:
     ) -> None:
         self.role = role
         self.task_criteria = task_criteria
+        #: The commands this run made, which a verdict's ``ran`` is checked against.
+        self.commands: list[str] = []
+        #: A run that resumes a session (a corrective retry) holds the commands
+        #: of the run before it only in that session, so they are not checked.
+        self.resumed = bool(session_id)
         self.events: list[AgentEventRecord] = []
         self.message_fragments: list[str] = []
         self.final_message = ""
@@ -518,7 +523,9 @@ class _NativeRunTally:
     def absorb(self, event_type: str, payload: Mapping[str, Any]) -> None:
         """Fold one persisted stream event into the run's totals and ending."""
 
-        if event_type == "agent.message":
+        if event_type == "agent.command":
+            self.commands.append(str(payload.get("command") or ""))
+        elif event_type == "agent.message":
             text = optional_string(payload.get("text"))
             if text and (not self.message_fragments or self.message_fragments[-1] != text):
                 self.message_fragments.append(text)
@@ -552,6 +559,7 @@ class _NativeRunTally:
                 self.final_message,
                 transcript="\n\n".join(self.message_fragments),
                 task_criteria=self.task_criteria,
+                commands=None if self.resumed else self.commands,
             )
             self.outcome, self.detail, self.record = reading.outcome, reading.detail, reading.record
             self.final_status = "completed"
