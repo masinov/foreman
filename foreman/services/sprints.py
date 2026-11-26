@@ -173,11 +173,12 @@ class SprintService(Service):
             if payload.get("sprint_id") != sprint.id or payload.get("completed_at") != sprint.completed_at:
                 continue
             if event.event_type == "engine.checkpoint_failed":
-                return {"tag": None, "sha": None, "note_path": None, "problem": payload.get("reason")}
+                return {"tag": None, "sha": None, "note_path": None, "changelog_path": None, "problem": payload.get("reason")}
             return {
                 "tag": payload.get("tag"),
                 "sha": payload.get("sha"),
                 "note_path": payload.get("note_path"),
+                "changelog_path": payload.get("changelog_path"),
                 "problem": None,
             }
         return None

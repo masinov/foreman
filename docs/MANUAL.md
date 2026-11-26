@@ -1220,6 +1220,7 @@ offending value, rather than running on silent defaults.
 | `worktree_setup_command` | `""` | shell command run once in each new worktree to build that tree's own environment (§24) |
 | `agent_env_passthrough` | `[]` | names of host environment variables given to every agent process on top of the short list all agents get (ADR-0023); for example a database address the tests need |
 | `write_checkpoint_notes` | `false` | when a sprint is finished, commit a note of its goal, tasks and follow-ups to `docs/checkpoints/<tag>.md` on the default branch before the sprint is tagged (ADR-0036). The tag is made either way |
+| `generate_changelog` | `false` | when a sprint is finished, fold the `changes/<task key>.md` files into a section of `CHANGELOG.md` (newest sprint first, above what the file held before) and remove them, in the checkpoint's commit (ADR-0040). Off: the file and `changes/` are left as they are. `foreman changelog <project> [--sprint <id>]` does the same by hand |
 | `merge_push_remote` | `""` | name of the git remote the default branch is pushed to after each merge (for example `origin`). Empty: merges stay on this machine. A push that fails is recorded (`engine.push_failed`) and the merge stands |
 | `worktree_setup_timeout_seconds` | `1800` | wall-clock cap for `worktree_setup_command`; `0` disables the timeout |
 | `completion_guard_enabled` | `true` | enforce the merge proof gate |

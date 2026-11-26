@@ -232,6 +232,12 @@ function GeneralForm({ projectId, settings, onSaved }) {
           NOTE_CHOICES,
           "When a sprint is finished, a note of its tasks is committed to docs/checkpoints/ before the sprint is tagged",
         )}
+        {choiceRow(
+          "generate_changelog",
+          "Changelog",
+          NOTE_CHOICES,
+          "When a sprint is finished, CHANGELOG.md gets a section built from the files in changes/, which are removed, in the same commit",
+        )}
       </SettingsSection>
 
       <WorkingCopies projectId={projectId} />

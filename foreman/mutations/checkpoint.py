@@ -1,9 +1,10 @@
 """A finished sprint's checkpoint (spec 6.4): a tag on the default branch,
-and a note committed before it where the project asks for one.
+and a note and the generated ``CHANGELOG.md`` committed before it where the
+project asks for them (one commit).
 
 Whoever finishes a sprint, a user (``transition_sprint``) or the engine
 (``SprintFlow``), the same checkpoint follows. The sprint is finished
-whatever happens here: a tag or a note that could not be made is recorded
+whatever happens here: a tag, a note or a changelog that could not be made is recorded
 as ``engine.checkpoint_failed``, with the reason, and the sprint stays
 completed.
 """
@@ -32,6 +33,7 @@ from ..repo.git import (
 )
 from ..repo.worktrees import WorktreeError, WorktreeManager
 from ..store import ForemanStore
+from .changelog import CHANGELOG_FILE, stage_changelog, unstage_changelog
 
 #: Where checkpoint notes go, in the repository.
 NOTES_DIR = "docs/checkpoints"
@@ -47,6 +49,7 @@ class Checkpoint:
     tag: str | None = None
     sha: str | None = None
     note_path: str | None = None
+    changelog_path: str | None = None
     problem: str | None = None
 
 
@@ -134,6 +137,7 @@ class SprintCheckpoints:
                         "tag": checkpoint.tag,
                         "sha": checkpoint.sha,
                         "note_path": checkpoint.note_path,
+                        "changelog_path": checkpoint.changelog_path,
                     },
                 )
             )
@@ -161,6 +165,7 @@ class SprintCheckpoints:
                     tag=event.payload.get("tag"),
                     sha=event.payload.get("sha"),
                     note_path=event.payload.get("note_path"),
+                    changelog_path=event.payload.get("changelog_path"),
                 )
         return None
 
@@ -177,14 +182,23 @@ class SprintCheckpoints:
         tag = self._free_tag(repo, tag_name(sprint, completed))
 
         note_path: str | None = None
+        changelog_path: str | None = None
         integration: Path | None = None
-        if settings.write_checkpoint_notes:
+        if settings.write_checkpoint_notes or settings.generate_changelog:
             integration = WorktreeManager(project).ensure_integration()
-            note_path = f"{NOTES_DIR}/{tag}.md"
-            committed = self._commit_note(integration, project, sprint, tag, completed, note_path)
+            if settings.write_checkpoint_notes:
+                note_path = f"{NOTES_DIR}/{tag}.md"
+            committed = self._commit_files(
+                integration,
+                sprint,
+                tag,
+                completed,
+                note_path=note_path,
+                changelog=settings.generate_changelog,
+            )
             if isinstance(committed, Checkpoint):
                 return committed
-            sha = committed
+            sha, changelog_path = committed
             followed = _checkout_record(project, sha)
             if followed is not None:
                 records.append(followed)
@@ -204,7 +218,7 @@ class SprintCheckpoints:
                 records.append(_push_record(pushed, {"remote": remote, "branch": branch, "sha": sha}))
             pushed = push_tag(repo, remote=remote, tag=tag)
             records.append(_push_record(pushed, {"remote": remote, "tag": tag, "sha": sha}))
-        return Checkpoint(tag=tag, sha=sha, note_path=note_path)
+        return Checkpoint(tag=tag, sha=sha, note_path=note_path, changelog_path=changelog_path)
 
     @staticmethod
     def _free_tag(repo: Path, name: str) -> str:
@@ -216,44 +230,111 @@ class SprintCheckpoints:
             candidate = f"{name}-{number}"
         return candidate
 
-    def _commit_note(
+    def _commit_files(
         self,
         integration: Path,
-        project: Project,
         sprint: Sprint,
         tag: str,
         completed: datetime,
-        note_path: str,
-    ) -> str | Checkpoint:
-        """Write and commit the note on the default branch; the new head, or why not."""
+        *,
+        note_path: str | None,
+        changelog: bool,
+    ) -> tuple[str, str | None] | Checkpoint:
+        """Write and commit the note and the changelog on the default branch.
 
-        tasks = self.store.list_tasks(sprint_id=sprint.id)
-        text = note_text(
-            sprint, tag=tag, completed=completed, tasks=tasks, follow_ups=self._follow_ups(tasks)
-        )
-        path = integration / note_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-        run_git(integration, "add", "--", note_path)
+        One commit. The new head and the changelog's path (``None`` when there
+        were no change files), or why not.
+        """
+
+        paths: list[str] = []
+        changelog_path: str | None = None
+        written: list[Path] = []
+        try:
+            if note_path is not None:
+                tasks = self.store.list_tasks(sprint_id=sprint.id)
+                text = note_text(
+                    sprint, tag=tag, completed=completed, tasks=tasks, follow_ups=self._follow_ups(tasks)
+                )
+                path = integration / note_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+                written.append(path)
+                run_git(integration, "add", "--", note_path)
+                paths.append(note_path)
+            if changelog:
+                staged = stage_changelog(integration, sprint, completed)
+                if staged:
+                    changelog_path = CHANGELOG_FILE
+                    paths += staged
+        except (GitError, OSError) as exc:
+            self._undo(integration, paths, written)
+            return Checkpoint(problem=f"The changelog or the checkpoint note could not be written: {exc}")
+        if not paths:
+            head = head_sha(integration)
+            return (head, None) if head else Checkpoint(problem="The default branch's head could not be read.")
+        what = "checkpoint note" if note_path else "changelog"
         commit = run_git(
-            integration,
-            "commit",
-            "--message",
-            f"docs: checkpoint note, {sprint.title}",
-            "--",
-            note_path,
-            check=False,
+            integration, "commit", "--message", f"docs: {what}, {sprint.title}", "--", *paths, check=False
         )
         if commit.returncode != 0:
-            run_git(integration, "reset", "--quiet", "HEAD", "--", note_path, check=False)
-            path.unlink(missing_ok=True)
+            self._undo(integration, paths, written)
             return Checkpoint(
-                problem=f"git could not commit the checkpoint note: {commit.stderr or commit.stdout}".strip(),
+                problem=f"git could not commit the {what}: {commit.stderr or commit.stdout}".strip(),
             )
         new_head = head_sha(integration)
         if new_head is None:
-            return Checkpoint(problem="The checkpoint note was committed, but its commit could not be read.")
-        return new_head
+            return Checkpoint(problem=f"The {what} was committed, but its commit could not be read.")
+        return new_head, changelog_path
+
+    @staticmethod
+    def _undo(integration: Path, paths: list[str], written: list[Path]) -> None:
+        """Leave the integration tree as it was after a commit that did not happen."""
+
+        if paths:
+            unstage_changelog(integration, paths)
+        for path in written:
+            path.unlink(missing_ok=True)
+
+    def sprint_for_changelog(self, project: Project) -> Sprint | None:
+        """The sprint a hand-written section is named after: the active one, else the last finished."""
+
+        sprints = self.store.list_sprints(project.id)
+        active = next((sprint for sprint in sprints if sprint.status == "active"), None)
+        if active is not None:
+            return active
+        finished = [sprint for sprint in sprints if sprint.status == "completed"]
+        return max(finished, key=lambda sprint: sprint.completed_at or "", default=None)
+
+    def write_changelog(self, project: Project, sprint: Sprint) -> Checkpoint:
+        """Write the changelog by hand (``foreman changelog``): its own commit, no tag.
+
+        ``problem`` says why when it could not be written; ``changelog_path`` is
+        ``None`` when there were no change files.
+        """
+
+        records: list[tuple[str, dict[str, Any]]] = []
+        try:
+            integration = WorktreeManager(project).ensure_integration()
+            committed = self._commit_files(
+                integration, sprint, "", _completed_at(sprint), note_path=None, changelog=True
+            )
+            if isinstance(committed, Checkpoint):
+                return committed
+            sha, changelog_path = committed
+            if changelog_path is None:
+                return Checkpoint(sha=sha)
+            followed = _checkout_record(project, sha)
+            if followed is not None:
+                records.append(followed)
+            remote = settings_of(project).merge_push_remote
+            if remote:
+                pushed = push_branch(integration, remote=remote, branch=project.default_branch)
+                records.append(_push_record(pushed, {"remote": remote, "branch": project.default_branch, "sha": sha}))
+            return Checkpoint(sha=sha, changelog_path=changelog_path)
+        except (GitError, WorktreeError, SettingsError, OSError) as exc:
+            return Checkpoint(problem=str(exc))
+        finally:
+            self._emit(project, sprint, records)
 
     def _follow_ups(self, tasks: list[Task]) -> list[Task]:
         """The tasks agents filed while working on this sprint's tasks."""

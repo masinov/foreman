@@ -72,6 +72,9 @@ Use Read, Glob, and Grep to verify:
    approve when the tests failed, did not run, or ran on a commit other than
    the branch head, or on the strength of a plausible summary or an approval
    from a prior review cycle.
+8. The branch adds its change file, `changes/<task key>.md`, and it says what
+   changed (a title and a few bullets). A branch that edits `CHANGELOG.md`
+   instead is an S2 finding.
 
 ### Running things
 You work in a sandbox: a throwaway copy of the branch head, with the

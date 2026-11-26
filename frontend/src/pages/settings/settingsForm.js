@@ -91,6 +91,7 @@ export const CODECS = {
   spec_path: text,
   review_diff_max_chars: { ...whole({ required: true }) },
   write_checkpoint_notes: toggle,
+  generate_changelog: toggle,
 };
 
 // Kept on the project itself rather than among its settings; the API takes

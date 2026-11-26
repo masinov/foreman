@@ -65,6 +65,7 @@ def default_project_settings(
         "max_infra_retries": 3,
         "write_pr_summaries": False,
         "write_checkpoint_notes": False,
+        "generate_changelog": False,
     }
 
 
