@@ -130,6 +130,18 @@ class GateStore(StoreBase):
         ).fetchone()
         return _row_to_human_gate_decision(row) if row else None
 
+    def human_gate_decisions_by_run(self, run_ids: list[str]) -> dict[str, HumanGateDecision]:
+        """The gate decisions the given runs recorded, by run id."""
+
+        if not run_ids:
+            return {}
+        marks = ", ".join("?" for _ in run_ids)
+        rows = self._connection.execute(
+            f"SELECT * FROM human_gate_decisions WHERE run_id IN ({marks})",
+            list(run_ids),
+        ).fetchall()
+        return {row["run_id"]: _row_to_human_gate_decision(row) for row in rows}
+
     @retried_on_lock
     def save_merge_waiver(self, waiver: MergeWaiver) -> MergeWaiver:
         """Insert a merge waiver record."""

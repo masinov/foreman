@@ -9,21 +9,27 @@ is written here, and the orchestrator calls it too.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from uuid import uuid4
 
-from ..definitions.gate_steps import HUMAN_GATE_ROLE, blocked_kind, resolve_gate_steps
+from ..definitions.gate_steps import (
+    HUMAN_GATE_ROLE,
+    blocked_kind,
+    resolve_gate_steps,
+    steps_into,
+)
 from ..definitions.layers import project_definitions
 from ..definitions.workflows import WorkflowDefinition, WorkflowStep
 from ..domain.gate_version import (
     MERGE_APPROVAL,
     PLAN_APPROVAL,
     GateVersion,
+    malformed_version,
     names_current,
     plan_fingerprint,
 )
-from ..domain.models import HumanGateDecision, MergeWaiver, Project, Task, utc_now_text
+from ..domain.models import HumanGateDecision, MergeWaiver, Project, Run, Task, utc_now_text
 from ..history.records import RunRecords, new_id
 from ..notifications.delivery import NotificationDispatcher
 from ..repo.git import head_sha
@@ -47,14 +53,29 @@ class GateVersionChanged(MutationError):
         self.current = current
 
 
+class GateVersionInvalid(MutationError):
+    """The version a decision names cannot name a version of this gate at all.
+
+    Too short, not a commit or a fingerprint, or given at a gate that has
+    nothing to name: a mistake in the request, not a change under it.
+    """
+
+
 def current_gate_version(
-    store: ForemanStore, project: Project, task: Task, policy: str | None
+    store: ForemanStore,
+    project: Project,
+    task: Task,
+    policy: str | None,
+    *,
+    plan_steps: Collection[str] | None = None,
 ) -> GateVersion:
     """What is in front of a person at a gate of ``policy`` for ``task``, now.
 
     A merge approval is of the task branch's head and the default branch's
     head; a plan approval is of the task's description and criteria and the
-    run whose plan it is. A gate with another policy has no version.
+    run whose plan it is: the last agent run of a step the gate is reached
+    from (``plan_steps``; any agent step when the workflow is not known). A
+    gate with another policy has no version.
     """
 
     if policy == MERGE_APPROVAL:
@@ -66,13 +87,51 @@ def current_gate_version(
             branch_sha = base_sha = None
         return GateVersion(kind=policy, branch_sha=branch_sha, base_sha=base_sha)
     if policy == PLAN_APPROVAL:
-        runs = [r for r in store.list_runs(task_id=task.id) if r.role_id != HUMAN_GATE_ROLE]
+        run = plan_run(store.list_runs(task_id=task.id), plan_steps)
+        run_id = run.id if run is not None else None
         return GateVersion(
             kind=policy,
-            fingerprint=plan_fingerprint(task.description, task.acceptance_criteria),
-            plan_run_id=runs[-1].id if runs else None,
+            fingerprint=plan_fingerprint(task.description, task.acceptance_criteria, run_id),
+            plan_run_id=run_id,
         )
     return GateVersion()
+
+
+def plan_run(runs: Sequence[Run], plan_steps: Collection[str] | None) -> Run | None:
+    """The run whose plan a plan approval is of: the last agent run of a step before the gate.
+
+    A person's decision, the engine's own records and built-in steps write
+    no plan, so they are never it. ``plan_steps`` are the steps the gate is
+    reached from; ``None`` (the workflow is not known) takes any agent step.
+    """
+
+    for run in reversed(runs):
+        if run.role_id.startswith("_builtin:") or run.agent_backend in {"human", "builtin"}:
+            continue
+        if plan_steps is None or run.workflow_step in plan_steps:
+            return run
+    return None
+
+
+def gate_version_now(store: ForemanStore, project: Project, task: Task) -> GateVersion:
+    """The version at the gate ``task`` waits at, its workflow read from the project.
+
+    For a caller that has no workflow at hand (a proposal); a task not at a
+    human gate, or a workflow that will not load, has no version.
+    """
+
+    if task.status != "blocked" or not task.workflow_current_step:
+        return GateVersion()
+    try:
+        workflow = project_definitions(store, project.id).workflows.get(project.workflow_id)
+    except Exception:  # noqa: BLE001 - a broken definition: nothing to name
+        return GateVersion()
+    step = workflow.get_step(task.workflow_current_step) if workflow is not None else None
+    if workflow is None or step is None or step.role != HUMAN_GATE_ROLE:
+        return GateVersion()
+    return current_gate_version(
+        store, project, task, step.policy, plan_steps=steps_into(workflow, step.id)
+    )
 
 
 def _changed_message(seen: str, current: GateVersion) -> str:
@@ -188,10 +247,19 @@ def record_gate_decision(
     task = stop.task
     gate_step = stop.workflow.get_step(stop.paused_step)
     version = current_gate_version(
-        store, stop.project, task, gate_step.policy if gate_step else None
+        store,
+        stop.project,
+        task,
+        gate_step.policy if gate_step else None,
+        plan_steps=steps_into(stop.workflow, stop.paused_step),
     )
     named = False
     if seen_version is not None and seen_version.strip():
+        # A version that cannot name one of this gate is a mistake in the
+        # request, refused whatever the decision.
+        problem = malformed_version(seen_version, version)
+        if problem is not None:
+            raise GateVersionInvalid(problem)
         # The version the person saw. An approval of one that has since
         # changed is refused; a send-back of it is not, it needs no version.
         if not names_current(seen_version, version.token):

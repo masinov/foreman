@@ -59,7 +59,7 @@ from ..domain.activity import (
     STEP_REPORT_EVENT,
     WHO,
 )
-from ..domain.models import Event, Project, Run, Task
+from ..domain.models import Event, HumanGateDecision, Project, Run, Task
 from ..domain.step_reads import STEP_READS_EVENT
 from ..store import ForemanStore
 
@@ -414,6 +414,7 @@ class TaskReads:
             commit_events=STEP_COMMIT_EVENTS,
             report_event=STEP_REPORT_EVENT,
         )
+        decided = self.store.human_gate_decisions_by_run([run.id for run, *_ in runs])
         return TaskRuns(
             runs=[
                 RunItem(
@@ -421,6 +422,7 @@ class TaskReads:
                     attempt=attempt,
                     step_commit=step_commit,
                     tests=test_counts(report),
+                    gate_version=_decided_version(decided.get(run.id)),
                 )
                 for run, attempt, step_commit, report in runs
             ],
@@ -689,6 +691,20 @@ def _confirmed_commands(run: Run, made: list[str]) -> list[str]:
         if isinstance(command, str)
     }
     return sorted(command for command in cited if command.strip() and command_was_run(command, made))
+
+
+def _decided_version(decision: HumanGateDecision | None) -> dict[str, Any] | None:
+    """The version a gate decision was recorded against, or None when it kept none."""
+
+    if decision is None or not (decision.branch_sha or decision.plan_fingerprint):
+        return None
+    return {
+        "branch_sha": decision.branch_sha,
+        "base_sha": decision.base_sha,
+        "fingerprint": decision.plan_fingerprint,
+        "plan_run_id": decision.plan_run_id,
+        "named": decision.version_named,
+    }
 
 
 def _run_fields(run: Run) -> dict[str, Any]:

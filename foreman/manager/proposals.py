@@ -35,6 +35,7 @@ from ..domain.errors import ForemanError
 from ..domain.models import PROPOSAL_STATES, Project, Proposal
 from ..domain.rests_on import DocumentRef, RestsOnError, parse_documents
 from ..mutations import MutationError, Mutations
+from ..mutations.gates import gate_version_now
 from ..repo.rests_on import name_documents
 from ..store import ForemanStore
 
@@ -179,7 +180,14 @@ OPERATION_KINDS: dict[str, OperationKind] = {
         OperationKind(
             "send_back", "send a task back with guidance", (_req("task_id", "id"), _req("guidance", "words"))
         ),
-        OperationKind("approve_gate", "approve a waiting gate", (_req("task_id", "id"),)),
+        OperationKind(
+            "approve_gate",
+            "approve a waiting gate",
+            # The version at the gate when it was proposed (the branch's head,
+            # or the plan's fingerprint); Foreman fills it in. Confirming is
+            # refused when the gate has moved on since.
+            (_req("task_id", "id"), _opt("version", "text")),
+        ),
     )
 }
 
@@ -519,7 +527,9 @@ def apply_operation(
                 raise MutationError(
                     f"Task {target.id} is {target.status}, not waiting at a gate."
                 )
-            decision = mutations.decide_gate(target, "approve")
+            decision = mutations.decide_gate(
+                target, "approve", seen_version=operation.get("version")
+            )
             result["task_id"] = decision.task.id
             result["next_step"] = decision.next_step
         else:  # pragma: no cover - normalize_operations refuses unknown kinds
@@ -527,6 +537,26 @@ def apply_operation(
     except MutationError as exc:
         raise ProposalError(f"{where}: {exc}", index=index, kind=kind) from exc
     return result
+
+
+def _name_gate_versions(
+    store: ForemanStore, project: Project, operations: Sequence[dict[str, Any]]
+) -> None:
+    """Give each approval the version at its gate now, unless it names one.
+
+    A person confirms what the manager saw when it proposed: if the branch
+    moved or the plan changed before then, the confirmation is refused.
+    """
+
+    for operation in operations:
+        if operation["kind"] != "approve_gate" or operation.get("version"):
+            continue
+        task = store.get_task(operation["task_id"])
+        if task is None or task.project_id != project.id:
+            continue
+        token = gate_version_now(store, project, task).token
+        if token:
+            operation["version"] = token
 
 
 def _gate_of(store: ForemanStore, project: Project, task: Any) -> dict[str, Any] | None:
@@ -659,6 +689,7 @@ class Proposals:
         if not isinstance(leaves, list) or not all(isinstance(item, str) and item.strip() for item in leaves):
             raise ProposalError("leaves must be a list of task ids.")
         clean_leaves = [item.strip() for item in leaves]
+        _name_gate_versions(self.store, project, normalized)
         for task_id in clean_leaves:
             found = self.store.get_task(task_id)
             if found is None or found.project_id != project.id:

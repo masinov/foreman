@@ -8,23 +8,22 @@ import re
 from typing import Any
 
 from ..definitions.gate_steps import (
-    WorkflowGateSteps,
     blocked_kind,
 )
 from ..definitions.layers import project_definitions
 from ..definitions.roles import RoleLoadError
 from ..definitions.workflows import WorkflowLoadError
 from ..domain.guidance import guidance_notes
+from ..domain.gate_version import PLAN_APPROVAL, GateVersion
 from ..domain.models import (
     Event,
-    Project,
     Task,
 )
 from ..domain.policy import PolicyMatrix, describe_resolution
 from ..domain.rests_on import RestsOnError
 from ..engine.document_changes import changes_by_document
 from ..mutations import MutationError
-from ..mutations.gates import GateVersionChanged, current_gate_version
+from ..mutations.gates import GateVersionChanged, GateVersionInvalid
 from ..repo.rests_on import default_branch_commit
 from .base import Service
 from .errors import (
@@ -85,18 +84,27 @@ def decision_sentence(
     next_step: str | None,
     engine_resident: bool,
     held: bool = False,
+    version: GateVersion | None = None,
+    version_named: bool = False,
 ) -> str:
     """The one sentence an approval or a send-back is answered with.
 
     The dashboard builds the same sentence (``decisionSentence`` in the
     frontend); the CLI and other systems read this one. A task a user holds
     goes on when resumed (ADR-0043); one with no worker, when a worker runs.
+    An approval says the version it was recorded against: "at abc1234" when
+    the request named it, "(recorded at abc1234)" when it did not; a plan's
+    is "plan abc1234".
     """
 
     name = task.task_key or task.title
     step = _humanize(next_step)
     if sent_back:
         return f"Sent {name} back to {step}." if step else f"Sent {name} back."
+    short = version.short if version is not None else None
+    if short:
+        what = f"plan {short}" if version.kind == PLAN_APPROVAL else short
+        name = f"{name} at {what}" if version_named else f"{name} (recorded at {what})"
     if not step:
         return f"Approved {name}."
     if held:
@@ -487,17 +495,6 @@ class TaskService(Service):
             raise InvalidRequestError(str(exc)) from exc
         return {"ok": "deleted", "task_id": task_id, "project_id": project_id}
 
-    def _gate_version(
-        self, task: Task, project: Project | None, gates: WorkflowGateSteps
-    ) -> dict[str, str | None] | None:
-        """The version in front of a person at the gate a task waits at, or ``None``."""
-
-        policy = self._gate_policy(task, gates)
-        if project is None or policy is None:
-            return None
-        version = current_gate_version(self.store, project, task, policy)
-        return version.to_dict() if version.kind else None
-
     def approve_task(self, task_id: str, *, version: str | None = None) -> dict[str, Any]:
         """Resume one human gate with an approval outcome.
 
@@ -530,6 +527,8 @@ class TaskService(Service):
             )
         except GateVersionChanged as exc:
             raise VersionChangedError(str(exc), exc.current.to_dict()) from exc
+        except GateVersionInvalid as exc:
+            raise InvalidRequestError(str(exc), field="version") from exc
         except MutationError as exc:
             raise ActionFailedError(f"Failed to {outcome}: {exc}") from exc
         resident = self.store.get_engine_lock(task.project_id) is not None
@@ -550,6 +549,8 @@ class TaskService(Service):
                 next_step=result.next_step,
                 engine_resident=resident,
                 held=held,
+                version=result.version,
+                version_named=result.version_named,
             ),
         }
 

@@ -210,6 +210,15 @@ class MergeGateFlowTests(unittest.TestCase):
             self.assertEqual([tuple(row) for row in decisions], [("policy:merge_approval", "approve", "merge_approval")])
             auto_events = [e for e in store.list_events(run_id=gate_run.id) if e.event_type == "workflow.gate_auto_approved"]
             self.assertEqual(len(auto_events), 1)
+            # The engine's approval is recorded against the version at the
+            # gate, as a person's is: the branch's head and the default's.
+            decision = store.get_human_gate_decision(task.id, "merge_approval")
+            self.assertIsNotNone(decision.branch_sha)
+            self.assertEqual(decision.branch_sha, gate_run.commit_sha)
+            self.assertIsNotNone(decision.base_sha)
+            self.assertFalse(decision.version_named)
+            version = auto_events[0].payload["version"]
+            self.assertEqual((version["kind"], version["branch_sha"]), ("merge_approval", decision.branch_sha))
 
     def test_human_policy_pauses_before_merge_and_resumes_on_approval(self) -> None:
         repo, db_path = self._workspace()
@@ -234,6 +243,67 @@ class MergeGateFlowTests(unittest.TestCase):
                 "SELECT decided_by, decision FROM human_gate_decisions"
             ).fetchall()
             self.assertEqual([tuple(row) for row in decisions], [("human", "approve")])
+
+    def _commit_on_task_branch(self, repo: Path, branch: str) -> str:
+        """Commit on a task's branch in the worktree that has it, and return the commit."""
+
+        listed = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"], cwd=repo, check=True, capture_output=True, text=True
+        ).stdout
+        path = None
+        for block in listed.strip().split("\n\n"):
+            lines = dict(line.split(" ", 1) for line in block.splitlines() if " " in line)
+            if lines.get("branch") == f"refs/heads/{branch}":
+                path = Path(lines["worktree"])
+        self.assertIsNotNone(path, listed)
+        (path / "later.py").write_text("LATER = True\n", encoding="utf-8")
+        subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "feat: a later commit"], cwd=path, check=True, capture_output=True)
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=path, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    def test_a_branch_that_moved_after_its_approval_goes_back_to_the_gate_unmerged(self) -> None:
+        repo, db_path = self._workspace()
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, task = self._seed(store, repo, settings={"merge_approval": "human"})
+            orchestrator = ForemanOrchestrator(
+                store, agent_runners={"claude_code": _ScriptedRunner([self._developer(repo), _reviewer_sees_tests_then_approves])}
+            )
+            self.assertEqual(orchestrator.run_project(project.id).stop_reason, "waiting_for_decision")
+            branch = store.get_task(task.id).branch_name
+            main_before = subprocess.run(
+                ["git", "rev-parse", "main"], cwd=repo, check=True, capture_output=True, text=True
+            ).stdout.strip()
+            # Approved now, for an engine to carry out; the branch moves before it does.
+            approved = orchestrator.resume_human_gate(task.id, outcome="approve", defer=True)
+            moved_to = self._commit_on_task_branch(repo, branch)
+            self.assertNotEqual(moved_to, approved.version.branch_sha)
+
+            orchestrator.run_project(project.id)
+
+            back = store.get_task(task.id)
+            self.assertEqual(back.status, "blocked")
+            self.assertEqual(back.workflow_current_step, "merge_approval")
+            self.assertIn("The branch moved after it was approved", back.blocked_reason)
+            self.assertIn(approved.version.branch_sha[:7], back.blocked_reason)
+            self.assertIn(moved_to[:7], back.blocked_reason)
+            main_after = subprocess.run(
+                ["git", "rev-parse", "main"], cwd=repo, check=True, capture_output=True, text=True
+            ).stdout.strip()
+            self.assertEqual(main_after, main_before, "nothing was merged")
+            blocked = [e for e in store.list_events(task_id=task.id) if e.event_type == "engine.merge_blocked"]
+            self.assertEqual(blocked[-1].payload["reason"], "moved_after_approval")
+
+            # The new head can be approved; the merge then holds it to the
+            # tests and review, which ran on the commit before it.
+            again = orchestrator.resume_human_gate(task.id, outcome="approve", seen_version=moved_to)
+            self.assertTrue(again.version_named)
+            self.assertEqual(store.get_human_gate_decision(task.id, "merge_approval").branch_sha, moved_to)
+            after = store.get_task(task.id)
+            self.assertNotIn("moved after it was approved", after.blocked_reason or "")
+            self.assertIn("changed after it was tested and reviewed", after.blocked_reason or "")
 
     def test_per_task_override_requires_a_human_even_when_the_project_is_auto(self) -> None:
         repo, db_path = self._workspace()

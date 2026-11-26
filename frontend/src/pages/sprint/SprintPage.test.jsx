@@ -192,6 +192,8 @@ describe("the list", () => {
     const before = calls(fetchImpl, "GET", "/api/v1/sprints/sprint-56").length;
     fireEvent.click(screen.getByRole("button", { name: "Approve FOR-14" }));
     await waitFor(() => expect(calls(fetchImpl, "POST", "/api/v1/tasks/t-merge/approve")).toHaveLength(1));
+    // It names the commit the row shows: refused if the branch moved since.
+    expect(calls(fetchImpl, "POST", "/api/v1/tasks/t-merge/approve")[0].body).toEqual({ version: "b232eb1aa0c0ffee" });
     await waitFor(() => expect(calls(fetchImpl, "GET", "/api/v1/sprints/sprint-56").length).toBeGreaterThan(before));
     const toast = await screen.findByRole("status");
     expect(toast).toHaveTextContent("Approved FOR-14. It waits at Merge until a worker runs.");
@@ -215,7 +217,7 @@ describe("the board", () => {
   beforeEach(() => window.localStorage.clear());
 
   async function renderBoard(routes) {
-    await renderSprint("/dashboard/sprints/sprint-56/board", routes);
+    return renderSprint("/dashboard/sprints/sprint-56/board", routes);
   }
   const columnNames = () => screen.getAllByRole("region").map((region) => region.getAttribute("aria-label")).filter(Boolean);
 
@@ -283,11 +285,12 @@ describe("the board", () => {
   it("approves from a card and reloads", async () => {
     const routes = sprintRoutes();
     routes["POST /api/v1/tasks/t-merge/approve"] = { ok: true };
-    await renderBoard(routes);
+    const { fetchImpl } = await renderBoard(routes);
     const merge = await screen.findByRole("region", { name: "Merge approval" });
     expect(screen.getAllByRole("button", { name: /^Approve/ })).toHaveLength(1);
     fireEvent.click(within(merge).getByRole("button", { name: "Approve FOR-14" }));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Approved FOR-14."));
+    expect(calls(fetchImpl, "POST", "/api/v1/tasks/t-merge/approve")[0].body).toEqual({ version: "b232eb1aa0c0ffee" });
   });
 
   it("fits in the window: a long column scrolls its cards under its heading", async () => {

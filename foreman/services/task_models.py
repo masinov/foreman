@@ -256,6 +256,11 @@ class RunItem(BaseModel):
     step_commit: str | None = None
     #: How many tests a test step ran, when the test command wrote a report.
     tests: TestCounts | None = None
+    #: A gate decision's version: the commits (``branch_sha``, ``base_sha``)
+    #: or the plan (``fingerprint``, ``plan_run_id``) it was recorded against,
+    #: and ``named``, whether the request named it. None for other runs and
+    #: for decisions from before versions were kept.
+    gate_version: dict[str, Any] | None = None
 
 
 class TaskRuns(BaseModel):

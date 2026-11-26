@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import { getFileDiff } from "../../api/tasks";
 import { useResource } from "../../api/useResource";
@@ -131,10 +131,20 @@ function FileDiff({ taskId, file, head }) {
  * Changes: the totals, the files the branch changed, and the selected file's
  * diff. The first file is selected until another is picked.
  */
-export function ChangesTab({ task, changes }) {
+export function ChangesTab({ task, changes, sawDiff }) {
   const [picked, setPicked] = useState(null);
   const [dir, setDir] = useState("");
   const data = changes.data;
+  // Opening the diff is looking at the branch at the head it was read at: an
+  // approval from this page names that commit (`useSeenGateVersion`). Once
+  // per opening; a later reload does not change what was looked at.
+  const reported = useRef(false);
+  const readAt = data?.merged_as ? null : (data?.head?.sha ?? null);
+  useEffect(() => {
+    if (reported.current || !readAt) return;
+    reported.current = true;
+    sawDiff?.(readAt);
+  }, [readAt, sawDiff]);
   // The first file is picked once and then stays picked. While an agent is
   // still committing, the list changes under the reader; what they are
   // looking at must not.

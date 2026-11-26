@@ -246,7 +246,7 @@ export function testRunSentence({ passed, exitCode, report, seconds, sha }) {
  * looked. A test step adds how many tests ran ("Passed · 1,599 tests").
  * `earlier` is the run before it, whose commit it is compared with.
  */
-export function stepOutcome(run, earlier = null) {
+export function stepOutcome(run, earlier = null, { commitShown = false } = {}) {
   const result = runResult(run);
   const role = roleOf(run);
   const counted = role === TESTS ? testCountWords(run.tests) : "";
@@ -255,16 +255,39 @@ export function stepOutcome(run, earlier = null) {
   if (role === HUMAN_GATE && backendOf(run) !== "human" && outcome === "approve") {
     return { ...result, tone: "idle", word: "Approved by setting" };
   }
-  // A person's approval names the commit it was made at (the branch's head).
   if (role === HUMAN_GATE && backendOf(run) === "human" && outcome === "approve") {
-    const at = run.commit_sha ?? run.step_commit ?? null;
-    if (at) return { ...result, word: `Approved at ${shortSha(at)}` };
+    const said = approvalWords(run, commitShown);
+    return { ...result, word: said.word, note: [result.note, said.note].filter(Boolean).join(" ") };
   }
   const before = earlier ? (earlier.step_commit ?? earlier.commit_sha ?? null) : null;
   if (outcome === "done" && !role.startsWith(BUILTIN) && run.commit_sha && run.commit_sha !== before) {
     return { ...result, word: "Committed" };
   }
   return result;
+}
+
+/**
+ * A person's approval, with the version it was recorded against (the run's
+ * `gate_version`): "Approved at abc1234" when the request named it,
+ * "Approved (recorded at abc1234)" when it did not. Where the row already
+ * shows the commit (`commitShown`), it is not said again: "Approved", or
+ * "Approved, version not named", with the commit on hover.
+ */
+function approvalWords(run, commitShown) {
+  const version = run.gate_version ?? null;
+  const commit = version?.branch_sha ?? null;
+  const at = commit ?? version?.fingerprint ?? run.commit_sha ?? null;
+  // A decision from before versions were kept is taken as named: nothing says otherwise.
+  const named = version ? Boolean(version.named) : true;
+  if (!at) return { word: "Approved" };
+  const plan = !commit && Boolean(version?.fingerprint);
+  const what = plan ? `plan ${shortSha(at)}` : shortSha(at);
+  if (commitShown && !plan) {
+    return named
+      ? { word: "Approved" }
+      : { word: "Approved, version not named", note: `Recorded at ${what}: the approval did not name the version it saw.` };
+  }
+  return { word: named ? `Approved at ${what}` : `Approved (recorded at ${what})` };
 }
 
 export function runSeconds(run) {

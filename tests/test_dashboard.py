@@ -579,9 +579,12 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
         self.assertEqual(result["next_step"], "develop")
         self.assertTrue(result["deferred"])  # the web process never runs steps
         self.assertFalse(result["engine_resident"])
+        # No version named: the sentence says the plan it was recorded against.
+        short = result["version"]["fingerprint"][:7]
         self.assertEqual(
             result["message"],
-            f"Approved {updated_task.task_key}. It waits at Develop until a worker runs.",
+            f"Approved {updated_task.task_key} (recorded at plan {short}). "
+            "It waits at Develop until a worker runs.",
         )
         self.assertNotIn("`", result["message"])
 

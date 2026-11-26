@@ -5,11 +5,13 @@ import { acceptTask, declineTask } from "../../api/backlog";
 import { errorSentence } from "../../api/client";
 import { approveTask, denyTask, unblockTask } from "../../api/tasks";
 import { paths } from "../../app/paths";
-import { Link } from "../../app/router";
+import { Link, useOptionalNavigate } from "../../app/router";
 import { Button } from "../../ui/Button";
+import { Mono } from "../../ui/Mono";
 import { Surface } from "../../ui/Surface";
 import { formatDay, formatDuration, humanize } from "../../ui/format";
 import { decisionSentence, taskName } from "../shared/decisionWords";
+import { MERGE_APPROVAL, versionToken, versionWords } from "../shared/gateVersion";
 import { ReasonDialog } from "../shared/ReasonDialog";
 import {
   branchWords,
@@ -150,22 +152,56 @@ function Facts({ kind, task, checks }) {
   }
 }
 
+const GATE_KINDS = new Set([DECISIONS.merge, DECISIONS.plan, DECISIONS.gate]);
+
+/**
+ * The version the person is approving, and, when the gate's version has
+ * changed since it was shown, a plain line that says so with a way to look
+ * at the new one. `seen` is `useSeenGateVersion` of the task page.
+ */
+function VersionFacts({ seen, onLook }) {
+  if (!seen?.version) return null;
+  const shown = versionWords(seen.version);
+  if (!shown) return null;
+  const merge = seen.version.kind === MERGE_APPROVAL;
+  const now = versionWords(seen.current);
+  return (
+    <>
+      <li className="decision__fact">
+        Approving <Mono>{shown}</Mono>
+      </li>
+      {seen.moved ? (
+        <li className="decision__fact decision__moved">
+          <span className="tone-attention">{merge ? "The branch moved since" : "The plan changed since"}</span>
+          {now ? (
+            <>
+              {": it is now at "}
+              <Mono>{now}</Mono>
+            </>
+          ) : null}
+          {". "}
+          <Button variant="quiet" inRow onClick={onLook}>
+            {merge ? `Look at ${now}` : "Look at the new plan"}
+          </Button>
+        </li>
+      ) : null}
+    </>
+  );
+}
+
 /**
  * The decision, on the tinted surface, only while the task waits for a
  * person: the question, the facts that bear on it, a way to send it back
  * (asking for the words that go with it) and the one filled gold button.
  * `onDecided(sentence)` runs once the API accepted the decision.
+ *
+ * At a gate the approval names the version the person is looking at
+ * (`seen.version`), not the one the last background reload read; the
+ * server refuses it if the branch or the plan has changed since.
  */
-const GATE_KINDS = new Set([DECISIONS.merge, DECISIONS.plan, DECISIONS.gate]);
-
-/** The version the page showed: the branch's head (merge) or the plan's fingerprint. */
-function gateToken(version) {
-  if (!version) return undefined;
-  return version.kind === "merge_approval" ? version.branch_sha : version.fingerprint;
-}
-
-export function Decision({ task, checks, onDecided }) {
+export function Decision({ task, checks, seen = null, onDecided }) {
   const client = useApiClient();
+  const navigate = useOptionalNavigate();
   const [pending, setPending] = useState(false);
   const [refusal, setRefusal] = useState(null);
   const [sendingBack, setSendingBack] = useState(false);
@@ -173,21 +209,31 @@ export function Decision({ task, checks, onDecided }) {
   if (!decision) return null;
   const calls = CALLS[decision.kind];
   const done = DONE_WORDS[decision.kind];
+  const atGate = GATE_KINDS.has(decision.kind);
 
   async function approve() {
     setPending(true);
     setRefusal(null);
     try {
-      const named = GATE_KINDS.has(decision.kind) ? { version: gateToken(task.gate_version) } : undefined;
-      const result = await calls.approve(client, task.id, named);
+      const token = atGate ? versionToken(seen?.version ?? task.gate_version) : null;
+      const result = await calls.approve(client, task.id, token ? { version: token } : undefined);
       onDecided(done?.approve ?? decisionSentence(taskName(task), result));
     } catch (error) {
       setRefusal(errorSentence(error));
-      // The version may have changed under the page: show the new one.
+      // The version may have changed under the page: read the new one.
       onDecided();
     } finally {
       setPending(false);
     }
+  }
+
+  // Looking at the new version takes it as the one approved, and shows it:
+  // the diff for a merge, the plan's output for a plan.
+  function look() {
+    seen?.look();
+    setRefusal(null);
+    const where = seen?.version?.kind === MERGE_APPROVAL ? paths.taskChanges(task.id) : paths.taskActivity(task.id);
+    navigate?.(where);
   }
 
   return (
@@ -199,6 +245,7 @@ export function Decision({ task, checks, onDecided }) {
         {decision.detail ? <p className="decision__detail">{decision.detail}</p> : null}
         <ul className="decision__facts">
           <Facts kind={decision.kind} task={task} checks={checks} />
+          {atGate ? <VersionFacts seen={seen} onLook={look} /> : null}
         </ul>
         {refusal ? (
           <p className="notice notice--error" role="alert">

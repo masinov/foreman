@@ -233,6 +233,33 @@ class WorkflowRunnerBase:
                 raise OrchestratorError(
                     f"Workflow {workflow.id!r} is missing step {current_step!r}."
                 )
+
+            # A merge lands only the commit its gate approved: a branch that
+            # moved since goes back to the gate, for a person to decide again.
+            moved = self._moved_since_approval(project, workflow, current_task, step_def)
+            if moved is not None:
+                gate_step, approved, now_at = moved
+                detail = (
+                    f"The branch moved after it was approved: approved at {approved[:7]}, "
+                    f"it is now at {now_at[:7]}. Review the new version and decide again."
+                )
+                current_task.workflow_current_step = gate_step
+                current_task.workflow_carried_output = None
+                self._block_at_step(
+                    current_task,
+                    current_step,
+                    detail=detail,
+                    event_type="engine.merge_blocked",
+                    payload={
+                        "branch": current_task.branch_name,
+                        "target": project.default_branch,
+                        "reason": "moved_after_approval",
+                        "approved_sha": approved,
+                        "head_sha": now_at,
+                        "gate_step": gate_step,
+                    },
+                )
+                break
             default_branch = project.default_branch
             original_default_sha = head_sha(project.repo_path, f"refs/heads/{default_branch}")
             refreshed_default_sha: str | None = None
@@ -313,6 +340,7 @@ class WorkflowRunnerBase:
                     step=current_step,
                     visit_count=visit_count,
                     carried_output=carried_output,
+                    workflow=workflow,
                 )
                 if executed is None:
                     # Waiting for a person: the task is paused, not finished.

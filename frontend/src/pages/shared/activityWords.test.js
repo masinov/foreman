@@ -51,6 +51,20 @@ describe("how a step of a task ended, in its row", () => {
     expect(stepOutcome(run({ ...gate, agent_backend: "human", commit_sha: "abc1234".padEnd(40, "0") })).word).toBe(
       "Approved at abc1234",
     );
+    // One that named no version says what it was recorded against; where the
+    // row shows the commit, the words do not repeat it.
+    const sha = "abc1234".padEnd(40, "0");
+    const unnamed = run({ ...gate, agent_backend: "human", commit_sha: sha, gate_version: { branch_sha: sha, named: false } });
+    const named = run({ ...gate, agent_backend: "human", commit_sha: sha, gate_version: { branch_sha: sha, named: true } });
+    expect(stepOutcome(unnamed).word).toBe("Approved (recorded at abc1234)");
+    expect(stepOutcome(named).word).toBe("Approved at abc1234");
+    expect(stepOutcome(named, null, { commitShown: true }).word).toBe("Approved");
+    const shown = stepOutcome(unnamed, null, { commitShown: true });
+    expect(shown.word).toBe("Approved, version not named");
+    expect(shown.note).toContain("Recorded at abc1234");
+    // A plan's version is its fingerprint, never in a commit column.
+    const plan = run({ ...gate, agent_backend: "human", gate_version: { fingerprint: "f00dbad".padEnd(64, "0"), named: false } });
+    expect(stepOutcome(plan, null, { commitShown: true }).word).toBe("Approved (recorded at plan f00dbad)");
     expect(stepOutcome(run({ role_id: "code_reviewer", outcome: "steer", commit_sha: "c".repeat(40) })).word).toBe("Sent back");
   });
 

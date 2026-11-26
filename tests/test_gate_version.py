@@ -12,8 +12,10 @@ import httpx
 
 from foreman.api.app import create_dashboard_app
 from foreman.domain.gate_version import plan_fingerprint
-from foreman.domain.models import Project, Sprint, Task
-from foreman.store import ForemanStore
+from foreman.domain.models import Project, Run, Sprint, Task
+from foreman.manager.proposals import Proposals
+from foreman.store import ForemanStore, _SCHEMA_MIGRATIONS_DDL
+from foreman.store.migrations import MIGRATIONS
 
 from plan_workflow import install_plan_workflow
 from test_cli import cli_argv, cli_env
@@ -185,15 +187,145 @@ class GateVersionTests(unittest.TestCase):
         self.assertEqual((recorded.plan_fingerprint, recorded.version_named), (current, True))
         self.assertIsNone(recorded.branch_sha)
 
-    def test_the_migration_leaves_older_decisions_open(self) -> None:
-        self.seed(plan=False)
-        self.store._connection.execute(
-            "INSERT INTO human_gate_decisions (id, task_id, project_id, workflow_step,"
-            " decision, decided_at) VALUES ('old','t','p','merge_approval','approve','2026-01-01T00:00:00Z')"
-        )
-        old = self.store.get_human_gate_decision("t", "merge_approval")
-        self.assertEqual((old.branch_sha, old.plan_fingerprint, old.version_named), (None, None, False))
+    def add_run(self, run_id: str, *, step: str, role: str, backend: str) -> Run:
+        return self.store.save_run(Run(
+            id=run_id, task_id="t", project_id="p", role_id=role, workflow_step=step,
+            agent_backend=backend, status="completed", outcome="done",
+        ))
 
+    def test_the_plan_is_the_last_agent_run_of_the_step_before_the_gate(self) -> None:
+        self.seed(plan=True)
+        self.add_run("run-plan-1", step="plan", role="architect", backend="claude")
+        # Neither a person's decision, nor an engine record, nor a later step writes a plan.
+        self.add_run("run-gate", step="human_approval", role="_builtin:human_gate", backend="human")
+        self.add_run("run-record", step="human_approval", role="_builtin:orchestrator", backend="orchestrator")
+        shown = self.api("GET", "/api/tasks/t").json()["gate_version"]
+        self.assertEqual(shown["plan_run_id"], "run-plan-1")
+        self.assertEqual(shown["fingerprint"], plan_fingerprint("Do it", "- it works", "run-plan-1"))
+        self.assertEqual(shown["token"], shown["fingerprint"])
+
+        # The plan redone, with the same words: another version.
+        self.add_run("run-plan-2", step="plan", role="architect", backend="claude")
+        refused = self.api("POST", "/api/tasks/t/approve", json={"version": shown["token"]})
+        self.assertEqual(refused.status_code, 409, refused.text)
+        self.assertEqual(refused.json()["current"]["plan_run_id"], "run-plan-2")
+        self.assertIsNone(self.decision())
+        approved = self.api("POST", "/api/tasks/t/approve", json={"version": refused.json()["current"]["token"]})
+        self.assertEqual(approved.status_code, 200, approved.text)
+        self.assertEqual(self.decision().plan_run_id, "run-plan-2")
+
+    # -- requests that name no version of the gate
+
+    def test_a_malformed_version_is_a_bad_request_with_the_reason(self) -> None:
+        self.seed(plan=False)
+        for seen, reason in (("abc12", "too short"), ("zzzzzzzz", "not one"), ("abc 1234", "not one")):
+            with self.subTest(seen=seen):
+                response = self.api("POST", "/api/tasks/t/approve", json={"version": seen})
+                self.assertEqual(response.status_code, 400, response.text)
+                self.assertIn(reason, response.json()["error"])
+                self.assertNotIn("None", response.json()["error"])
+        self.assertIsNone(self.decision())
+        self.assertEqual(self.store.get_task("t").status, "blocked")
+
+    def test_a_version_at_a_gate_with_nothing_to_name_is_a_bad_request(self) -> None:
+        task = self.seed(plan=False)
+        task.branch_name = "feat/gone"
+        self.store.save_task(task)
+        response = self.api("POST", "/api/tasks/t/approve", json={"version": "abcdef1"})
+        self.assertEqual(response.status_code, 400, response.text)
+        self.assertIn("no version to name", response.json()["error"])
+        self.assertNotIn("now at None", response.text)
+
+    # -- what the answer and the lists say
+
+    def test_the_answer_says_the_version_it_was_recorded_against(self) -> None:
+        self.seed(plan=False)
+        head = git(self.repo, "rev-parse", "feat/x")
+        unnamed = self.api("POST", "/api/tasks/t/approve").json()
+        self.assertIn(f"Approved P-1 (recorded at {head[:7]}). It waits at Merge", unnamed["message"])
+
+    def test_the_answer_to_a_named_version_says_it(self) -> None:
+        self.seed(plan=False)
+        head = git(self.repo, "rev-parse", "feat/x")
+        named = self.api("POST", "/api/tasks/t/approve", json={"version": head}).json()
+        self.assertIn(f"Approved P-1 at {head[:7]}. It waits at Merge", named["message"])
+
+    def test_the_lists_that_offer_approve_carry_the_version(self) -> None:
+        self.seed(plan=False)
+        head = git(self.repo, "rev-parse", "feat/x")
+        rows = self.api("GET", "/api/sprints/s/tasks").json()["tasks"]
+        self.assertEqual(rows[0]["gate_version"]["branch_sha"], head)
+        items = self.api("GET", "/api/needs-you").json()["items"]
+        merge = [item for item in items if item["kind"] == "approve_merge"]
+        self.assertEqual(merge[0]["gate_version"]["token"], head)
+
+    def test_a_gate_run_says_the_version_and_whether_it_was_named(self) -> None:
+        self.seed(plan=False)
+        head = git(self.repo, "rev-parse", "feat/x")
+        self.api("POST", "/api/tasks/t/approve", json={"version": head[:9]})
+        runs = self.api("GET", "/api/tasks/t/runs").json()["runs"]
+        gate = [r for r in runs if r["step"] == "merge_approval"][0]
+        self.assertEqual((gate["gate_version"]["branch_sha"], gate["gate_version"]["named"]), (head, True))
+
+    # -- the manager's proposal
+
+    def test_a_proposed_approval_is_of_the_version_when_it_was_proposed(self) -> None:
+        self.seed(plan=False)
+        project = self.store.get_project("p")
+        proposals = Proposals(self.store, via="cli", actor="ada")
+        seen = git(self.repo, "rev-parse", "feat/x")
+        stale = proposals.create(
+            project, reason="Ready.", operations=[{"kind": "approve_gate", "task_id": "t"}],
+            proposed_by="manager",
+        )
+        self.assertEqual(stale.operations[0]["version"], seen)
+        _, after = self.move_branch()
+        failed = proposals.confirm(stale.id)
+        self.assertEqual(failed.state, "failed")
+        self.assertIn("The branch moved", failed.outcome["failed"]["reason"])
+        self.assertIn(after[:7], failed.outcome["failed"]["reason"])
+        self.assertIsNone(self.decision())
+
+        fresh = proposals.create(
+            project, reason="Ready now.", operations=[{"kind": "approve_gate", "task_id": "t"}],
+            proposed_by="manager",
+        )
+        self.assertEqual(proposals.confirm(fresh.id).state, "confirmed")
+        self.assertEqual((self.decision().branch_sha, self.decision().version_named), (after, True))
+
+    # -- older decisions
+
+    def test_the_migration_leaves_older_decisions_open(self) -> None:
+        # A database as it was before the versions were kept: every migration
+        # but the one that adds them, and a decision written then.
+        db = Path(self.temp.name) / "old.db"
+        old = ForemanStore(db)
+        self.addCleanup(old.close)
+        with old._connection:
+            old._connection.executescript(_SCHEMA_MIGRATIONS_DDL)
+        before = [m for m in MIGRATIONS if m[0] < 35]
+        old.migrate(before)
+        self.assertEqual(old.schema_version(), 34)
+        columns = {row[1] for row in old._connection.execute("PRAGMA table_info(human_gate_decisions)")}
+        self.assertNotIn("branch_sha", columns)
+        with old._connection:
+            old._connection.execute("PRAGMA foreign_keys = OFF")
+            old._connection.execute(
+                "INSERT INTO human_gate_decisions (id, task_id, project_id, workflow_step,"
+                " decision, decided_at) VALUES ('old','t','p','merge_approval','approve','2026-01-01T00:00:00Z')"
+            )
+
+        old._connection.execute("PRAGMA foreign_keys = ON")
+        old.initialize()
+
+        self.assertGreaterEqual(old.schema_version(), 35)
+        decision = old.get_human_gate_decision("t", "merge_approval")
+        self.assertEqual(decision.id, "old")
+        self.assertEqual(
+            (decision.branch_sha, decision.base_sha, decision.plan_fingerprint,
+             decision.plan_run_id, decision.version_named),
+            (None, None, None, None, False),
+        )
 
 if __name__ == "__main__":
     unittest.main()

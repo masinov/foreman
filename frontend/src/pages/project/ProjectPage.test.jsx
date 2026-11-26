@@ -15,7 +15,7 @@ import {
   QUEUE_URL,
   sprint,
 } from "../../testing/projectFixture";
-import { milestone, on, ORDER_ITEM, UNBLOCK_ITEM, work, workspacePayload } from "../../testing/workspaceFixture";
+import { MERGE_ITEM, milestone, on, ORDER_ITEM, UNBLOCK_ITEM, work, workspacePayload } from "../../testing/workspaceFixture";
 
 // An activity row says the day and the clock time; the clock depends on the
 // machine's time zone, so rows are compared without it.
@@ -301,6 +301,20 @@ describe("Needs you on the project page", () => {
     expect((await within(needsYou).findByText("FOR-15")).closest("tr")).toHaveTextContent("No reason recorded");
   });
 
+  it("shows and names the branch's head when nothing was checked yet", async () => {
+    const head = "e1e1e1e000000000000000000000000000000004";
+    const item = { ...MERGE_ITEM, evidence: null, gate_version: { kind: "merge_approval", branch_sha: head, base_sha: null, fingerprint: null, plan_run_id: null, token: head } };
+    const routes = projectRoutes({ needsYou: [item] });
+    routes["POST /api/v1/tasks/task-merge/approve"] = { status: "approved", next_step: "merge", engine_resident: true, version: item.gate_version, version_named: true };
+    const { fetchImpl } = await renderProject("/dashboard/projects/foreman", routes);
+    const needsYou = screen.getByRole("region", { name: /Needs you/ });
+    const row = (await within(needsYou).findByText("FOR-14")).closest("tr");
+    expect(row).toHaveTextContent("Nothing checked yet · e1e1e1e");
+    fireEvent.click(within(row).getByRole("button", { name: "Approve FOR-14" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Approved FOR-14 at e1e1e1e. Foreman goes on with Merge.");
+    expect(calls(fetchImpl, "POST", "/api/v1/tasks/task-merge/approve")[0].body).toEqual({ version: head });
+  });
+
   it("approves a merge and reloads", async () => {
     const routes = projectRoutes();
     routes["POST /api/v1/tasks/task-merge/approve"] = () => {
@@ -320,6 +334,8 @@ describe("Needs you on the project page", () => {
     fireEvent.click(approve);
     await waitFor(() => expect(within(needsYou).queryByText("FOR-14")).toBeNull());
     expect(calls(fetchImpl, "POST", "/api/v1/tasks/task-merge/approve")).toHaveLength(1);
+    // It names the commit the row shows: refused if the branch moved since.
+    expect(calls(fetchImpl, "POST", "/api/v1/tasks/task-merge/approve")[0].body).toEqual({ version: "b232eb1aa0c0ffee" });
     expect(calls(fetchImpl, "GET", PROJECT_NEEDS_YOU_URL.slice(4))).toHaveLength(2);
     expect(screen.getByRole("status")).toHaveTextContent("Approved FOR-14. Foreman goes on with Merge.");
     expect(within(needsYou).queryByRole("status")).toBeNull();
