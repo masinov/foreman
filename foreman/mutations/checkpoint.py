@@ -1,7 +1,7 @@
 """A finished sprint's checkpoint (spec 6.4): a tag on the default branch,
 and a note, the generated ``CHANGELOG.md`` and the generated copies
-(``docs/STATUS.md``, ``docs/sprints/current.md`` and the sprint's archive
-copy) committed before it where the project asks for them (one commit).
+(``docs/STATUS.md``, ``docs/sprints/current.md``, ``docs/sprints/backlog.md``
+and the sprint's archive copy) committed before it where the project asks for them (one commit).
 
 Whoever finishes a sprint, a user (``transition_sprint``) or the engine
 (``SprintFlow``), the same checkpoint follows. The sprint is finished
@@ -273,7 +273,7 @@ class SprintCheckpoints:
                     changelog_path = CHANGELOG_FILE
                     paths += staged
             if copies:
-                files = render_copies(self.store, project, finished=sprint, tag=tag or None)
+                files = render_copies(self.store, project, finished=sprint, tag=tag or None, backlog=True)
                 changed, created = stage_copies(integration, files)
                 paths += changed
                 written += created
@@ -363,12 +363,15 @@ class SprintCheckpoints:
         except SettingsError:
             return False
 
-    def write_copies(self, project: Project, sprint: Sprint, *, why: str, archive: bool = False) -> Checkpoint:
-        """Write ``docs/STATUS.md`` and ``docs/sprints/current.md`` in a commit of their own.
+    def write_copies(
+        self, project: Project, sprint: Sprint, *, why: str, archive: bool = False, backlog: bool = False
+    ) -> Checkpoint:
+        """Write ``docs/STATUS.md`` and ``docs/sprints/current.md`` (and more, as below) in a commit of their own.
 
         Done when a sprint starts and by ``foreman copies``; a sprint's finish
-        writes them in its checkpoint's commit instead. With ``archive`` and a
-        finished ``sprint``, its archive copy is written too. Never raises:
+        writes them, and the backlog's copy, in its checkpoint's commit instead.
+        With ``archive`` and a finished ``sprint``, its archive copy is written
+        too; with ``backlog``, ``docs/sprints/backlog.md``. Never raises:
         ``problem`` says why nothing was written, and ``sha`` is the new head
         (``None`` when nothing differed). The outcome is recorded on the sprint
         (ADR-0037).
@@ -377,7 +380,12 @@ class SprintCheckpoints:
         records: list[tuple[str, dict[str, Any]]] = []
         try:
             integration = WorktreeManager(project).ensure_integration()
-            files = render_copies(self.store, project, finished=sprint if archive and sprint.status == "completed" else None)
+            files = render_copies(
+                self.store,
+                project,
+                finished=sprint if archive and sprint.status == "completed" else None,
+                backlog=backlog,
+            )
             changed, created = stage_copies(integration, files)
             if not changed:
                 return Checkpoint()

@@ -22,6 +22,7 @@ REQUIRED_FILES = (
     Path("docs/RELEASES.md"),
     Path("docs/sprints/current.md"),
     Path("docs/sprints/backlog.md"),
+    Path("docs/directions/README.md"),
     Path("docs/sprints/archive/README.md"),
     Path("docs/adr/README.md"),
     Path("docs/checkpoints/TEMPLATE.md"),

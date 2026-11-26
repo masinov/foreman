@@ -1,4 +1,4 @@
-"""``foreman copies``: write ``docs/STATUS.md`` and ``docs/sprints/current.md`` by hand (ADR-0040)."""
+"""``foreman copies``: write ``docs/STATUS.md``, ``docs/sprints/current.md`` and ``docs/sprints/backlog.md`` by hand (ADR-0040)."""
 
 from __future__ import annotations
 
@@ -52,7 +52,7 @@ def handle_copies(args: argparse.Namespace) -> int:
             if sprint is None:
                 print(f"Project {project.id} has no sprint yet; there is nothing to write.", file=sys.stderr)
                 return 1
-        result = checkpoints.write_copies(project, sprint, why="written by hand", archive=bool(args.sprint))
+        result = checkpoints.write_copies(project, sprint, why="written by hand", archive=bool(args.sprint), backlog=True)
     if result.problem:
         print(f"The copies were not written: {result.problem}", file=sys.stderr)
         return 1
@@ -60,7 +60,7 @@ def handle_copies(args: argparse.Namespace) -> int:
         print_lines("The copies are up to date; nothing written.")
         return 0
     print_lines(
-        "Wrote docs/STATUS.md and docs/sprints/current.md"
+        "Wrote docs/STATUS.md, docs/sprints/current.md and docs/sprints/backlog.md"
         + (" and the sprint's archive copy" if args.sprint and sprint.status == "completed" else ""),
         f"Commit: {str(result.sha)[:7]} on {project.default_branch}",
     )
@@ -72,7 +72,7 @@ def register_copies(subparsers: argparse._SubParsersAction) -> None:
 
     parser = subparsers.add_parser(
         "copies",
-        help="Write docs/STATUS.md and docs/sprints/current.md from the database, as a sprint's start does.",
+        help="Write docs/STATUS.md, docs/sprints/current.md and docs/sprints/backlog.md from the database.",
     )
     parser.add_argument("project_id", help="Project identifier.")
     parser.add_argument(
