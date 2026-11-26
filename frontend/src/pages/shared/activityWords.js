@@ -255,6 +255,11 @@ export function stepOutcome(run, earlier = null) {
   if (role === HUMAN_GATE && backendOf(run) !== "human" && outcome === "approve") {
     return { ...result, tone: "idle", word: "Approved by setting" };
   }
+  // A person's approval names the commit it was made at (the branch's head).
+  if (role === HUMAN_GATE && backendOf(run) === "human" && outcome === "approve") {
+    const at = run.commit_sha ?? run.step_commit ?? null;
+    if (at) return { ...result, word: `Approved at ${shortSha(at)}` };
+  }
   const before = earlier ? (earlier.step_commit ?? earlier.commit_sha ?? null) : null;
   if (outcome === "done" && !role.startsWith(BUILTIN) && run.commit_sha && run.commit_sha !== before) {
     return { ...result, word: "Committed" };

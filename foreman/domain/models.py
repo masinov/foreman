@@ -408,6 +408,12 @@ class HumanGateDecision:
     decided_by: str = "human"
     decided_at: str = field(default_factory=utc_now_text)
     run_id: str | None = None
+    # The version it was made on (``domain.gate_version``); None before it was kept.
+    branch_sha: str | None = None
+    base_sha: str | None = None
+    plan_fingerprint: str | None = None
+    plan_run_id: str | None = None
+    version_named: bool = False
 
 
 @dataclass(slots=True)

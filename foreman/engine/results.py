@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ..domain.gate_version import GateVersion
+
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -71,6 +73,8 @@ class HumanGateResumeResult:
     deferred: bool
     carried_output: str | None = None
     note: str | None = None
+    version: GateVersion = GateVersion()
+    version_named: bool = False
 
 
 class AgentExecutor(Protocol):

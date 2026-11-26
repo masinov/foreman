@@ -217,6 +217,21 @@ def truncate_text(text: str, *, limit: int = 96) -> str:
     return f"{text[: limit - 3]}..."
 
 
+def _version_words(version: dict[str, object]) -> str:
+    """The version a gate decision was made on, for a line of ``foreman history``."""
+
+    named = "" if version.get("named") else " (not named)"
+    branch, base = version.get("branch_sha"), version.get("base_sha")
+    if branch:
+        base_part = f", default {str(base)[:7]}" if base else ""
+        return f"at={str(branch)[:7]}{base_part}{named}"
+    fingerprint = version.get("fingerprint")
+    if fingerprint:
+        run = f" run={version['plan_run_id']}" if version.get("plan_run_id") else ""
+        return f"plan={str(fingerprint)[:7]}{run}{named}"
+    return "version=none"
+
+
 def format_event_details(event_type: str, payload: dict[str, object]) -> str:
     if event_type == "agent.command":
         command = str(payload.get("command", "")).strip()
@@ -240,6 +255,9 @@ def format_event_details(event_type: str, payload: dict[str, object]) -> str:
             parts.append(f"next={next_step}")
         if payload.get("deferred"):
             parts.append("deferred=yes")
+        version = payload.get("version")
+        if isinstance(version, dict):
+            parts.append(_version_words(version))
         note = str(payload.get("note", "")).strip()
         if note:
             parts.append(f"note={truncate_text(note)}")

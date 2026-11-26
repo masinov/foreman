@@ -42,7 +42,10 @@ export function setTaskOverrides(client, taskId, executorOverrides, options) {
 
 /** Approve the human gate a task is waiting at. */
 export function approveTask(client, taskId, options) {
-  return client.post(`${task(taskId)}/approve`, undefined, options);
+  // `options.version` is what the page showed (the task's `gate_version`
+  // token); the approval is refused if it has changed since.
+  const { version, ...rest } = options ?? {};
+  return client.post(`${task(taskId)}/approve`, version ? { version } : undefined, rest);
 }
 
 /** Send a task back from its gate; the note is read by the next agent step. */

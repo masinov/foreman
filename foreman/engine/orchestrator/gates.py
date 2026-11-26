@@ -32,6 +32,7 @@ class HumanGateResume(OrchestratorBase):
         outcome: str,
         note: str | None = None,
         defer: bool = False,
+        seen_version: str | None = None,
     ) -> HumanGateResumeResult:
         """Apply one human-gate decision and continue execution when possible.
 
@@ -75,6 +76,7 @@ class HumanGateResume(OrchestratorBase):
             note=note,
             deferred=deferred,
             save=self.tasks.save,
+            seen_version=seen_version,
         )
         current_task, carried_output = record.task, record.carried_output
 
@@ -92,6 +94,8 @@ class HumanGateResume(OrchestratorBase):
                 deferred=True,
                 carried_output=carried_output,
                 note=note,
+                version=record.version,
+                version_named=record.version_named,
             )
 
         # Every task gets its own branch and worktree from the engine, in both
@@ -136,4 +140,6 @@ class HumanGateResume(OrchestratorBase):
             deferred=False,
             carried_output=carried_output,
             note=note,
+            version=record.version,
+            version_named=record.version_named,
         )

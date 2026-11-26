@@ -16,6 +16,13 @@ from uuid import uuid4
 from ..definitions.gate_steps import HUMAN_GATE_ROLE, blocked_kind, resolve_gate_steps
 from ..definitions.layers import project_definitions
 from ..definitions.workflows import WorkflowDefinition, WorkflowStep
+from ..domain.gate_version import (
+    MERGE_APPROVAL,
+    PLAN_APPROVAL,
+    GateVersion,
+    names_current,
+    plan_fingerprint,
+)
 from ..domain.models import HumanGateDecision, MergeWaiver, Project, Task, utc_now_text
 from ..history.records import RunRecords, new_id
 from ..notifications.delivery import NotificationDispatcher
@@ -32,6 +39,54 @@ MERGE_WAIVER_TYPES: frozenset[str] = frozenset(
 GATE_OUTCOMES: tuple[str, ...] = ("approve", "deny")
 
 
+class GateVersionChanged(MutationError):
+    """The version a decision names is no longer the current one."""
+
+    def __init__(self, message: str, current: GateVersion) -> None:
+        super().__init__(message)
+        self.current = current
+
+
+def current_gate_version(
+    store: ForemanStore, project: Project, task: Task, policy: str | None
+) -> GateVersion:
+    """What is in front of a person at a gate of ``policy`` for ``task``, now.
+
+    A merge approval is of the task branch's head and the default branch's
+    head; a plan approval is of the task's description and criteria and the
+    run whose plan it is. A gate with another policy has no version.
+    """
+
+    if policy == MERGE_APPROVAL:
+        branch = f"refs/heads/{task.branch_name}" if task.branch_name else None
+        try:
+            branch_sha = head_sha(project.repo_path, branch) if branch else None
+            base_sha = head_sha(project.repo_path, f"refs/heads/{project.default_branch}")
+        except Exception:  # noqa: BLE001 - no repository: the decision has no commit to name
+            branch_sha = base_sha = None
+        return GateVersion(kind=policy, branch_sha=branch_sha, base_sha=base_sha)
+    if policy == PLAN_APPROVAL:
+        runs = [r for r in store.list_runs(task_id=task.id) if r.role_id != HUMAN_GATE_ROLE]
+        return GateVersion(
+            kind=policy,
+            fingerprint=plan_fingerprint(task.description, task.acceptance_criteria),
+            plan_run_id=runs[-1].id if runs else None,
+        )
+    return GateVersion()
+
+
+def _changed_message(seen: str, current: GateVersion) -> str:
+    if current.kind == MERGE_APPROVAL:
+        return (
+            f"The branch moved: you saw {seen[:7]}, it is now at {current.short}. "
+            "Review the new version and decide again."
+        )
+    return (
+        f"The plan changed: you saw {seen[:7]}, it is now {current.short}. "
+        "Review the new version and decide again."
+    )
+
+
 @dataclass(frozen=True)
 class GateDecision:
     """A gate decision recorded, and the step the task now waits at."""
@@ -40,6 +95,8 @@ class GateDecision:
     outcome: str
     next_step: str | None
     deferred: bool
+    version: GateVersion = GateVersion()
+    version_named: bool = False
 
 
 @dataclass(frozen=True)
@@ -59,6 +116,8 @@ class GateRecord:
 
     task: Task
     carried_output: str | None
+    version: GateVersion = GateVersion()
+    version_named: bool = False
 
 
 def find_gate_stop(
@@ -115,6 +174,7 @@ def record_gate_decision(
     note: str | None,
     deferred: bool,
     save: Callable[[Task], None],
+    seen_version: str | None = None,
 ) -> GateRecord:
     """Write a gate decision: its run, its events, its row, and the task after it.
 
@@ -126,6 +186,21 @@ def record_gate_decision(
     """
 
     task = stop.task
+    gate_step = stop.workflow.get_step(stop.paused_step)
+    version = current_gate_version(
+        store, stop.project, task, gate_step.policy if gate_step else None
+    )
+    named = False
+    if seen_version is not None and seen_version.strip():
+        # The version the person saw. An approval of one that has since
+        # changed is refused; a send-back of it is not, it needs no version.
+        if not names_current(seen_version, version.token):
+            if outcome == "approve":
+                raise GateVersionChanged(
+                    _changed_message(seen_version.strip(), version), version
+                )
+        else:
+            named = True
     carried_output = task.workflow_carried_output
     if outcome == "deny" and note:
         carried_output = note
@@ -155,7 +230,14 @@ def record_gate_decision(
     }
     if note:
         resumed["note"] = note
+    if version.kind:
+        resumed["version"] = {**version.to_dict(), "named": named}
     records.emit_event(run, "workflow.resumed", resumed)
+    if version.branch_sha:
+        # The commit it decided on is the run's commit: the Activity line
+        # reads "Approved at abc1234" from it.
+        run.commit_sha = version.branch_sha
+        store.save_run(run)
     store.save_human_gate_decision(
         HumanGateDecision(
             id=new_id("hg"),
@@ -167,6 +249,11 @@ def record_gate_decision(
             decided_by="human",
             decided_at=utc_now_text(),
             run_id=run.id,
+            branch_sha=version.branch_sha,
+            base_sha=version.base_sha,
+            plan_fingerprint=version.fingerprint,
+            plan_run_id=version.plan_run_id,
+            version_named=named,
         )
     )
     task.status = "in_progress"
@@ -174,13 +261,22 @@ def record_gate_decision(
     task.workflow_current_step = stop.next_step.id if deferred else None
     task.workflow_carried_output = carried_output if deferred else None
     save(task)
-    return GateRecord(task=task, carried_output=carried_output)
+    return GateRecord(
+        task=task, carried_output=carried_output, version=version, version_named=named
+    )
 
 
 class GateMutations(MutationBase):
     """Gate decisions, and sending a waiting task back with guidance."""
 
-    def decide_gate(self, task: Task, outcome: str, note: str | None = None) -> GateDecision:
+    def decide_gate(
+        self,
+        task: Task,
+        outcome: str,
+        note: str | None = None,
+        *,
+        seen_version: str | None = None,
+    ) -> GateDecision:
         """Approve or deny a task waiting at a human gate of its workflow.
 
         The decision is recorded and the task left at the step it leads to,
@@ -191,7 +287,7 @@ class GateMutations(MutationBase):
             raise MutationError(f"Unknown gate decision: {outcome}.")
         clean_note = (note or "").strip() or None
         stop = find_gate_stop(self.store, task.id, outcome, self._project_workflow)
-        record_gate_decision(
+        recorded = record_gate_decision(
             self.store,
             RunRecords(self.store, NotificationDispatcher(self.store)),
             stop,
@@ -199,6 +295,7 @@ class GateMutations(MutationBase):
             note=clean_note,
             deferred=True,
             save=self._save_engine_state,
+            seen_version=seen_version,
         )
         decided = self.store.get_task(task.id) or task
         if self.proposal_id:
@@ -212,7 +309,14 @@ class GateMutations(MutationBase):
                 note=clean_note,
                 next_step=stop.next_step.id,
             )
-        return GateDecision(task=decided, outcome=outcome, next_step=stop.next_step.id, deferred=True)
+        return GateDecision(
+            task=decided,
+            outcome=outcome,
+            next_step=stop.next_step.id,
+            deferred=True,
+            version=recorded.version,
+            version_named=recorded.version_named,
+        )
 
     def _project_workflow(self, project: Project) -> WorkflowDefinition:
         """The project's workflow, its own over the shipped one (ADR-0024)."""

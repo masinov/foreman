@@ -6,6 +6,7 @@ import hmac
 import mimetypes
 import os
 from pathlib import Path
+from typing import Any
 
 import logging
 
@@ -33,6 +34,7 @@ from ..services.errors import (
     NotFoundError,
     ForbiddenError,
     InvalidRequestError,
+    VersionChangedError,
 )
 from ..store import ForemanStore
 from .context import (
@@ -325,6 +327,12 @@ def _add_error_envelope(app: FastAPI) -> None:
         return JSONResponse(
             _error_body(str(exc), "invalid_request", exc.field), status_code=400
         )
+
+    @app.exception_handler(VersionChangedError)
+    async def handle_version_changed(_: Request, exc: VersionChangedError) -> JSONResponse:
+        body: dict[str, Any] = _error_body(str(exc), "version_changed")
+        body["current"] = exc.current  # type: ignore[assignment]
+        return JSONResponse(body, status_code=409)
 
     @app.exception_handler(ActionFailedError)
     async def handle_action(_: Request, exc: ActionFailedError) -> JSONResponse:

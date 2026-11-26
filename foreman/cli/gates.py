@@ -137,6 +137,7 @@ def _handle_human_gate_decision(args: argparse.Namespace, *, outcome: str) -> in
                 outcome=outcome,
                 note=args.note,
                 defer=True,
+                seen_version=getattr(args, "version", None),
             )
         except OrchestratorError as exc:
             print(f"Failed to {outcome} task: {exc}", file=sys.stderr)
@@ -161,6 +162,8 @@ def _handle_human_gate_decision(args: argparse.Namespace, *, outcome: str) -> in
             )
         ),
     ]
+    if result.version.kind:
+        lines.append(_version_line(result.version, result.version_named))
     if args.note:
         lines.append(f"Note: {args.note}")
     if result.task.workflow_current_step:
@@ -171,12 +174,35 @@ def _handle_human_gate_decision(args: argparse.Namespace, *, outcome: str) -> in
     return 0
 
 
+def _version_line(version, named: bool) -> str:
+    """Say which version a decision was recorded against, and whether it was named."""
+
+    if version.branch_sha:
+        base = f", default branch {version.base_sha[:7]}" if version.base_sha else ""
+        what = f"branch {version.branch_sha[:7]}{base}"
+    elif version.fingerprint:
+        what = f"plan {version.fingerprint[:7]}"
+        if version.plan_run_id:
+            what += f" of run {version.plan_run_id}"
+    else:
+        what = "no version found"
+    how = "the version you named" if named else "no version named; the current one"
+    return f"Version: recorded against {what} ({how})"
+
+
 def register_approve(subparsers: argparse._SubParsersAction) -> None:
     """Add `foreman approve` to the parser."""
 
     approve_parser = subparsers.add_parser("approve", help="Approve a paused task.")
     approve_parser.add_argument("task_id", help="Task id or key (FOR-56).")
     approve_parser.add_argument("--note", help="Optional approval note.")
+    approve_parser.add_argument(
+        "--version",
+        help=(
+            "The version you reviewed: the branch's head commit for a merge, the plan's "
+            "fingerprint for a plan. The approval is refused if it has changed."
+        ),
+    )
     add_db_option(
         approve_parser,
         help_text=f"Path to the SQLite store containing the paused task. {DB_OPTION_NOTE}",

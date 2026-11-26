@@ -119,6 +119,8 @@ class HumanGateTests(OrchestratorTestCase):
                 for event in store.list_events(task_id=task.id)
                 if event.event_type == "workflow.resumed"
             ]
+            # The decision names the plan it approved: its fingerprint and run.
+            versions = [event.pop("version") for event in resumed_events]
             self.assertEqual(
                 resumed_events,
                 [
@@ -131,6 +133,9 @@ class HumanGateTests(OrchestratorTestCase):
                     }
                 ],
             )
+            self.assertEqual(versions[0]["kind"], "plan_approval")
+            self.assertEqual(versions[0]["plan_run_id"], runs[0].id)
+            self.assertFalse(versions[0]["named"])
 
     def test_a_deferred_approval_is_a_decision_the_engine_then_carries_out(self) -> None:
         repo_path, db_path = self.create_workspace()

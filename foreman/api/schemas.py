@@ -115,6 +115,12 @@ class BacklogPlan(_Body):
     requested_by: str | None = None
 
 
+class TaskApproval(_Body):
+    #: The version the person saw: the branch's head commit (a merge approval)
+    #: or the plan's fingerprint (a plan approval), from the task's `gate_version`.
+    version: str | None = None
+
+
 class TaskDenial(_Body):
     note: str | None = None
 
