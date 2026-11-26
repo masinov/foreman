@@ -279,6 +279,8 @@ class SprintService(Service):
                     "step_visit_counts": dict(task.step_visit_counts),
                     "awaiting_human_gate": self._at_human_gate(task, gates),
                     "gate_policy": self._gate_policy(task, gates),
+                    # What a row's Approve names: the branch's head or the plan.
+                    "gate_version": self._gate_version(task, project, gates),
                     "blocked_kind": blocked_kind(task, gates),
                     "executor_overrides": task.executor_overrides,
                     "source": task_source(task),

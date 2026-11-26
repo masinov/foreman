@@ -23,6 +23,7 @@ from ..domain.models import (
     Task,
 )
 from ..mutations import Mutations
+from ..mutations.gates import current_gate_version
 from ..store import ForemanStore
 from .errors import NotFoundError
 
@@ -116,6 +117,27 @@ class Service:
         if blocked_kind(task, gates) != "gate":
             return None
         return gates.gate_policies.get(task.workflow_current_step or "")
+
+    def _gate_version(
+        self, task: Task, project: Project | None, gates: WorkflowGateSteps
+    ) -> dict[str, str | None] | None:
+        """The version in front of a person at the gate a task waits at, or ``None``.
+
+        What a page shows the person, and names when they approve: the
+        branch's head for a merge, the plan's fingerprint for a plan.
+        """
+
+        policy = self._gate_policy(task, gates)
+        if project is None or policy is None:
+            return None
+        version = current_gate_version(
+            self.store,
+            project,
+            task,
+            policy,
+            plan_steps=gates.gate_sources.get(task.workflow_current_step or ""),
+        )
+        return version.to_dict() if version.kind else None
 
     @staticmethod
     def _at_human_gate(task: Task, gates: WorkflowGateSteps) -> bool:

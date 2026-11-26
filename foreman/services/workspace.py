@@ -27,6 +27,7 @@ from ..engine.control import (
     describe_engine,
 )
 from ..engine.limits import resolve_project_settings
+from ..mutations.gates import current_gate_version
 from ..store import ForemanStore
 from ..store.overview import MILESTONE_KINDS, MilestoneRow
 from .views import serialize_level_block
@@ -246,6 +247,9 @@ class WorkspaceReader:
             }
         if item.kind == "approve_merge" and task is not None:
             entry["evidence"] = _merge_facts(task)
+        if item.kind in ("approve_merge", "approve_plan") and task is not None:
+            # What the row shows a person, and what its Approve names.
+            entry["gate_version"] = self._gate_version(projects[item.project_id], task)
         if item.kind == "unblock" and task is not None:
             entry["blocked"] = {
                 "reason": (task.blocked_reason or "").strip() or None,
@@ -366,6 +370,20 @@ class WorkspaceReader:
         }
 
     # ── helpers ───────────────────────────────────────────────────────────
+
+    def _gate_version(self, project: Project, task: Task) -> dict[str, str | None] | None:
+        """The version at the gate a task waits at: its branch's head, or its plan."""
+
+        gates = self._gate_steps(project)
+        step = task.workflow_current_step or ""
+        version = current_gate_version(
+            self.store,
+            project,
+            task,
+            gates.gate_policies.get(step),
+            plan_steps=gates.gate_sources.get(step),
+        )
+        return version.to_dict() if version.kind else None
 
     def _gate_steps(self, project: Project) -> WorkflowGateSteps:
         # Resolving a workflow reads every role and workflow TOML, so each

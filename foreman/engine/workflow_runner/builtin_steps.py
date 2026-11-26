@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import time
 
-from ...definitions.workflows import WorkflowStep
+from ...definitions.gate_steps import HUMAN_GATE_ROLE, steps_into
+from ...definitions.workflows import WorkflowDefinition, WorkflowStep
 from ...domain.errors import EngineCommandInterrupt
 from ...domain.models import HumanGateDecision, Project, Run, Task, utc_now_text
 from ...domain.outcomes import (
@@ -16,6 +17,7 @@ from ...domain.outcomes import (
 )
 from ...domain.policy import PolicyMatrix, describe_resolution
 from ...history.records import new_id
+from ...repo.git import GitError, head_sha
 from ...mutations.gates import current_gate_version
 from ..branch_sync import task_working_dir
 from ..builtins.base import BuiltinEventRecord
@@ -39,6 +41,7 @@ class BuiltinSteps(WorkflowRunnerBase):
         step: str,
         visit_count: int,
         carried_output: str | None,
+        workflow: WorkflowDefinition | None = None,
     ) -> tuple[Run, str, str] | None:
         """Run a human-gate step. Returns None when the task now waits for a person.
 
@@ -61,7 +64,7 @@ class BuiltinSteps(WorkflowRunnerBase):
         gate_policy = gate_policy_decision(project, task, step_def)
         if gate_policy == "auto":
             outcome, detail = self._auto_approve_gate(
-                run, project, task, step_def
+                run, project, task, step_def, workflow=workflow
             )
         else:
             result = self.builtin_executor.execute(
@@ -228,22 +231,76 @@ class BuiltinSteps(WorkflowRunnerBase):
             },
         )
 
+    def _moved_since_approval(
+        self,
+        project: Project,
+        workflow: WorkflowDefinition,
+        task: Task,
+        step_def: WorkflowStep,
+    ) -> tuple[str, str, str] | None:
+        """A merge step whose branch moved after the gate before it approved it.
+
+        What lands must be what was approved: the merge-approval decision
+        that leads to this step recorded the branch's head. Returns the gate
+        step, the approved commit and the branch's head now when they differ;
+        None when nothing was recorded or the branch is where it was approved.
+        """
+
+        if step_def.role != "_builtin:merge" or not task.branch_name:
+            return None
+        gates = [
+            transition.from_step
+            for transition in workflow.transitions
+            if transition.to_step == step_def.id
+            and transition.trigger == "completion:approve"
+            and (gate := workflow.get_step(transition.from_step)) is not None
+            and gate.role == HUMAN_GATE_ROLE
+        ]
+        decisions = [
+            decision
+            for gate_step in gates
+            if (decision := self.store.get_human_gate_decision(task.id, gate_step)) is not None
+        ]
+        if not decisions:
+            return None
+        decision = max(decisions, key=lambda found: found.decided_at)
+        if decision.decision != "approve" or not decision.branch_sha:
+            return None
+        try:
+            head = head_sha(project.repo_path, f"refs/heads/{task.branch_name}")
+        except (GitError, OSError):
+            return None  # the merge itself says what is wrong with the branch
+        if not head or head == decision.branch_sha:
+            return None
+        return decision.workflow_step, decision.branch_sha, head
+
     def _auto_approve_gate(
         self,
         run: Run,
         project: Project,
         task: Task,
         step: WorkflowStep,
+        *,
+        workflow: WorkflowDefinition | None = None,
     ) -> tuple[str, str]:
-        """Approve a policy-governed gate on the engine's behalf, with an audit record."""
+        """Approve a policy-governed gate on the engine's behalf, with an audit record.
+
+        The decision is recorded against the version at the gate, as a
+        person's is: the commits of a merge, the plan and its run.
+        """
 
         detail = f"Auto-approved by policy ({step.policy}=auto)."
-        self.records.emit_event(
-            run,
-            "workflow.gate_auto_approved",
-            {"step": step.id, "policy": step.policy},
+        version = current_gate_version(
+            self.store,
+            project,
+            task,
+            step.policy,
+            plan_steps=steps_into(workflow, step.id) if workflow is not None else None,
         )
-        version = current_gate_version(self.store, project, task, step.policy)
+        payload: dict[str, object] = {"step": step.id, "policy": step.policy}
+        if version.kind:
+            payload["version"] = {**version.to_dict(), "named": False}
+        self.records.emit_event(run, "workflow.gate_auto_approved", payload)
         self.records.complete_run(
             run,
             status="completed",

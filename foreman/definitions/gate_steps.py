@@ -53,6 +53,9 @@ class WorkflowGateSteps:
     #: Each gate step's policy name (``plan_approval``, ``merge_approval``), or
     #: ``None`` for a gate that always waits for a person.
     gate_policies: Mapping[str, str | None] = field(default_factory=dict)
+    #: The steps each gate is reached from: the step whose work it decides on
+    #: (a plan approval is of the plan the step before it wrote).
+    gate_sources: Mapping[str, frozenset[str]] = field(default_factory=dict)
 
 #: Used when no workflow could be resolved for a project.
 UNKNOWN_WORKFLOW = WorkflowGateSteps(step_ids=None)
@@ -94,6 +97,21 @@ def workflow_gate_steps(workflow: WorkflowDefinition) -> WorkflowGateSteps:
             for step in workflow.steps
             if step.role == HUMAN_GATE_ROLE
         },
+        gate_sources={
+            step.id: steps_into(workflow, step.id)
+            for step in workflow.steps
+            if step.role == HUMAN_GATE_ROLE
+        },
+    )
+
+
+def steps_into(workflow: WorkflowDefinition, step_id: str) -> frozenset[str]:
+    """The steps a workflow reaches ``step_id`` from (itself left out)."""
+
+    return frozenset(
+        transition.from_step
+        for transition in workflow.transitions
+        if transition.to_step == step_id and transition.from_step != step_id
     )
 
 
