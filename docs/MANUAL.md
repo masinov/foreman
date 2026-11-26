@@ -1164,7 +1164,7 @@ failure the row stays failed and Foreman emits `notification.failed`.
 The merge gate rests on the approving review of the branch head (§10). Foreman
 accepts that approval only when the verdict agrees with it: no S1 or S2
 finding, each of the task's criteria listed, each one verified or the
-reviewer's judgement, and, as the reviewer role's `approve_needs` asks (§9),
+reviewer's judgement, and, as the reviewer role's `approve_needs` asks (§7),
 each verified criterion resting on a command the review ran (`ran`), or on one
 it ran or a file it read (`checked`, the default). A criterion resting only on
 the developer's report is not verified, and a command the verdict cites that
