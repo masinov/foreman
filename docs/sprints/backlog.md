@@ -333,7 +333,8 @@ Base work that this framing makes necessary:
      - people and the manager (roadmap stage 2);
      - settings;
      - at workspace level: projects, shared roles and workflows, machines
-       (direction 1);
+       and the workers on them (direction 1; ADR-0043: which workers run,
+       idle or on which task, their restarts; owner, 2026-11-26);
      - on the sprint: its workflow's checks and releases (directions 3 and
        4);
      - open, not decided (owner, 2026-11-23):
@@ -350,6 +351,14 @@ Base work that this framing makes necessary:
    - **Already decided:**
      - the four levels;
      - one screen at a time.
+   - **The left bar (owner, 2026-11-26):** every view is an entry of a menu
+     down the left side of the screen, as Claude's and ChatGPT's web apps
+     have it; choosing a view can open its own submenu beneath it, which
+     allows deeper navigation than a top bar. Whether the breadcrumb stays
+     is decided with it: the left bar may make it redundant. To settle in
+     the design: where the project switcher and the four levels sit in the
+     bar, what the submenus hold (a project's sprints, a sprint's tasks?),
+     what is left in the top bar, and the bar on a phone (a drawer).
    - **No longer a rule:** "no code browser" (2026-06-16). It came from
      seeing Foreman as working beside VS Code. Since 2026-09-03 and
      2026-11-19, Foreman is where the work is done: people specify, accept,

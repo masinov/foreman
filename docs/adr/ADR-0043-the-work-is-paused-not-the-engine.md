@@ -231,9 +231,11 @@ The program that runs the work is called a **worker**.
   project, restarting with a growing wait; a separate slice). With it,
   "no worker" appears only after its restarts have given up, and the
   button reads Restart.
-- **A Workers view** in workspace settings (which workers are alive, idle
-  or on which task, and their restart) comes with the supervisor or with
-  the machine pool, whichever is first.
+- **A Workers view** (which workers are alive, on which machine, idle or on
+  which task, their restarts and Restart) is part of the machines view of
+  the views designed together (backlog, owner direction 6; owner,
+  2026-11-26), not a settings page. It is built with the supervisor or the
+  machine pool, whichever is first, after that design.
 - **The command line keeps worker control:** `foreman serve` starts one and
   `foreman engine shutdown` ends one. Ending a worker holds nothing:
   another worker, or the supervisor, carries on with the work.
