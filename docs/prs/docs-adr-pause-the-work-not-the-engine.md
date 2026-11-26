@@ -11,6 +11,12 @@
 - Pauses become rows in a `pauses` table that workers read at their
   existing poll sites; `pause`, `resume` and `stop_task` leave the command
   table.
+- Revised after the owner's review and a second opinion (Fable 5.2): the
+  last action wins at and below its level; Block stays as the long park;
+  Stop only while a step runs, with "Stopping"; a pause holds everything
+  downstream, so a paused sprint neither finishes nor starts the next; no
+  names in status lines, toasts or buttons; storage decided by the most
+  specific row, not by clocks.
 
 ## Scope
 
@@ -21,6 +27,7 @@ listed in the ADR land with the dashboard slice, once the ADR is accepted.
 
 - `docs/adr/ADR-0043-the-work-is-paused-not-the-engine.md`
 - `docs/adr/README.md`
+- `docs/sprints/backlog.md` (owner direction 10, dependencies across sprints)
 - this note.
 
 ## Migrations
