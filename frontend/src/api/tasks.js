@@ -109,14 +109,22 @@ export function getFileDiff(client, taskId, path, options) {
   return client.get(`${task(taskId)}/changes/diff${queryString({ path })}`, options);
 }
 
-/** A document the task rests on, as it was at the commit it was named at. */
-export function getTaskDocument(client, taskId, path, options) {
-  return client.get(`${task(taskId)}/documents${queryString({ path })}`, options);
+/**
+ * A document the task rests on, as it was at the commit its entry was named
+ * at. The heading tells apart two entries of one path, each with its commit.
+ */
+export function getTaskDocument(client, taskId, { path, heading }, options) {
+  return client.get(`${task(taskId)}/documents${queryString({ path, heading })}`, options);
 }
 
-/** What a merge changed in a document the task rests on, since the task named it. */
-export function getTaskDocumentChange(client, taskId, path, options) {
-  return client.get(`${task(taskId)}/documents/diff${queryString({ path })}`, options);
+/** What a merge changed in a document the task rests on, since its entry was named. */
+export function getTaskDocumentChange(client, taskId, { path, heading }, options) {
+  return client.get(`${task(taskId)}/documents/diff${queryString({ path, heading })}`, options);
+}
+
+/** Mark one document the task rests on as read at the default branch's commit now. */
+export function restampTaskDocument(client, taskId, { path, heading }, options) {
+  return client.post(`${task(taskId)}/documents/restamp`, { path, heading: heading || "" }, options);
 }
 
 /** Checks as facts (measured by the engine) and claims (reported by an agent). */

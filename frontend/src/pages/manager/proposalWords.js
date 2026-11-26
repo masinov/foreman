@@ -24,6 +24,11 @@ function documentWords(document) {
   return document.heading ? `${document.path}, ${document.heading}` : document.path;
 }
 
+/** The documents an operation names, one after another. */
+function documentsWords(documents) {
+  return documents.map(documentWords).join("; ");
+}
+
 function taskOf(names, taskId) {
   const known = names?.tasks?.[taskId];
   // A task the proposal creates has no key yet: it is named by its title.
@@ -74,8 +79,11 @@ function rowsOf(operation, names) {
       return [{ term: "Start", text: sprint }];
     case "finish_sprint":
       return [{ term: "Finish", text: sprint }];
-    case "file_task":
-      return [{ term: "File", text: `${operation.title}, ${operation.accept ? "accepted" : "in the backlog"}` }];
+    case "file_task": {
+      const rows = [{ term: "File", text: `${operation.title}, ${operation.accept ? "accepted" : "in the backlog"}` }];
+      if ((operation.rests_on || []).length) rows.push({ term: "Rests on", text: documentsWords(operation.rests_on) });
+      return rows;
+    }
     case "add_task": {
       // Everything a person confirms is on the card: what the task is and what will prove it.
       const after = (operation.waits_for || []).length
@@ -84,7 +92,7 @@ function rowsOf(operation, names) {
       const rows = [{ term: "Add", text: `${operation.title}, to ${sprint}${after}` }];
       if (operation.description) rows.push({ term: "What", text: operation.description });
       if (operation.acceptance_criteria) rows.push({ term: "Done when", text: operation.acceptance_criteria });
-      if ((operation.rests_on || []).length) rows.push({ term: "Rests on", text: operation.rests_on.map(documentWords).join(", ") });
+      if ((operation.rests_on || []).length) rows.push({ term: "Rests on", text: documentsWords(operation.rests_on) });
       return rows;
     }
     case "accept_task":
@@ -104,6 +112,8 @@ function rowsOf(operation, names) {
       const fields = Object.keys(TASK_FIELDS).filter((name) => operation[name] !== undefined);
       const rows = [{ term: "Change", task, text: `its ${list(fields.map((name) => TASK_FIELDS[name]))}` }];
       if (operation.title !== undefined) rows.push({ term: "Title", text: operation.title });
+      if (operation.rests_on !== undefined)
+        rows.push({ term: "Rests on", text: operation.rests_on.length ? documentsWords(operation.rests_on) : "no document" });
       return rows;
     }
     case "block_task":

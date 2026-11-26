@@ -27,6 +27,19 @@ describe("what a run recorded, in words", () => {
     expect(
       sayEntry(entry("engine.document_changed", { path: "docs/adr/ADR-0041.md", heading: "", named_commit: "def5678abc", merge_sha: "abc1234def", merged_task_key: "FOR-80" })).says,
     ).toBe("docs/adr/ADR-0041.md changed in FOR-80's merge (abc1234) since this task named it at def5678");
+    expect(
+      sayEntry(
+        entry("engine.document_changed", {
+          path: "docs/adr/ADR-0041.md",
+          heading: "6",
+          headings: ["6", "7"],
+          named_commit: "def5678abc",
+          named_commits: ["def5678abc", "1234567abc"],
+          merge_sha: "abc1234def",
+          merged_task_key: "FOR-80",
+        }),
+      ).says,
+    ).toBe("docs/adr/ADR-0041.md, 6 and 7 changed in FOR-80's merge (abc1234) since this task named it at def5678 and 1234567");
   });
 
   it("says whether the project's folder was brought to the merge", () => {

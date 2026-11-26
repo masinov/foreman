@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 
-import { getTaskDocument, getTaskDocumentChange } from "../../api/tasks";
+import { useApiClient } from "../../api/ApiProvider";
+import { errorSentence } from "../../api/client";
+import { getTaskDocument, getTaskDocumentChange, restampTaskDocument } from "../../api/tasks";
 import { useResource } from "../../api/useResource";
 import { Dialog } from "../../ui/Dialog";
 import { Mono } from "../../ui/Mono";
@@ -11,8 +13,8 @@ import { parseDiff } from "./diff";
 
 /** A document as it was at the commit it was named at, in a dialog. */
 function DocumentDialog({ task, document, onClose }) {
-  const file = useResource(["task-document", task.id, document.path, document.commit], (client, options) =>
-    getTaskDocument(client, task.id, document.path, options),
+  const file = useResource(["task-document", task.id, document.path, document.heading, document.commit], (client, options) =>
+    getTaskDocument(client, task.id, document, options),
   );
   return (
     <Dialog open title={document.path} description={`As it was at ${shortCommit(document.commit)}.`} onClose={onClose}>
@@ -35,8 +37,9 @@ function DocumentDialog({ task, document, onClose }) {
 
 /** What changed in a document since the task named it: the diff between the two commits. */
 function ChangeDialog({ task, document, onClose }) {
-  const change = useResource(["task-document-change", task.id, document.path, document.changed.commit], (client, options) =>
-    getTaskDocumentChange(client, task.id, document.path, options),
+  const change = useResource(
+    ["task-document-change", task.id, document.path, document.heading, document.commit, document.changed.commit],
+    (client, options) => getTaskDocumentChange(client, task.id, document, options),
   );
   const rows = change.data ? parseDiff(change.data.diff) : [];
   return (
@@ -66,12 +69,33 @@ function ChangeDialog({ task, document, onClose }) {
 /**
  * The documents the task rests on, each with the commit it was named at and
  * a link that opens the file as it was then. Nothing when none is named.
+ * A document a merge changed since says so, opens the change, and can be
+ * marked as read at the default branch's commit now, which ends the notice.
  */
-export function RestsOn({ task }) {
+export function RestsOn({ task, onChanged }) {
+  const client = useApiClient();
   const [open, setOpen] = useState(null);
   const [diff, setDiff] = useState(null);
+  const [marking, setMarking] = useState(null);
+  const [error, setError] = useState(null);
   const documents = task.rests_on ?? [];
   if (!documents.length) return null;
+
+  async function markRead(item) {
+    const key = `${item.path}#${item.heading}`;
+    setMarking(key);
+    setError(null);
+    try {
+      const updated = await restampTaskDocument(client, task.id, item);
+      const entry = (updated?.rests_on ?? []).find((other) => other.path === item.path && other.heading === item.heading);
+      onChanged?.(`Marked ${item.path} as read at ${shortCommit(entry?.commit ?? item.changed.default_commit)}.`);
+    } catch (failure) {
+      setError(errorSentence(failure));
+    } finally {
+      setMarking(null);
+    }
+  }
+
   return (
     <section className="task-section" aria-labelledby="task-rests-on">
       <SectionHeading id="task-rests-on" title="Rests on" />
@@ -94,12 +118,25 @@ export function RestsOn({ task }) {
                 </span>{" "}
                 <button type="button" className="row-link rests-on__diff" onClick={() => setDiff(item)}>
                   See what changed
+                </button>{" "}
+                <button
+                  type="button"
+                  className="row-link rests-on__read"
+                  disabled={marking === `${item.path}#${item.heading}`}
+                  onClick={() => markRead(item)}
+                >
+                  {item.changed.default_commit ? `Mark as read at ${shortCommit(item.changed.default_commit)}` : "Mark as read"}
                 </button>
               </>
             ) : null}
           </li>
         ))}
       </ul>
+      {error ? (
+        <p className="notice notice--error" role="alert">
+          {error}
+        </p>
+      ) : null}
       {diff ? <ChangeDialog task={task} document={diff} onClose={() => setDiff(null)} /> : null}
       {open ? <DocumentDialog task={task} document={open} onClose={() => setOpen(null)} /> : null}
     </section>

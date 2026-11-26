@@ -96,6 +96,13 @@ function compact(value) {
   return clip(values.join(" "));
 }
 
+/** The headings a document change names, after its path: ", 6" or ", 6 and 7"; nothing for the whole file. */
+function documentHeadings(d) {
+  const headings = (Array.isArray(d.headings) ? d.headings : [d.heading]).filter(Boolean);
+  if (!headings.length) return "";
+  return `, ${headings.length > 1 ? `${headings.slice(0, -1).join(", ")} and ${headings[headings.length - 1]}` : headings[0]}`;
+}
+
 function join(parts, separator = " · ") {
   return parts.filter(Boolean).join(separator);
 }
@@ -248,7 +255,7 @@ export function sayEntry(entry) {
       return { says: `Needs a user: ${humanize(d.trigger).toLowerCase()}` };
     case "engine.document_changed":
       return {
-        says: `${d.path}${d.heading ? `, ${d.heading}` : ""} changed in ${d.merged_task_key ? `${d.merged_task_key}'s` : "another task's"} merge (${shortSha(d.merge_sha)}) since this task named it at ${shortSha(d.named_commit)}`,
+        says: `${d.path}${documentHeadings(d)} changed in ${d.merged_task_key ? `${d.merged_task_key}'s` : "another task's"} merge (${shortSha(d.merge_sha)}) since this task named it at ${(Array.isArray(d.named_commits) && d.named_commits.length ? d.named_commits : [d.named_commit]).map(shortSha).join(" and ")}`,
       };
     case "engine.task_created":
       return { says: "Filed a task", body: d.title || "", prose: true };

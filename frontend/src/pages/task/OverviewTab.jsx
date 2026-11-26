@@ -259,7 +259,7 @@ export function OverviewTab({ task, changed }) {
       <div className="page-overview__main">
         <Steps task={task} workflow={workflow} />
         <Filed task={task} />
-        <RestsOn task={task} />
+        <RestsOn task={task} onChanged={changed} />
       </div>
       <aside className="page-overview__aside" aria-label="Details and overrides">
         <Details task={task} workflow={workflow} />

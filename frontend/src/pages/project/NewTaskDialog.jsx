@@ -135,7 +135,7 @@ export function NewTaskDialog({ projectId, sprint = null, open, onClose, onFiled
         />
         <Field
           label="Documents it rests on"
-          hint="Optional. One per line: a path in the repository, or path#heading. Each must be on the default branch."
+          hint="Optional. One per line: a path in the repository, or path#heading (path #heading when the path has a #). Each must be on the default branch."
           multiline
           value={restsOn}
           onChange={(event) => setRestsOn(event.target.value)}
