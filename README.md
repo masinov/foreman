@@ -237,7 +237,7 @@ single-model fallback; a model pinned for a step never moves up (ADR-0041).
 A manager can differentiate dispatch per task:
 
 ```bash
-foreman task add <project> --title ... --criteria ... --complexity large
+foreman task add <project> --title ... --criteria ...
 foreman task override <task-id> --step develop=MiniMax-M2 --step review=claude-opus-4-8 --ladder-start claude-opus-4-8
 ```
 

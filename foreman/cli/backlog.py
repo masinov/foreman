@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ..domain.models import BACKLOG_STATES, TASK_COMPLEXITIES, TASK_TYPES
+from ..domain.models import BACKLOG_STATES, TASK_TYPES
 from ..mutations import MutationError
 from ..services.backlog import BACKLOG_PAGE_LIMIT, BacklogQueryError, read_backlog
 from ..store import ForemanStore
@@ -113,7 +113,6 @@ def handle_backlog_add(args: argparse.Namespace) -> int:
                 description=args.description,
                 acceptance_criteria=args.criteria,
                 priority=args.priority,
-                complexity=args.complexity,
                 created_by=mutations.actor or "human",
                 accept=args.accept,
             )
@@ -291,7 +290,6 @@ def register_backlog(subparsers: argparse._SubParsersAction) -> None:
     backlog_add.add_argument("--criteria", help="Acceptance criteria.")
     backlog_add.add_argument("--description", help="Task description.")
     backlog_add.add_argument("--priority", type=int, default=0, help="Priority (0 first).")
-    backlog_add.add_argument("--complexity", choices=TASK_COMPLEXITIES, help="Complexity hint.")
     backlog_add.add_argument(
         "--accept",
         action="store_true",

@@ -83,7 +83,6 @@ export function backlogTask(id, title, state, fields = {}) {
     status: state === "filed" ? "triage" : "todo",
     task_type: "fix",
     priority: 0,
-    complexity: null,
     description: null,
     acceptance_criteria: null,
     created_by: "human",

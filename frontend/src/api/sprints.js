@@ -56,7 +56,7 @@ export function transitionSprint(client, sprintId, status, options) {
 export function createSprintTask(
   client,
   sprintId,
-  { title, taskType, description, acceptanceCriteria, complexity, dependsOn = [] },
+  { title, taskType, description, acceptanceCriteria, dependsOn = [] },
   options,
 ) {
   return client.post(
@@ -66,7 +66,6 @@ export function createSprintTask(
       task_type: taskType,
       description: description || null,
       acceptance_criteria: acceptanceCriteria || null,
-      complexity: complexity || null,
       depends_on: dependsOn,
     },
     options,

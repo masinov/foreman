@@ -435,7 +435,7 @@ class BacklogMutationsTests(unittest.TestCase):
         self.assertEqual(self.events(task.id, "engine.attention_needed"), [])
 
     def test_filing_refuses_a_blank_title_or_an_unknown_type(self) -> None:
-        for fields in ({"title": "  "}, {"title": "x", "task_type": "bug"}, {"title": "x", "complexity": "huge"}):
+        for fields in ({"title": "  "}, {"title": "x", "task_type": "bug"}):
             with self.subTest(fields=fields), self.assertRaises(MutationError):
                 self.mutations.file_task(self.project, **fields)  # type: ignore[arg-type]
         self.assertEqual(self.store.list_tasks(project_id="p1"), [])

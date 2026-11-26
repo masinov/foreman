@@ -226,7 +226,6 @@ class TaskService(Service):
             "dependencies": self._dependencies(task),
             # What waits for it, so a user sees what holding it holds (ADR-0043).
             "needed_by": needed_by(self.store, task),
-            "complexity": task.complexity,
             "executor_overrides": task.executor_overrides or {},
             "awaiting_human_gate": self._at_human_gate(task, gates),
             "gate_policy": self._gate_policy(task, gates),
@@ -264,14 +263,12 @@ class TaskService(Service):
         task_type: str = "feature",
         acceptance_criteria: str | None = None,
         description: str | None = None,
-        complexity: str | None = None,
         depends_on: list[str] | None = None,
     ) -> dict[str, Any]:
         """Create one task in a sprint.
 
         Mirrors the ``foreman task add`` CLI surface: optional ``description``,
-        ``complexity`` (``small``/``medium``/``large``), and ``depends_on`` task
-        ids (validated to exist in the same project).
+        and ``depends_on`` task ids (validated to exist in the same project).
         """
 
         sprint = self._require_sprint(sprint_id)
@@ -282,7 +279,6 @@ class TaskService(Service):
                 task_type=task_type,
                 acceptance_criteria=acceptance_criteria,
                 description=description,
-                complexity=complexity,
                 depends_on=depends_on or (),
             )
         except MutationError as exc:
@@ -295,7 +291,6 @@ class TaskService(Service):
             "task_type": task.task_type,
             "acceptance_criteria": task.acceptance_criteria,
             "description": task.description,
-            "complexity": task.complexity,
             "depends_on_task_ids": task.depends_on_task_ids,
             "order_index": task.order_index,
             "created_at": task.created_at,

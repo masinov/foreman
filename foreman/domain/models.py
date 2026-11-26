@@ -75,8 +75,6 @@ TASK_TYPES: tuple[TaskType, ...] = (
     "spike",
     "chore",
 )
-TASK_COMPLEXITIES: tuple[str, ...] = ("small", "medium", "large")
-
 
 GATE_POLICY_NAMES: frozenset[str] = frozenset(GATE_DECISIONS)
 
@@ -266,7 +264,6 @@ class Task:
     #: reset by a restart or a conflict send-back.
     step_failures: dict[str, dict[str, int]] = field(default_factory=dict)
     executor_overrides: dict[str, Any] = field(default_factory=dict)
-    complexity: str | None = None
     completion_evidence: CompletionEvidence | None = None
     #: Where the task came from when another system filed it through the
     #: intake API: the calling system, its own identifier for the work, a link

@@ -95,7 +95,6 @@ _TASK_EDITS = (
     _opt("description", "text"),
     _opt("acceptance_criteria", "text"),
     _opt("priority", "int"),
-    _opt("complexity", "words"),
     _opt("depends_on_task_ids", "id_list"),
 )
 
@@ -127,7 +126,6 @@ OPERATION_KINDS: dict[str, OperationKind] = {
                 _opt("description", "text"),
                 _opt("acceptance_criteria", "text"),
                 _opt("priority", "int"),
-                _opt("complexity", "words"),
                 _opt("accept", "bool"),
                 _opt("ref", "words"),
             ),
@@ -142,7 +140,6 @@ OPERATION_KINDS: dict[str, OperationKind] = {
                 _opt("description", "text"),
                 _opt("acceptance_criteria", "text"),
                 _opt("priority", "int"),
-                _opt("complexity", "words"),
                 # A name other operations of the same proposal use for this
                 # task, which has no id until the proposal is confirmed.
                 _opt("ref", "words"),
@@ -391,7 +388,6 @@ def apply_operation(
                 description=operation.get("description"),
                 acceptance_criteria=operation.get("acceptance_criteria"),
                 priority=operation.get("priority", 0),
-                complexity=operation.get("complexity"),
                 accept=bool(operation.get("accept", False)),
             )
             name_created(filed.task.id)
@@ -405,7 +401,6 @@ def apply_operation(
                 description=operation.get("description"),
                 acceptance_criteria=operation.get("acceptance_criteria"),
                 priority=operation.get("priority", 0),
-                complexity=operation.get("complexity"),
                 accept=True,
             )
             mutations.plan_tasks([filed.task], sprint=target_sprint)

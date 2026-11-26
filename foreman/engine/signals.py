@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from ..domain.models import TASK_COMPLEXITIES, TASK_TYPES, Project, Run, Task
+from ..domain.models import TASK_TYPES, Project, Run, Task
 from ..mutations import Mutations
 from ..definitions.roles import RoleDefinition
 from ..store import ForemanStore
@@ -107,8 +107,6 @@ class SignalHandler:
             # Follow-up work an agent finds goes to the backlog, filed under
             # the project's triage policy like any other filed work. It never
             # joins the sprint the agent is running in (ADR-0021).
-            raw_complexity = optional_string(payload.get("complexity"))
-            complexity = raw_complexity if raw_complexity in TASK_COMPLEXITIES else None
             task_type = optional_string(payload.get("task_type")) or "feature"
             if task_type not in TASK_TYPES:
                 self.records.emit_event(
@@ -134,7 +132,6 @@ class SignalHandler:
                 task_type=task_type,
                 description=optional_string(payload.get("description")),
                 acceptance_criteria=optional_string(payload.get("criteria")),
-                complexity=complexity,
                 created_by=f"agent:{role_id}",
                 event_payload={"filed_from_task_id": task.id, "filed_from_run_id": run.id},
             )

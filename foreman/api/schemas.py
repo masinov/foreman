@@ -51,7 +51,6 @@ class TaskCreate(_Body):
     task_type: str = "feature"
     acceptance_criteria: str | None = None
     description: str | None = None
-    complexity: str | None = None
     depends_on: list[str] | None = None
 
 
@@ -89,7 +88,6 @@ class BacklogFile(_Body):
     description: str | None = None
     acceptance_criteria: str | None = None
     priority: int = 0
-    complexity: str | None = None
     #: File it already accepted: the person filing it is the one deciding.
     accept: bool = False
     requested_by: str | None = None

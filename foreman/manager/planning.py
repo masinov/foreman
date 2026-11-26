@@ -43,7 +43,6 @@ _TASK_RULES = [
     "  found by reading the repository. Say what is out of scope.",
     "- acceptance_criteria: one per line, each something a reviewer can check",
     "  against the diff or a test.",
-    "- complexity: small or medium.",
     "- waits_for: only where a task needs another's result to start. Give each",
     "  task a `ref` and name refs there.",
 ]

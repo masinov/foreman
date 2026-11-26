@@ -259,7 +259,6 @@ class ReportService(Service):
                 "blocked_reason": task.blocked_reason,
                 "blocked_kind": kind,
                 "workflow_current_step": task.workflow_current_step,
-                "complexity": task.complexity,
                 "executor_overrides": task.executor_overrides,
                 "step_visit_counts": dict(task.step_visit_counts),
             },

@@ -9,7 +9,6 @@ from urllib.parse import urlsplit
 
 from ..domain.api_tokens import INTAKE_SCOPE
 from ..domain.models import (
-    TASK_COMPLEXITIES,
     TASK_TYPES,
     ApiToken,
     Sprint,
@@ -76,7 +75,6 @@ class IntakeService(Service):
         acceptance_criteria: str | None = None,
         task_type: str = "fix",
         priority: int = 0,
-        complexity: str | None = None,
         source: dict[str, Any] | None = None,
         sprint_id: str | None = None,
     ) -> dict[str, Any]:
@@ -85,7 +83,9 @@ class IntakeService(Service):
         Returns the task serialized as ``GET /api/tasks/{id}`` serializes it,
         plus ``created``: False means the same ``(system, external_ref)`` was
         already filed and this call changed nothing. The transport turns that
-        flag into 201 or 200.
+        flag into 201 or 200. The transport takes no ``complexity``: a body
+        that carries one is accepted and the value dropped there (Foreman has
+        no task size).
         """
 
         project = self._require_project(project_id)
@@ -97,11 +97,6 @@ class IntakeService(Service):
             raise InvalidRequestError(
                 f"Unsupported task type: {task_type}. "
                 f"Expected one of: {', '.join(TASK_TYPES)}."
-            )
-        if complexity is not None and complexity not in TASK_COMPLEXITIES:
-            raise InvalidRequestError(
-                f"Unsupported complexity: {complexity}. "
-                f"Expected one of: {', '.join(TASK_COMPLEXITIES)}."
             )
         try:
             priority_value = int(priority or 0)
@@ -147,7 +142,6 @@ class IntakeService(Service):
                 description=description,
                 acceptance_criteria=acceptance_criteria,
                 priority=priority_value,
-                complexity=complexity,
                 # The audit trail names the token, never the secret.
                 created_by=f"api:{token.name}",
                 source=source_fields,

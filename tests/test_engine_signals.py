@@ -129,7 +129,7 @@ class AgentSignalPersistenceTests(unittest.TestCase):
                 self.assertEqual(attention[0].payload["task_id"], "t")
                 self.assertEqual(store.get_task("t").status, "blocked")
 
-    def test_signal_task_created_persists_valid_complexity_and_ignores_invalid(self) -> None:
+    def test_signal_task_created_ignores_a_complexity(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "foreman.db"
             with ForemanStore(db_path) as store:
@@ -153,18 +153,9 @@ class AgentSignalPersistenceTests(unittest.TestCase):
                         timestamp="2026-06-12T10:00:00Z",
                     ),
                 )
-                orchestrator.signals.persist_agent_event(
-                    run, task, project, "architect",
-                    AgentEventRecord(
-                        event_type="signal.task_created",
-                        payload={"title": "Bogus complexity", "complexity": "enormous"},
-                        timestamp="2026-06-12T10:01:00Z",
-                    ),
-                )
-
                 created = {t.title: t for t in store.list_tasks(project_id="p") if t.id != "t"}
-                self.assertEqual(created["Big task"].complexity, "large")
-                self.assertIsNone(created["Bogus complexity"].complexity)
+                self.assertEqual(set(created), {"Big task"})
+                self.assertFalse(hasattr(created["Big task"], "complexity"))
 
 
 class AgentFiledTaskTriageTests(unittest.TestCase):

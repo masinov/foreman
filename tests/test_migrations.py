@@ -14,7 +14,6 @@ from foreman.domain.models import (
     AUTONOMY_LEVELS,
     RUN_STATUSES,
     SPRINT_STATUSES,
-    TASK_COMPLEXITIES,
     TASK_STATUSES,
     TASK_TYPES,
     Project,
@@ -237,6 +236,87 @@ class SchemaVersionTests(unittest.TestCase):
                 self.assertIn("T", applied_at, f"applied_at not ISO 8601: {applied_at!r}")
 
 
+class DropTaskComplexityTests(unittest.TestCase):
+    """Migration 33: the size label goes, and a database from before it opens."""
+
+    def _database_before(self, db_path: Path) -> None:
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+            conn.executescript(_SCHEMA_MIGRATIONS_DDL)
+            for version, description, sql in sorted(MIGRATIONS, key=lambda m: m[0]):
+                if version >= 33:
+                    break
+                conn.executescript(sql)
+                conn.execute(
+                    "INSERT INTO schema_migrations (version, description, applied_at)"
+                    " VALUES (?, ?, datetime('now'))",
+                    (version, description),
+                )
+            conn.execute(
+                "INSERT INTO projects (id, name, repo_path, workflow_id, created_at, updated_at)"
+                " VALUES ('p1', 'P', '/tmp/p', 'development', 'now', 'now')"
+            )
+            conn.execute(
+                "INSERT INTO sprints (id, project_id, title, status, created_at)"
+                " VALUES ('s1', 'p1', 'S', 'active', 'now')"
+            )
+            conn.execute(
+                "INSERT INTO tasks (id, sprint_id, project_id, title, status, task_type, complexity,"
+                " created_at) VALUES ('t1', 's1', 'p1', 'T', 'todo', 'feature', 'large', 'now')"
+            )
+            conn.execute(
+                "INSERT INTO runs (id, task_id, project_id, role_id, workflow_step, agent_backend,"
+                " status, created_at) VALUES ('r1', 't1', 'p1', 'developer', 'develop',"
+                " 'claude_code', 'completed', 'now')"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_an_older_database_opens_without_the_column_and_keeps_its_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "foreman.db"
+            self._database_before(db_path)
+
+            with ForemanStore(db_path) as store:
+                store.initialize()
+                connection = store._connection
+                columns = [row[1] for row in connection.execute("PRAGMA table_info(tasks)")]
+                self.assertNotIn("complexity", columns)
+                task = store.get_task("t1")
+                self.assertEqual((task.title, task.status), ("T", "todo"))
+                # The rows that refer to the task are still there.
+                self.assertEqual(
+                    connection.execute("SELECT COUNT(*) FROM runs WHERE task_id = 't1'").fetchone()[0], 1
+                )
+                self.assertEqual(connection.execute("PRAGMA foreign_key_check").fetchall(), [])
+                self.assertEqual(connection.execute("PRAGMA foreign_keys").fetchone()[0], 1)
+                triggers = {
+                    row[0]
+                    for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'")
+                }
+                self.assertFalse({name for name in triggers if "complexity" in name})
+                self.assertIn("tasks_status_insert_guard", triggers)
+                indexes = {
+                    row[0]
+                    for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'tasks'"
+                    )
+                }
+                self.assertIn("idx_tasks_sprint", indexes)
+                self.assertIn("idx_tasks_task_key_unique", indexes)
+                # A task still saves, and a bad status is still refused.
+                store.save_task(Task(id="t2", sprint_id="s1", project_id="p1", title="Two"))
+                with self.assertRaises(sqlite3.IntegrityError):
+                    store.save_task(
+                        Task(id="t3", sprint_id="s1", project_id="p1", title="T", status="doing")  # type: ignore[arg-type]
+                    )
+            # Opening it again changes nothing.
+            with ForemanStore(db_path) as store:
+                self.assertEqual(store.initialize(), [])
+
+
 class SchemaRepairTests(unittest.TestCase):
     """Repair known local schema drift during initialize()."""
 
@@ -377,7 +457,6 @@ class VocabularyGuardTests(unittest.TestCase):
     def test_unknown_task_type_sprint_status_run_status_and_autonomy_are_refused(self) -> None:
         cases = (
             ("UPDATE tasks SET task_type = 'bug' WHERE id = 't1'", "tasks.task_type"),
-            ("UPDATE tasks SET complexity = 'huge' WHERE id = 't1'", "tasks.complexity"),
             ("UPDATE sprints SET status = 'done' WHERE id = 's1'", "sprints.status"),
             ("UPDATE projects SET autonomy_level = 'full' WHERE id = 'p1'", "projects.autonomy_level"),
         )
@@ -406,8 +485,6 @@ class VocabularyGuardTests(unittest.TestCase):
             self._execute("UPDATE tasks SET status = ? WHERE id = 't1'", (status,))
         for task_type in TASK_TYPES:
             self._execute("UPDATE tasks SET task_type = ? WHERE id = 't1'", (task_type,))
-        for complexity in (*TASK_COMPLEXITIES, None):
-            self._execute("UPDATE tasks SET complexity = ? WHERE id = 't1'", (complexity,))
         for status in SPRINT_STATUSES:
             self._execute("UPDATE sprints SET status = ? WHERE id = 's1'", (status,))
         for level in AUTONOMY_LEVELS:

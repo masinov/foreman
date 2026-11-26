@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterator, Sequence, TypeVar
 
 from ..domain.errors import ForemanError
-from .migrations import MIGRATIONS
+from .migrations import MIGRATIONS, PYTHON_MIGRATIONS
 
 #: Lease resource type for the per-project engine lock. Defined here rather
 #: than imported from ``foreman.engine.lock`` because that module imports the
@@ -316,31 +316,49 @@ class StoreBase:
                 continue
             if connection.in_transaction:
                 connection.commit()
-            connection.execute("BEGIN IMMEDIATE")
+            code = PYTHON_MIGRATIONS.get(version) if migrations is None else None
+            if code is not None:
+                # Cannot be changed inside a transaction. Off, so a table the
+                # step rebuilds does not cascade to the tables that refer to it.
+                connection.execute("PRAGMA foreign_keys = OFF")
             try:
-                already = connection.execute(
-                    "SELECT 1 FROM schema_migrations WHERE version = ?",
-                    (version,),
-                ).fetchone()
-                if already is not None:
-                    connection.rollback()
-                    continue
-                for statement in _split_sql_statements(sql):
-                    connection.execute(statement)
-                connection.execute(
-                    "INSERT INTO schema_migrations (version, description, applied_at)"
-                    " VALUES (?, ?, ?)",
-                    (version, description, now),
-                )
-                connection.commit()
-            except Exception as exc:
-                connection.rollback()
-                raise MigrationError(
-                    f"Migration {version} ({description}) failed and was rolled back: {exc}"
-                ) from exc
-            applied.append(version)
+                if self._apply_migration(version, description, sql, code, now):
+                    applied.append(version)
+            finally:
+                if code is not None:
+                    connection.execute("PRAGMA foreign_keys = ON")
 
         return applied
+
+    def _apply_migration(self, version, description, sql, code, now) -> bool:
+        """Apply one migration in its own transaction; False if already applied."""
+
+        connection = self._connection
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            already = connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE version = ?",
+                (version,),
+            ).fetchone()
+            if already is not None:
+                connection.rollback()
+                return False
+            for statement in _split_sql_statements(sql):
+                connection.execute(statement)
+            if code is not None:
+                code(connection)
+            connection.execute(
+                "INSERT INTO schema_migrations (version, description, applied_at)"
+                " VALUES (?, ?, ?)",
+                (version, description, now),
+            )
+            connection.commit()
+        except Exception as exc:
+            connection.rollback()
+            raise MigrationError(
+                f"Migration {version} ({description}) failed and was rolled back: {exc}"
+            ) from exc
+        return True
 
     def _repair_known_schema_drift(self) -> None:
         """Repair additive schema drift that can occur in long-lived local DBs.
@@ -364,11 +382,6 @@ class StoreBase:
             with self._connection:
                 self._connection.execute(
                     "ALTER TABLE tasks ADD COLUMN executor_overrides_json TEXT NOT NULL DEFAULT '{}'"
-                )
-        if "complexity" not in task_columns:
-            with self._connection:
-                self._connection.execute(
-                    "ALTER TABLE tasks ADD COLUMN complexity TEXT"
                 )
         if "task_key" not in task_columns:
             with self._connection:

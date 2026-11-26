@@ -178,7 +178,6 @@ function Details({ task, workflow }) {
     task.needed_by?.length
       ? { key: "needed", term: "Needed by", value: <Dependencies items={task.needed_by} engine={engine} /> }
       : null,
-    task.complexity ? { key: "size", term: "Size", value: humanize(task.complexity) } : null,
     task.priority
       ? {
           key: "priority",

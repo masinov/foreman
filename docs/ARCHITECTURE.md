@@ -1044,6 +1044,11 @@ The current CLI watch baseline now includes:
 - file-backed stores run in WAL mode with a 30 s busy timeout and retrying
   hot writes so the engine, dashboard, and CLI can share one database file;
   migrations apply atomically per version inside `BEGIN IMMEDIATE`.
+- a migration is a script, or code in `PYTHON_MIGRATIONS` when SQLite's
+  `ALTER` cannot do it: migration 33 rebuilds `tasks` without `complexity`
+  (the task size label is gone; `DROP COLUMN` needs SQLite 3.35), with foreign
+  keys off around the step so the tables that refer to tasks are not cascaded.
+  The intake API still accepts a `complexity` and ignores it.
 - gate decisions and decision gates carry `ON DELETE` rules (migration 14),
   and store deletes are dependent-aware, so retention and deletion never
   violate a foreign key; a pruned run leaves its gate decision with a null

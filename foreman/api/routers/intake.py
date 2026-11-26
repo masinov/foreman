@@ -33,6 +33,9 @@ def build_router(ctx: ApiContext) -> APIRouter:
         The only ``/api`` route authenticated by a project API token rather
         than the dashboard's shared token. 201 when the task is new, 200 when
         the same ``(source.system, source.external_ref)`` was already filed.
+
+        A ``complexity`` in the body is accepted and ignored: Foreman keeps no
+        size for a task, and a system that still sends one does not break.
         """
 
         source = data.get("source")
@@ -50,7 +53,6 @@ def build_router(ctx: ApiContext) -> APIRouter:
                 acceptance_criteria=data.get("acceptance_criteria"),
                 task_type=str(data.get("task_type", "fix")),
                 priority=data.get("priority") or 0,
-                complexity=data.get("complexity") or None,
                 source=source,
                 sprint_id=str(sprint_id) if sprint_id else None,
             )
