@@ -143,7 +143,7 @@ export function EditTaskDialog({ open, task, onClose, onSaved }) {
         />
         <Field
           label="Documents it rests on"
-          hint="One per line: a path in the repository, or path#heading. A new one must be on the default branch; those already named keep their commit."
+          hint="One per line: a path in the repository, or path#heading (path #heading when the path has a #). A new one must be on the default branch. One already named keeps its commit, also when its heading changes; Mark as read, beside a changed one, stamps the commit now."
           multiline
           value={restsOn}
           onChange={(event) => setRestsOn(event.target.value)}

@@ -7,6 +7,7 @@ import argparse
 import json
 import sys
 
+from ...domain.rests_on import DocumentRef
 from ...services import Services
 from ...services.errors import NotFoundError
 from ...store import ForemanStore
@@ -200,7 +201,11 @@ def handle_task_list(args: argparse.Namespace) -> int:
         sprint_tasks = [task for task in listing["tasks"] if task["sprint_id"] == sprint["id"]]
         if not sprint_tasks:
             continue
-        lines.append(f"Sprint: {sprint['id']} | {sprint['title']} | status={sprint['status']}")
+        lines.append(
+            f"Backlog: {sprint['id']}"
+            if sprint.get("kind") == "backlog"
+            else f"Sprint: {sprint['id']} | {sprint['title']} | status={sprint['status']}"
+        )
         for task in sprint_tasks:
             lines.append(
                 f"- {task['id']} | {task['task_type']} | {task['title']} | status={task['status']} | "
@@ -210,7 +215,7 @@ def handle_task_list(args: argparse.Namespace) -> int:
             )
             for ref in task["rests_on"] if getattr(args, "rests_on", None) else ():
                 lines.append(
-                    f"    rests on {ref['path']}{'#' + ref['heading'] if ref['heading'] else ''}"
+                    f"    rests on {DocumentRef(ref['path'], ref['heading']).label()}"
                     f" (named at {ref['commit'][:10]})"
                 )
 

@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 
-from ..schemas import GuidanceNote, RequestedBy, TaskApproval, TaskBlock, TaskDenial, TaskUnblock, body_as
+from ..schemas import DocumentRestamp, GuidanceNote, RequestedBy, TaskApproval, TaskBlock, TaskDenial, TaskUnblock, body_as
 from ...services.task_reads import TaskReads
 from ...services.task_models import FileDiff, RunOutput, TaskDocument, TaskDocumentChange, TaskChanges, TaskChecks, TaskRuns
 from ..context import (
@@ -113,12 +113,26 @@ def build_router(ctx: ApiContext) -> APIRouter:
         return ctx.with_store(lambda store: TaskReads(store).get_file_diff(task_id, path))
 
     @router.get("/tasks/{task_id}/documents", response_model=TaskDocument)
-    def get_task_document(task_id: str, path: str = Query(min_length=1)) -> TaskDocument:
-        return ctx.with_store(lambda store: TaskReads(store).get_document(task_id, path))
+    def get_task_document(
+        task_id: str, path: str = Query(min_length=1), heading: str | None = Query(default=None)
+    ) -> TaskDocument:
+        return ctx.with_store(lambda store: TaskReads(store).get_document(task_id, path, heading))
 
     @router.get("/tasks/{task_id}/documents/diff", response_model=TaskDocumentChange)
-    def get_task_document_change(task_id: str, path: str = Query(min_length=1)) -> TaskDocumentChange:
-        return ctx.with_store(lambda store: TaskReads(store).get_document_change(task_id, path))
+    def get_task_document_change(
+        task_id: str, path: str = Query(min_length=1), heading: str | None = Query(default=None)
+    ) -> TaskDocumentChange:
+        return ctx.with_store(lambda store: TaskReads(store).get_document_change(task_id, path, heading))
+
+    @router.post("/tasks/{task_id}/documents/restamp")
+    def restamp_task_document(
+        task_id: str, body: DocumentRestamp = Depends(body_as(DocumentRestamp))
+    ) -> dict[str, Any]:
+        """Mark one document the task rests on as read at the default branch's commit now."""
+
+        return with_api(
+            lambda api: api.tasks.restamp_document(task_id, path=body.path, heading=body.heading)
+        )
 
     @router.get("/tasks/{task_id}/checks", response_model=TaskChecks)
     def get_task_checks(task_id: str) -> TaskChecks:

@@ -260,10 +260,12 @@ def handle_task_edit(args: argparse.Namespace) -> int:
     except TextInputError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    if not changes and args.edit is None:
+    restamp = list(getattr(args, "restamp", None) or [])
+    if not changes and args.edit is None and not restamp:
         print(
             "Nothing to change. Give --title, --type, --priority, --description, "
-            "--criteria, --rests-on or --no-rests-on, --depends-on or --no-dependencies, or --edit description|criteria.",
+            "--criteria, --rests-on or --no-rests-on, --restamp, --depends-on or --no-dependencies, "
+            "or --edit description|criteria.",
             file=sys.stderr,
         )
         return 1
@@ -300,12 +302,14 @@ def handle_task_edit(args: argparse.Namespace) -> int:
             else:
                 changes[field.mutation_field] = edited
         changed: dict[str, object] = {}
-        if changes:
-            try:
+        try:
+            if changes:
                 changed = cli_mutations(store).edit_task(task, changes)
-            except MutationError as exc:
-                print(str(exc), file=sys.stderr)
-                return 1
+            for document in restamp:
+                changed.update(cli_mutations(store).restamp_document(task, document))
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         db_path = store.db_path
 
     print_lines(
@@ -351,7 +355,12 @@ def _describe_changes(before: dict[str, object], changed: dict[str, object]) -> 
             continue
         old, new = before[field], changed[field]
         if field == "rests_on":
-            lines.append(f"{label}: {len(old)} -> {len(new)} documents")
+            restamped = len(old) == len(new) and [
+                (ref["path"], ref["heading"]) for ref in old
+            ] == [(ref["path"], ref["heading"]) for ref in new]
+            lines.append(
+                f"{label}: marked as read again" if restamped else f"{label}: {len(old)} -> {len(new)} documents"
+            )
         elif field in ("description", "acceptance_criteria"):
             if not new:
                 lines.append(f"{label}: cleared")

@@ -140,6 +140,13 @@ class GuidanceNote(_Body):
     text: str = ""
 
 
+class DocumentRestamp(_Body):
+    """The entry of a task's documents to mark as read at the default branch's commit now."""
+
+    path: str = ""
+    heading: str = ""
+
+
 class GateCreate(_Body):
     sprint_id: str = ""
     conflict_description: str = ""

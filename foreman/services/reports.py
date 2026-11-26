@@ -134,13 +134,18 @@ class ReportService(Service):
         """A project's tasks, sprint by sprint, each with its run totals.
 
         With ``rests_on`` (``path`` or ``path#heading``), only the tasks that
-        name that document, whatever their status: finished ones included.
+        name that document, whatever their status and wherever they are:
+        finished ones and the backlog's (filed, accepted, declined) included.
         """
 
         project = self._require_project(project_id)
         sprints = self.store.list_sprints(project.id)
         if sprint_id:
             sprints = [sprint for sprint in sprints if sprint.id == sprint_id]
+        elif rests_on:
+            backlog = self.store.get_backlog(project.id)
+            if backlog is not None:
+                sprints.append(backlog)
         sprint_ids = {sprint.id for sprint in sprints}
         tasks = [
             task for task in self.store.list_tasks(project_id=project.id) if task.sprint_id in sprint_ids
@@ -161,7 +166,8 @@ class ReportService(Service):
             "project_id": project.id,
             "project_name": project.name,
             "sprints": [
-                {"id": sprint.id, "title": sprint.title, "status": sprint.status} for sprint in sprints
+                {"id": sprint.id, "title": sprint.title, "status": sprint.status, "kind": sprint.kind}
+                for sprint in sprints
             ],
             "tasks": [
                 {

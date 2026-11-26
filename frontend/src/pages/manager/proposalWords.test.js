@@ -22,6 +22,15 @@ describe("a proposal in words", () => {
     [{ kind: "file_task", title: "New", accept: true }, [["File", null, "New, accepted", false]]],
     [{ kind: "file_task", title: "New" }, [["File", null, "New, in the backlog", false]]],
     [
+      { kind: "file_task", title: "New", rests_on: [{ path: "docs/adr/ADR-0041.md", heading: "6", commit: "abc" }, { path: "docs/spec.md", heading: "", commit: "abc" }] },
+      [["File", null, "New, in the backlog", false], ["Rests on", null, "docs/adr/ADR-0041.md, 6; docs/spec.md", false]],
+    ],
+    [
+      { kind: "edit_task", task_id: "t1", rests_on: [{ path: "docs/spec.md", heading: "", commit: "abc" }] },
+      [["Change", "FOR-1 One", "its documents it rests on", false], ["Rests on", null, "docs/spec.md", false]],
+    ],
+    [{ kind: "edit_task", task_id: "t1", rests_on: [] }, [["Change", "FOR-1 One", "its documents it rests on", false], ["Rests on", null, "no document", false]]],
+    [
       { kind: "add_task", sprint_id: "s2", title: "API", ref: "api", waits_for: ["schema"], description: "Add the route.", acceptance_criteria: "It answers 200." },
       [["Add", null, "API, to Sprint 2, after Schema", false], ["What", null, "Add the route.", false], ["Done when", null, "It answers 200.", false]],
     ],

@@ -33,8 +33,9 @@ from ..definitions.gate_steps import HUMAN_GATE_ROLE
 from ..definitions.layers import project_definitions
 from ..domain.errors import ForemanError
 from ..domain.models import PROPOSAL_STATES, Project, Proposal
-from ..domain.rests_on import RestsOnError, parse_documents
+from ..domain.rests_on import DocumentRef, RestsOnError, parse_documents
 from ..mutations import MutationError, Mutations
+from ..repo.rests_on import name_documents
 from ..store import ForemanStore
 
 #: Default page size for a project's proposals.
@@ -237,11 +238,12 @@ def _check_value(field: _Field, value: Any, where: str) -> Any:
         return [item.strip() for item in value]
     if field.type == "documents":
         # May be empty: an empty list clears them. Whether each path exists on
-        # the default branch is checked when the proposal is confirmed.
+        # the default branch is checked, and its commit stamped, when the
+        # proposal is made (``_stamp_documents``); a commit given here is dropped.
         if not isinstance(value, list):
             raise ValueError(f"{where}: {field.name} must be a list of documents.")
         try:
-            return [ref.as_dict() for ref in parse_documents(value)]
+            return [{"path": ref.path, "heading": ref.heading} for ref in parse_documents(value)]
         except RestsOnError as exc:
             raise ValueError(f"{where}: {field.name}: {exc}") from exc
     if field.type == "new_sprint":
@@ -323,6 +325,48 @@ def _named_ids(operation: Mapping[str, Any]) -> tuple[list[str], list[str]]:
 # ── applying ─────────────────────────────────────────────────────────────
 
 
+def _stamp_documents(store: ForemanStore, project: Project, operations: list[dict[str, Any]]) -> None:
+    """Stamp each operation's documents with the default branch's commit now.
+
+    A proposal names documents when the manager proposes it, not when a
+    person confirms it: a merge in between then changes a document the task
+    already rests on, and the task is told. A document the edited task
+    already names keeps its own commit. A path that is not a file on the
+    default branch is refused here, with the reason.
+    """
+
+    for index, operation in enumerate(operations):
+        if not operation.get("rests_on"):
+            continue
+        already: list[DocumentRef] = []
+        if operation["kind"] == "edit_task":
+            target = store.get_task(str(operation.get("task_id") or ""))
+            if target is not None and target.project_id == project.id:
+                already = list(target.rests_on)
+        try:
+            named = name_documents(project.repo_path, project.default_branch, operation["rests_on"], already)
+        except RestsOnError as exc:
+            where = _label(index, operation["kind"])
+            raise ProposalError(f"{where}: rests_on: {exc}", index=index, kind=operation["kind"]) from exc
+        operation["rests_on"] = [ref.as_dict() for ref in named]
+
+
+def _stamped(value: Any) -> list[DocumentRef] | None:
+    """An operation's documents as stamped when it was proposed, for the mutation to keep.
+
+    A proposal stored before documents were stamped has no commit on them:
+    those are stamped when it is confirmed.
+    """
+
+    if value is None:
+        return None
+    return [
+        DocumentRef(str(item.get("path") or ""), str(item.get("heading") or ""), str(item.get("commit") or ""))
+        for item in value
+        if isinstance(item, Mapping)
+    ]
+
+
 def _task(store: ForemanStore, project: Project, task_id: str, where: str, index: int, kind: str):
     task = store.get_task(task_id)
     if task is None or task.project_id != project.id:
@@ -400,7 +444,7 @@ def apply_operation(
                 task_type=operation.get("task_type", "feature"),
                 description=operation.get("description"),
                 acceptance_criteria=operation.get("acceptance_criteria"),
-                rests_on=operation.get("rests_on"),
+                rests_on=_stamped(operation.get("rests_on")),
                 priority=operation.get("priority", 0),
                 accept=bool(operation.get("accept", False)),
             )
@@ -414,7 +458,7 @@ def apply_operation(
                 task_type=operation.get("task_type", "feature"),
                 description=operation.get("description"),
                 acceptance_criteria=operation.get("acceptance_criteria"),
-                rests_on=operation.get("rests_on"),
+                rests_on=_stamped(operation.get("rests_on")),
                 priority=operation.get("priority", 0),
                 accept=True,
             )
@@ -447,6 +491,8 @@ def apply_operation(
             result["task_id"] = mutations.unplan_task(task(operation["task_id"])).id
         elif kind == "edit_task":
             changes = {field: operation[field] for field in OPERATION_KINDS[kind].one_of if field in operation}
+            if "rests_on" in changes:
+                changes["rests_on"] = _stamped(changes["rests_on"])
             if "depends_on_task_ids" in changes:
                 changes["depends_on_task_ids"] = [refs.get(item, item) for item in changes["depends_on_task_ids"]]
             target = task(operation["task_id"])
@@ -607,6 +653,7 @@ class Proposals:
         if not clean_reason:
             raise ProposalError("A proposal needs a reason: one paragraph saying why.")
         normalized = normalize_operations(operations)
+        _stamp_documents(self.store, project, normalized)
         if leaves is None:
             leaves = []
         if not isinstance(leaves, list) or not all(isinstance(item, str) and item.strip() for item in leaves):

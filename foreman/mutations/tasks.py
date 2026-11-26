@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..definitions.gate_steps import blocked_kind, resolve_gate_steps
+from ..domain.rests_on import RestsOnError, parse_entry
 from ..domain.models import (
     TASK_TYPES,
     Event,
@@ -16,6 +17,7 @@ from ..domain.models import (
     Task,
     validate_executor_overrides,
 )
+from ..repo import rests_on as rests_on_repo
 from .backlog import PLANNABLE_SPRINT_STATUSES
 from .base import _RESOLVED_TASK_STATUSES, MutationBase, MutationError, slug_id
 
@@ -368,6 +370,36 @@ class TaskMutations(MutationBase):
         self.store.save_task(task)
         if changed and (task.status in _EDIT_AUDITED_STATUSES or self.proposal_id):
             self._audit(task, "human.task_edited", step="edit", changed_fields=changed)
+        return changed
+
+    def restamp_document(self, task: Task, document: object) -> dict[str, Any]:
+        """Mark one document the task rests on as read at the default branch's commit now.
+
+        ``document`` names the entry (``path``, ``path#heading`` or a mapping).
+        It is how a person ends a "changed since it was named" notice after
+        reading the change: the entry's commit becomes the branch's commit
+        now, and its heading stays. The file must still be on the branch.
+        Returns the fields that changed, as ``edit_task`` does, and is audited
+        the same way.
+        """
+
+        project = self.store.get_project(task.project_id)
+        try:
+            target = parse_entry(document)
+            if project is None:
+                raise RestsOnError("The task's project does not exist.")
+            documents = rests_on_repo.restamp_document(
+                project.repo_path, project.default_branch, task.rests_on, target
+            )
+        except RestsOnError as exc:
+            raise MutationError(str(exc)) from exc
+        changed: dict[str, Any] = {}
+        if documents != task.rests_on:
+            changed["rests_on"] = [ref.as_dict() for ref in documents]
+            task.rests_on = documents
+            self.store.save_task(task)
+            if task.status in _EDIT_AUDITED_STATUSES or self.proposal_id:
+                self._audit(task, "human.task_edited", step="edit", changed_fields=changed)
         return changed
 
     def _checked_dependencies(self, task: Task, value: Any) -> list[str]:

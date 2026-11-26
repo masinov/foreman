@@ -724,7 +724,7 @@ describe("the documents a task rests on", () => {
     const changed = { commit: "abc1234" + "0".repeat(33), task_key: "FOR-80", at: "2026-11-27T10:00:00Z" };
     const rests = [{ ...RESTS_ON[0], changed }, { ...RESTS_ON[1], changed: null }];
     const routes = taskRoutes({ task: taskDetail({ rests_on: rests }) });
-    routes[`GET /api/v1/tasks/${TASK_ID}/documents/diff?path=${encodeURIComponent("docs/adr/ADR-0041.md")}`] = {
+    routes[`GET /api/v1/tasks/${TASK_ID}/documents/diff?path=${encodeURIComponent("docs/adr/ADR-0041.md")}&heading=6`] = {
       task_id: TASK_ID,
       path: "docs/adr/ADR-0041.md",
       from_commit: RESTS_ON[0].commit,
@@ -747,9 +747,33 @@ describe("the documents a task rests on", () => {
     expect(await within(dialog).findByText("Superseded.")).toBeInTheDocument();
   });
 
+  it("marks a changed document as read at the default branch's commit now, which reloads the task", async () => {
+    const changed = { commit: "abc1234" + "0".repeat(33), task_key: "FOR-80", at: "2026-11-27T10:00:00Z", default_commit: "fed9876" + "0".repeat(33) };
+    const rests = [{ ...RESTS_ON[0], changed }, { ...RESTS_ON[1], changed: null }];
+    const routes = taskRoutes({ task: taskDetail({ rests_on: rests }) });
+    const url = `POST /api/v1/tasks/${TASK_ID}/documents/restamp`;
+    routes[url] = taskDetail({ rests_on: [{ ...RESTS_ON[0], commit: changed.default_commit, changed: null }, RESTS_ON[1]] });
+    const { fetchImpl } = await renderTask(BASE, routes);
+    const section = (await screen.findByRole("heading", { name: "Rests on" })).closest("section");
+    expect(within(section).getAllByRole("button", { name: /^Mark as read/ })).toHaveLength(1);
+    const before = taskReads(fetchImpl);
+    fireEvent.click(within(section).getByRole("button", { name: "Mark as read at fed9876" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Marked docs/adr/ADR-0041.md as read at fed9876.");
+    expect(calls(fetchImpl, "POST", `/api/v1/tasks/${TASK_ID}/documents/restamp`)[0].body).toEqual({ path: "docs/adr/ADR-0041.md", heading: "6" });
+    await waitFor(() => expect(taskReads(fetchImpl)).toBeGreaterThan(before));
+  });
+
+  it("writes a path with a # in it so that it reads back as the same document", async () => {
+    const routes = taskRoutes({ task: taskDetail({ rests_on: [{ path: "docs/a#b.md", heading: "", commit: RESTS_ON[0].commit }, RESTS_ON[0]] }) });
+    await renderTask(BASE, routes);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const dialog = screen.getByRole("dialog", { name: "Edit task" });
+    expect(within(dialog).getByLabelText("Documents it rests on")).toHaveValue("docs/a#b.md #\ndocs/adr/ADR-0041.md#6");
+  });
+
   it("opens a document as it was at the commit it was named at", async () => {
     const routes = taskRoutes({ task: taskDetail({ rests_on: RESTS_ON }) });
-    routes[`GET /api/v1/tasks/${TASK_ID}/documents?path=${encodeURIComponent("docs/adr/ADR-0041.md")}`] = {
+    routes[`GET /api/v1/tasks/${TASK_ID}/documents?path=${encodeURIComponent("docs/adr/ADR-0041.md")}&heading=6`] = {
       task_id: TASK_ID,
       path: "docs/adr/ADR-0041.md",
       heading: "6",
