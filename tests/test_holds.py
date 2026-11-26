@@ -530,6 +530,8 @@ class HoldsApiTests(_Store):
         self.assertFalse(task["step_running"])
         sprint = asyncio.run(get("/api/v1/sprints/s1"))
         self.assertEqual(sprint["block"]["reason"], "design review")
+        # The lifecycle stays `status`; what the work is doing is `work`.
+        self.assertEqual((sprint["status"], sprint["work"]["state"]), ("active", "blocked"))
         listed = {item["id"]: item for item in asyncio.run(get("/api/v1/sprints/s1/tasks"))["tasks"]}
         self.assertEqual(listed["t1"]["hold"]["scope"], "sprint", "a block above is what is shown")
 
