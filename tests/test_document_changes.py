@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-from pathlib import Path
 
 from foreman.cli import main
 from foreman.domain.models import Project, Sprint, Task
