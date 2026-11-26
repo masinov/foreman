@@ -486,7 +486,13 @@ with mode `now`.
 - `ensure_integration()` — one shared tree pinned to the default branch, where
   `_builtin:merge` runs its `--no-ff` merge (only for a branch that contains
   the default branch's head; a branch behind it is updated in its own tree and
-  sent back to `test` with the outcome `updated`, ADR-0026),
+  sent back to `test` with the outcome `updated`, ADR-0026). When the merge
+  brings a change to the project's `adr_dir` (`docs/adr`), it is made with
+  `--no-commit` and `foreman/repo/adrs.py` settles the tree first: each
+  `new-<slug>.md` gets the next free number, references are rewritten, the
+  index is regenerated, and two ADRs with one number refuse the merge
+  (`engine.merge_blocked`, reason `duplicate_adr_numbers`); all of it lands in
+  the merge commit (ADR-0040),
 - `remove(task)` / `remove_path(path)` — deletion, refusing anything outside
   the worktree root,
 - `list()` and `prune_project_worktrees(store, project)` — the operator

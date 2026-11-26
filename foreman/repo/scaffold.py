@@ -66,6 +66,7 @@ def default_project_settings(
         "write_pr_summaries": False,
         "write_checkpoint_notes": False,
         "generate_changelog": False,
+        "adr_dir": "docs/adr",
     }
 
 

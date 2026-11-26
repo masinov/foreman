@@ -232,8 +232,13 @@ slashes as dashes): a title line, then a few bullets for a reader of the
 changelog (see `changes/README.md`). Foreman folds the files into
 `CHANGELOG.md` when a sprint finishes and removes them (ADR-0040).
 
-Create ADRs in `docs/adr/ADR-XXXX-title.md` when a decision becomes an active
-implementation constraint. Good ADR candidates in this repo include:
+Create ADRs when a decision becomes an active implementation constraint. Write
+one as `docs/adr/new-<slug>.md` with the title line `# ADR-XXXX: <Title>` and a
+`- Status:` line, and refer to it elsewhere by that path. Never pick a number:
+when the task merges, Foreman renames the file to `ADR-NNNN-<slug>.md` (the next
+free number), sets the number in the title, rewrites the references and
+regenerates the index in `docs/adr/README.md`, which is never edited above its
+`foreman:adr-index` line (ADR-0040). Good ADR candidates in this repo include:
 
 - SQLite schema shape,
 - orchestrator loop semantics,

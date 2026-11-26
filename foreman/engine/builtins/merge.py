@@ -12,6 +12,7 @@ from typing import Callable
 
 from ...domain.models import CompletionEvidence, Project, Task
 from ...domain.settings import settings_of
+from ...repo.adrs import Settlement, settle, touches_adrs
 from ...repo.git import (
     CheckoutFollow,
     GitError,
@@ -100,6 +101,7 @@ def _landed(
     *,
     target_before: str | None = None,
     branch_head: str | None = None,
+    settlements: tuple[Settlement, ...] = (),
 ) -> BuiltinResult:
     """A merge that landed: bring a person's checkout along and push when asked.
 
@@ -108,6 +110,8 @@ def _landed(
     recorded on the event from them (ADR-0038).
     """
 
+    numbered = [list(pair) for s in settlements for pair in s.numbered]
+    adr_facts = {"adrs": numbered} if numbered else {}
     events = [
         BuiltinEventRecord(
             event_type="engine.merge",
@@ -117,10 +121,14 @@ def _landed(
                 "worktree": str(integration_path),
                 "sha": result.sha,
                 **merge_facts(project.repo_path, target_before, branch_head, result.sha),
+                **adr_facts,
             },
         )
     ]
     detail = result.detail
+    for settlement in settlements:
+        for old, new in settlement.numbered:
+            detail = f"{detail}\nNumbered {old} as {new}."
     followed = _follow_operator_checkout(project, result.sha)
     if followed is not None:
         events.append(followed)
@@ -283,11 +291,45 @@ class MergeStep(BuiltinExecutorBase):
         # way a fast-forward pull would (ADR-0031).
         target_before = _read_head(integration_path, f"refs/heads/{project.default_branch}")
         branch_head = _read_head(project.repo_path, f"refs/heads/{task.branch_name}")
+        # A decision a branch wrote as ``new-<slug>.md`` is numbered in the
+        # merge commit, against the default branch as it is now (ADR-0040).
+        # The branch is not touched, so what lands is what was tested, and the
+        # number cannot be taken by a merge that landed since.
+        settled: list[Settlement] = []
+        adr_dir = settings_of(project).adr_dir
+
+        def number_adrs(tree: Path) -> str | None:
+            staged = run_git(tree, "diff", "--cached", "--name-only", "-z", "HEAD", check=False)
+            if not touches_adrs(staged.stdout.split("\0"), adr_dir):
+                return None
+            settlement = settle(tree, adr_dir)
+            if settlement is None:
+                return None
+            settled.append(settlement)
+            return settlement.refusal()
+
         result: GitMergeResult = merge_branch(
             integration_path,
             source_branch=task.branch_name,
             target_branch=project.default_branch,
+            finish=number_adrs if adr_dir else None,
         )
+        if result.refused:
+            return self._block_task(
+                task,
+                detail=result.detail,
+                event_type="engine.merge_blocked",
+                payload={
+                    "branch": task.branch_name,
+                    "target": project.default_branch,
+                    "reason": "duplicate_adr_numbers",
+                    "duplicates": [
+                        {"number": number, "files": list(files)}
+                        for s in settled
+                        for number, files in s.duplicates
+                    ],
+                },
+            )
         if result.success:
             return _landed(
                 project,
@@ -296,6 +338,7 @@ class MergeStep(BuiltinExecutorBase):
                 result,
                 target_before=target_before,
                 branch_head=branch_head,
+                settlements=tuple(settled),
             )
         return _not_landed(project, task, result)
 

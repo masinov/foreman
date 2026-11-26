@@ -54,7 +54,11 @@ Read it if you need to understand the broader product direction.
 {environment_rules}
 - Commit small, coherent changes with conventional prefixes
   (feat:, fix:, refactor:, test:, docs:, chore:)
-- Create ADRs in docs/adr/ for meaningful architectural decisions
+- Create ADRs in docs/adr/ for meaningful architectural decisions. Write one
+  as `docs/adr/new-<slug>.md` (title line `# ADR-XXXX: <Title>`, a
+  `- Status:` line) and refer to it by that path; never choose a number or edit
+  the index, `docs/adr/README.md`: Foreman numbers the file, rewrites the
+  references and regenerates the index when the task merges.
 - Describe your change in its own file, `changes/<task key>.md` (the task's
   key is the one in the sprint context, for example `FOR-67`; slashes in a
   branch name become dashes when there is no key): a title line, then a few
