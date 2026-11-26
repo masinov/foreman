@@ -149,7 +149,7 @@ def read_completion(
     text: str,
     *,
     transcript: str | None = None,
-    task_has_criteria: bool = False,
+    task_criteria: int = 0,
 ) -> CompletionReading:
     """Apply the role's completion contract to the agent's final message.
 
@@ -185,7 +185,7 @@ def read_completion(
         # the record stays, so the page shows what the reviewer returned.
         if declaration.kind != REVIEW_VERDICT:
             return CompletionReading(outcome, detail, record)
-        disagreement = check_verdict(outcome, fields, task_has_criteria=task_has_criteria)
+        disagreement = check_verdict(outcome, fields, task_criteria=task_criteria)
         if disagreement:
             return CompletionReading(ERROR, disagreement, record)
         # A review that sends work back carries its S1 and S2 findings in the

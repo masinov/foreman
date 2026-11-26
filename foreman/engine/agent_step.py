@@ -16,6 +16,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .verdict import count_criteria
 from ..domain.errors import EngineCommandInterrupt
 from ..domain.models import Project, Run, Task, TokenUsage
 from ..domain.outcomes import ERROR
@@ -360,7 +361,7 @@ class AgentStepRunner:
         tally = _NativeRunTally(
             role=role,
             session_id=session_id,
-            task_has_criteria=bool((task.acceptance_criteria or "").strip()),
+            task_criteria=count_criteria(task.acceptance_criteria),
         )
         seen_signals: set[str] = set()
         # Heartbeat the task lease while the native runner streams so a long
@@ -492,10 +493,10 @@ class _NativeRunTally:
     """What one native run's stream adds up to: its messages, totals and ending."""
 
     def __init__(
-        self, *, role: RoleDefinition, session_id: str | None, task_has_criteria: bool = False
+        self, *, role: RoleDefinition, session_id: str | None, task_criteria: int = 0
     ) -> None:
         self.role = role
-        self.task_has_criteria = task_has_criteria
+        self.task_criteria = task_criteria
         self.events: list[AgentEventRecord] = []
         self.message_fragments: list[str] = []
         self.final_message = ""
@@ -550,7 +551,7 @@ class _NativeRunTally:
                 self.role,
                 self.final_message,
                 transcript="\n\n".join(self.message_fragments),
-                task_has_criteria=self.task_has_criteria,
+                task_criteria=self.task_criteria,
             )
             self.outcome, self.detail, self.record = reading.outcome, reading.detail, reading.record
             self.final_status = "completed"

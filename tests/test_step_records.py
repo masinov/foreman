@@ -298,7 +298,7 @@ class EngineRecordTests(OrchestratorTestCase):
 
         return work
 
-    def run_with(self, developer_text: str, *, bad: bool = False):
+    def run_with(self, developer_text: str, *, bad: bool = False, roles=None):
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)
         store = ForemanStore(db_path)
@@ -324,7 +324,7 @@ class EngineRecordTests(OrchestratorTestCase):
             handlers[index] = review
         runner = ScriptedNativeRunner(handlers)
         ForemanOrchestrator(
-            store, roles=self.roles, workflows=self.workflows, agent_runners={"claude_code": runner}
+            store, roles=roles or self.roles, workflows=self.workflows, agent_runners={"claude_code": runner}
         ).run_project(project.id)
         return store, store.get_task(task.id), prompts, runner, db_path
 
@@ -401,6 +401,18 @@ class EngineRecordTests(OrchestratorTestCase):
         self.assertIn("- Check the criteria against the task's", prompt)
         # The report is not the free text pasted again.
         self.assertNotIn("Did it.", prompt)
+
+    def test_a_project_reviewer_using_previous_output_gets_the_developers_report(self) -> None:
+        reviewer = self.roles["code_reviewer"]
+        roles = {
+            **self.roles,
+            "code_reviewer": replace(reviewer, prompt_template="Own review of:\n{previous_output}"),
+        }
+        _, _, prompts, _, _ = self.run_with(f"Did it.\n{fenced(GOOD_REPORT)}\nTASK_COMPLETE", roles=roles)
+
+        self.assertIn("Added the loader.", prompts[0])
+        self.assertIn("1. The loader rejects a bad declaration", prompts[0])
+        self.assertNotIn("Did it.", prompts[0])
 
     def test_a_reviewer_is_given_a_developers_free_text_when_the_step_has_no_record(self) -> None:
         # A project's own developer role that declares no record (ADR-0024).

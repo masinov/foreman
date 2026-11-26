@@ -34,15 +34,28 @@ def blocking_findings(fields: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     ]
 
 
+def listed_count(fields: Mapping[str, Any]) -> int:
+    """How many criteria entries a verdict record lists."""
+
+    criteria = fields.get("criteria")
+    return len(criteria) if isinstance(criteria, list) else 0
+
+
+def count_criteria(text: str | None) -> int:
+    """How many acceptance criteria a task has: one for each non-blank line."""
+
+    return sum(1 for line in (text or "").splitlines() if line.strip())
+
+
 def check_verdict(
-    outcome: str, fields: Mapping[str, Any], *, task_has_criteria: bool = False
+    outcome: str, fields: Mapping[str, Any], *, task_criteria: int = 0
 ) -> str | None:
     """Why the verdict and the outcome disagree, or None when they agree.
 
     - deny or steer needs at least one S1 or S2 finding;
     - approve needs none, and every criterion verified or the reviewer's
-      judgement; when the task has acceptance criteria, an approval that
-      lists none has checked none;
+      judgement; the verdict lists as many criteria as the task has, so
+      none is skipped;
     - any other outcome (escalate) hands the decision on and is not checked.
     """
 
@@ -53,6 +66,12 @@ def check_verdict(
             "S1 or S2 finding. Only a broken, unsafe or data-losing change (S1) or an "
             "acceptance criterion not met (S2) sends work back."
         )
+    if outcome in ("approve", "deny", "steer") and 0 < listed_count(fields) < task_criteria:
+        return (
+            f"{VERDICT_PROBLEM_PREFIX}: the verdict lists {listed_count(fields)} "
+            f"criteria and the task has {task_criteria}. List each one of the task's "
+            "acceptance criteria, in order, with its status and what you checked."
+        )
     if outcome == "approve":
         if blocking:
             names = ", ".join(str(finding.get("severity")) for finding in blocking)
@@ -61,7 +80,8 @@ def check_verdict(
                 f"{len(blocking)} blocking finding(s) ({names})."
             )
         criteria = fields.get("criteria")
-        if task_has_criteria and not (isinstance(criteria, list) and criteria):
+        listed = len(criteria) if isinstance(criteria, list) else 0
+        if task_criteria and listed == 0:
             return (
                 f"{VERDICT_PROBLEM_PREFIX}: the reviewer returned APPROVE without listing "
                 "the task's acceptance criteria. List each one, in order, with its status "
