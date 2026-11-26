@@ -31,7 +31,7 @@ stopping it changes. The honest answers:
 - **The switch is the wrong thing.** "Is the program alive" and "may the
   work go ahead" are two questions. They were the same while one program on
   one machine did a project's work. With several workers, and the machine
-  pool the owner has asked for (backlog, owner direction 2), a per-project
+  pool the owner has asked for (backlog, owner direction 1), a per-project
   on/off for "the program" means nothing.
 
 The owner and Claude compared three models as trees of actions and
