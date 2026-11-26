@@ -333,7 +333,6 @@ class AgentStepRunner:
                 role=role,
                 project=project,
                 step_id=workflow_step,
-                visit_count=task.step_visit_counts.get(workflow_step, 1) or 1,
             )
         model = model or ""
         config = self._native_config(

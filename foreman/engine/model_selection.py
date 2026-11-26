@@ -1,4 +1,11 @@
-"""Which model an agent step runs on, and which rule chose it."""
+"""Which model an agent step runs on, and which rule chose it.
+
+A role lists its models cheapest first (``model_ladder``). A step starts on
+the first, or on the one a task names, and moves up to the next only after
+``escalate_after`` failures of its own work on one model (ADR-0041). The
+failures are counted on the task per step and model (``Task.step_failures``);
+visits to the step are not what moves it.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +16,9 @@ from ..definitions.roles import RoleDefinition
 from .limits import resolve_project_settings
 
 
-# Complexity → ladder start index when no explicit ladder_start override is set.
+# Complexity → ladder start index when the task names no model to start on.
+# The size label goes in the next task (FOR-72); until then it may still
+# choose the first model.
 _COMPLEXITY_LADDER_START: dict[str, int] = {"small": 0, "medium": 0, "large": 1}
 
 
@@ -19,6 +28,38 @@ class ModelSelection:
 
     model: str | None
     source: str  # "override" | "ladder" | "role" | "project_default"
+    #: How many models up its ladder the step has moved from where it started.
+    moves_up: int = 0
+    #: The step has failed ``escalate_after`` times on the last of several
+    #: models: there is no model left to move up to.
+    exhausted: bool = False
+    #: Failures of the step's own work on ``model`` so far.
+    failures: int = 0
+
+
+def ladder_start_index(task: Task, ladder: tuple[str, ...]) -> int:
+    """Where on *ladder* the task's step starts.
+
+    The task names a model of the ladder (``executor_overrides.ladder_start``;
+    a number is still read as a position), else the size label chooses.
+    """
+
+    start = (task.executor_overrides or {}).get("ladder_start")
+    if isinstance(start, str) and start in ladder:
+        return ladder.index(start)
+    if isinstance(start, int) and not isinstance(start, bool):
+        return min(max(start, 0), len(ladder) - 1)
+    if isinstance(start, str):
+        # A model this role does not list: the role starts at its first.
+        return 0
+    return min(_COMPLEXITY_LADDER_START.get(task.complexity or "", 0), len(ladder) - 1)
+
+
+def failures_on(task: Task, step_id: str, model: str | None) -> int:
+    """How many failures of its own work *step_id* has had on *model*."""
+
+    counts = (task.step_failures or {}).get(step_id) or {}
+    return int(counts.get(model or "", 0) or 0)
 
 
 def resolve_step_model_selection(
@@ -27,18 +68,17 @@ def resolve_step_model_selection(
     role: RoleDefinition,
     project: Project,
     step_id: str,
-    visit_count: int,
 ) -> ModelSelection:
     """Resolve the model for one workflow step, recording the deciding rule.
 
-    Precedence (see review.md Phase 3.3):
+    Precedence:
 
-    1. a per-task override for this step. The ladder still escalates above an
-       override that itself appears in the role ladder (resume from its index);
-       an override absent from the ladder is pinned for every visit.
-    2. the role ``model_ladder`` indexed by ``ladder_start + visit_count - 1``,
-       where ``ladder_start`` comes from the task override, else a complexity
-       map, else 0.
+    1. a model pinned for this step in the task's overrides
+       (``executor_overrides.models``). It never moves up.
+    2. the role ``model_ladder``: the step starts on the task's
+       ``ladder_start`` model (else the first) and sits on each model until it
+       has failed ``escalate_after`` times there. A role with one model never
+       moves up.
     3. the role's single ``model``.
     4. the project ``default_model`` setting.
     5. ``None`` (harness default).
@@ -46,30 +86,28 @@ def resolve_step_model_selection(
 
     overrides = task.executor_overrides or {}
     ladder = tuple(role.agent.model_ladder)
-    step_visit_index = max(visit_count - 1, 0)
 
-    override_model = None
     models_map = overrides.get("models")
-    if isinstance(models_map, dict):
-        override_model = models_map.get(step_id)
-
+    override_model = models_map.get(step_id) if isinstance(models_map, dict) else None
     if override_model:
-        if ladder and override_model in ladder:
-            base_index = ladder.index(override_model)
-            index = min(base_index + step_visit_index, len(ladder) - 1)
-            chosen = ladder[index]
-            source = "override" if index == base_index else "ladder"
-            return ModelSelection(model=chosen, source=source)
-        # Pinned deliberately by the manager; keep it for every visit.
         return ModelSelection(model=str(override_model), source="override")
 
     if ladder:
-        ladder_start = overrides.get("ladder_start")
-        if not isinstance(ladder_start, int) or isinstance(ladder_start, bool):
-            ladder_start = _COMPLEXITY_LADDER_START.get(task.complexity or "", 0)
-        index = min(ladder_start + step_visit_index, len(ladder) - 1)
-        index = max(index, 0)
-        return ModelSelection(model=ladder[index], source="ladder")
+        start = ladder_start_index(task, ladder)
+        last = len(ladder) - 1
+        limit = role.agent.escalate_after
+        index = start
+        while index < last and failures_on(task, step_id, ladder[index]) >= limit:
+            index += 1
+        model = ladder[index]
+        failures = failures_on(task, step_id, model)
+        return ModelSelection(
+            model=model,
+            source="ladder",
+            moves_up=index - start,
+            exhausted=last > 0 and index == last and failures >= limit,
+            failures=failures,
+        )
 
     if role.agent.model:
         return ModelSelection(model=role.agent.model, source="role")
@@ -87,14 +125,9 @@ def resolve_step_model(
     role: RoleDefinition,
     project: Project,
     step_id: str,
-    visit_count: int,
 ) -> str | None:
     """Return only the resolved model id for one step (see ``ModelSelection``)."""
 
     return resolve_step_model_selection(
-        task=task,
-        role=role,
-        project=project,
-        step_id=step_id,
-        visit_count=visit_count,
+        task=task, role=role, project=project, step_id=step_id
     ).model

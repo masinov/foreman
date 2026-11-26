@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ...definitions.workflows import WorkflowStep
 from ...domain.models import Project, Task
 from ...domain.settings import ProjectSettings
 from ...repo.git import (
@@ -15,6 +16,8 @@ from ...repo.git import (
 )
 from ...repo.worktrees import WorktreeError
 from ..errors import OrchestratorError
+from ..model_selection import resolve_step_model_selection
+from ..step_failures import models_exhausted_reason
 from .base import WorkflowRunnerBase
 
 
@@ -54,12 +57,45 @@ class StepChecks(WorkflowRunnerBase):
             return str(exc)
         return None
 
+    def _models_exhausted(
+        self, project: Project, task: Task, step_def: WorkflowStep, step: str
+    ) -> dict[str, Any] | None:
+        """Return how to block the task when a step has used up its role's models.
+
+        After ``escalate_after`` failures of its own work on the last of
+        several models there is nothing to move up to: a person decides
+        (ADR-0041). A role with one model keeps the project's loop limits.
+        """
+
+        role = self.roles.get(step_def.role)
+        if role is None:
+            return None
+        selection = resolve_step_model_selection(
+            task=task, role=role, project=project, step_id=step
+        )
+        if not selection.exhausted or not selection.model:
+            return None
+        return {
+            "detail": models_exhausted_reason(step, selection.model, selection.failures),
+            "event_type": "workflow.models_exhausted",
+            "payload": {
+                "step": step,
+                "role_id": role.id,
+                "model": selection.model,
+                "failures": selection.failures,
+                "models": list(role.agent.model_ladder),
+            },
+            "attention_trigger": "models_exhausted",
+        }
+
     def _limit_reached(
         self,
         task: Task,
         step: str,
         visit_count: int,
         settings: ProjectSettings,
+        *,
+        visits_counted: bool = True,
     ) -> dict[str, Any] | None:
         """Return how to block the task when a project limit is reached.
 
@@ -69,7 +105,7 @@ class StepChecks(WorkflowRunnerBase):
         """
 
         max_step_visits = settings.max_step_visits
-        if visit_count > max_step_visits:
+        if visits_counted and visit_count > max_step_visits:
             return {
                 "detail": (
                     f"Step '{step}' visited {visit_count} times "

@@ -119,6 +119,12 @@ def outcome_lines(numbers: dict[str, Any]) -> list[str]:
             )
         if row["send_backs_caused"]:
             parts.append(f"sent back {row['send_backs_caused']}")
+        if row["own_failures"] or row["moves_up_to"]:
+            parts.append(
+                f"own work failed {row['own_failures']} "
+                f"({row['sent_back']} sent back by review), "
+                f"moved up to {row['moves_up_to']}"
+            )
         parts.append(_reads_words(row))
         parts.append(format_usd(row["cost_usd"]))
         parts.extend(token_split_parts(row["tokens"]))

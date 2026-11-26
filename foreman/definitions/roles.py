@@ -46,6 +46,10 @@ class PromptRenderError(ForemanError):
     """Raised when a role prompt cannot be rendered."""
 
 
+#: How many failures on one model before a step moves up, when a role says nothing.
+DEFAULT_ESCALATE_AFTER = 2
+
+
 @dataclass(slots=True)
 class AgentToolConfig:
     """Tool allowlist and denylist for one role."""
@@ -66,6 +70,9 @@ class AgentConfig:
     session_persistence: bool
     permission_mode: str
     model_ladder: tuple[str, ...] = ()
+    #: Failures of a step's own work on one model before it moves up to the
+    #: next of ``model_ladder`` (ADR-0041). At least 1.
+    escalate_after: int = DEFAULT_ESCALATE_AFTER
     flags: dict[str, Any] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
     tools: AgentToolConfig = field(default_factory=AgentToolConfig)
@@ -273,6 +280,7 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
             model_ladder=tuple(
                 _require_string_list(agent_data, "model_ladder", role_path, default=())
             ),
+            escalate_after=_escalate_after(agent_data, role_path),
             flags=_as_mapping(agent_data.get("flags"), default={}),
             env=_require_string_mapping(agent_data, "env", role_path, default={}),
             tools=AgentToolConfig(
@@ -415,6 +423,18 @@ def _require_int(data: Mapping[str, Any], key: str, path: Path) -> int:
     value = data.get(key)
     if not isinstance(value, int):
         raise RoleLoadError(f"{path}: expected {key!r} to be an integer.")
+    return value
+
+
+def _escalate_after(data: Mapping[str, Any], path: Path) -> int:
+    """The role's failures-before-moving-up, at least 1 (default 2)."""
+
+    value = data.get("escalate_after", DEFAULT_ESCALATE_AFTER)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise RoleLoadError(
+            f"{path}: agent.escalate_after must be a whole number, 1 or more "
+            f"(failures on one model before the step moves up); got {value!r}."
+        )
     return value
 
 

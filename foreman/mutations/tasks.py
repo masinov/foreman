@@ -168,6 +168,8 @@ class TaskMutations(MutationBase):
         task.workflow_current_step = None
         task.workflow_carried_output = None
         task.step_visit_counts = {}
+        # A person's decision starts the models over (ADR-0041).
+        task.step_failures = {}
         task.completed_at = None
         self.store.save_task(task)
         self._audit(
@@ -259,6 +261,8 @@ class TaskMutations(MutationBase):
         task.workflow_current_step = None
         task.workflow_carried_output = None
         task.step_visit_counts = {}
+        # A person's decision starts the models over (ADR-0041).
+        task.step_failures = {}
         task.completed_at = None
         self.store.save_task(task)
         self.store.clear_task_hold(task.id)

@@ -280,6 +280,26 @@ The current runtime supports:
   falls back to the developer's free text. The task page shows it in the
   develop step's details (`pages/task/DeveloperReport.jsx`).
 
+#### A step moves up its role's models after failures of its own work (ADR-0041 amendment of 2026-11-26)
+
+- `[agent] model_ladder` (cheapest first) and `escalate_after` (default 2, at
+  least 1) are a role's. `foreman/engine/model_selection.py` picks the model: a
+  step pinned in `executor_overrides.models` never moves up; otherwise it starts
+  on `ladder_start` (a model name) and sits on each model until
+  `Task.step_failures[step][model]` reaches `escalate_after`. `ModelSelection`
+  carries `moves_up`, `failures` and `exhausted`.
+- `foreman/engine/step_failures.py` says which failures count and words them.
+  `Transitions._charge_failure` (`workflow_runner/transitions.py`) counts one
+  after a step ends (run ended without a result, review deny or steer, tests
+  failed), emits `workflow.step_failed`, and on a move up writes a system run
+  "Develop moves up to X · reason" with a `workflow.step_moves_up` event.
+  `StepChecks._models_exhausted` blocks the task before the step when its last
+  model has failed `escalate_after` times (`workflow.models_exhausted`).
+- `tasks.step_failures` (migration 32) holds the counts; an unblock or reopen
+  clears them. The visit counts and loop limit stay, for roles with one model.
+- Both runners resume a session with the new model (`--resume … --model`,
+  `thread/resume` with `model`).
+
 #### Run scope and the sandbox (ADR-0041 section 5, builds on ADR-0023)
 
 - A role's `[agent] run_scope` says where it may run commands: `none` (no

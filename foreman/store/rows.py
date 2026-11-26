@@ -153,6 +153,9 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         workflow_current_step=row["workflow_current_step"],
         workflow_carried_output=row["workflow_carried_output"],
         step_visit_counts=_load_json_dict(row["step_visit_counts"]),
+        step_failures=(
+            _load_json_dict(row["step_failures"]) if "step_failures" in row.keys() else {}
+        ),
         executor_overrides=(
             _load_json_dict(row["executor_overrides_json"])
             if "executor_overrides_json" in row.keys()

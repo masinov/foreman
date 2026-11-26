@@ -545,9 +545,10 @@ class WorkflowExecutionTests(OrchestratorTestCase):
                 transitions,
             )
 
-    def test_model_ladder_escalates_developer_model_across_repeated_visits(self) -> None:
-        """A role model_ladder escalates the develop model on each revisit and
-        records the progression in ``workflow.model_selected`` events."""
+    def test_model_ladder_moves_up_after_failures_of_the_steps_own_work(self) -> None:
+        """A role's ladder moves the develop model up after ``escalate_after``
+        failures (here the tests failing), records the progression in
+        ``workflow.model_selected`` events and says each move up in the Activity."""
 
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)
@@ -556,7 +557,8 @@ class WorkflowExecutionTests(OrchestratorTestCase):
         ladder = ("ladder-A", "ladder-B", "ladder-C")
         base_dev = self.roles["developer"]
         ladder_dev = replace(
-            base_dev, agent=replace(base_dev.agent, model="", model_ladder=ladder)
+            base_dev,
+            agent=replace(base_dev.agent, model="", model_ladder=ladder, escalate_after=1),
         )
         roles = dict(self.roles)
         roles["developer"] = ladder_dev
@@ -611,9 +613,25 @@ class WorkflowExecutionTests(OrchestratorTestCase):
             develop_models = [
                 run.model
                 for run in store.list_runs(task_id=task.id)
-                if run.workflow_step == "develop"
+                if run.workflow_step == "develop" and run.role_id == "developer"
             ]
             self.assertEqual(develop_models, ["ladder-A", "ladder-B", "ladder-C"])
+            moves = [
+                run.outcome_detail
+                for run in store.list_runs(task_id=task.id)
+                if run.role_id == "_builtin:orchestrator"
+            ]
+            self.assertEqual(
+                moves,
+                [
+                    "Develop moves up to ladder-B · the tests failed once",
+                    "Develop moves up to ladder-C · the tests failed once",
+                ],
+            )
+            self.assertEqual(
+                store.get_task(task.id).step_failures,
+                {"develop": {"ladder-A": 1, "ladder-B": 1}},
+            )
 
             # The workflow.model_selected events mirror that progression.
             selections = [

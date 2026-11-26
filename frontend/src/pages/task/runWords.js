@@ -6,7 +6,7 @@
 // transcript a person can download keeps everything.
 
 import { formatDuration, humanize, plural, shortSha } from "../../ui/format";
-import { outcomeTone, outcomeWord, testRunSentence } from "../shared/activityWords";
+import { modelSourceWords, outcomeTone, outcomeWord, testRunSentence } from "../shared/activityWords";
 
 /** Bookkeeping the engine records for itself; it tells a reader nothing. */
 const SILENT = new Set([
@@ -44,13 +44,6 @@ export function ownWords(text) {
 
 /** What a tool says when the role was not given it: "No such tool available: Bash". */
 const REFUSED_TOOL = /No such tool available:\s*([\w-]+)/;
-
-const MODEL_SOURCE = {
-  role: "named by the role",
-  project_default: "the project's default",
-  task_override: "set for this task",
-  ladder: "the next model on the role's ladder",
-};
 
 const ASKED_AGAIN = {
   missing_completion_marker: "The answer did not end with the completion marker. Asked again.",
@@ -132,7 +125,7 @@ export function sayEntry(entry) {
       return { says: `Started ${humanize(d.step)}${again}` };
     }
     case "workflow.model_selected": {
-      const source = MODEL_SOURCE[d.source] ?? (d.source ? humanize(d.source).toLowerCase() : "");
+      const source = modelSourceWords(d);
       return { says: join([`Model: ${d.model || "the runner's default"}`, source], ", ") };
     }
     case "engine.role_policy": {

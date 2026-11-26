@@ -1116,4 +1116,14 @@ MIGRATIONS: list[tuple[int, str, str]] = [
           AND workflow_current_step IS NOT NULL;
         """,
     ),
+    (
+        32,
+        "tasks: the failures of a step's own work, per step and model (ADR-0041)",
+        """
+        -- JSON: {"<step>": {"<model>": <failures>}}. What decides when a
+        -- step moves up its role's models; kept on the task so a restart
+        -- does not forget it.
+        ALTER TABLE tasks ADD COLUMN step_failures TEXT NOT NULL DEFAULT '{}';
+        """,
+    ),
 ]

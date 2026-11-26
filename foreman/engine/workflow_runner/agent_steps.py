@@ -89,7 +89,6 @@ class AgentSteps(WorkflowRunnerBase):
             role=role,
             project=project,
             step_id=step,
-            visit_count=visit_count,
         )
         run = self._open_agent_run(
             role,
@@ -207,6 +206,10 @@ class AgentSteps(WorkflowRunnerBase):
                 "model": model_selection.model,
                 "visit_count": visit_count,
                 "source": model_selection.source,
+                # How far up its role's models the step is, and how many
+                # failures of its own work it has had on this one.
+                "moves_up": model_selection.moves_up,
+                "failures": model_selection.failures,
             },
         )
         self.records.emit_event(

@@ -382,13 +382,20 @@ export function currentGateOverride(task, policy) {
   return overrides.policy?.[policy] ?? overrides.gates?.[policy] ?? "";
 }
 
+/** The model the task has every step start on among its role's models, or `""` for the first of each. */
+export function currentStart(task) {
+  const start = task.executor_overrides?.ladder_start;
+  return typeof start === "string" ? start : "";
+}
+
 /**
  * The `executor_overrides` object to send: what the task has now, with the
- * given gates (`{ policy: "human" | "auto" | "" }`) and step models
- * (`{ step: "model" | "" }`) set, or removed when empty. Everything else the
- * task carries (a ladder start, other decisions) is kept as it is.
+ * given gates (`{ policy: "human" | "auto" | "" }`), step models
+ * (`{ step: "model" | "" }`) and the model to start on (`"model" | ""`; left
+ * as it is when not given) set, or removed when empty. Everything else the
+ * task carries is kept as it is.
  */
-export function applyOverrides(current, { gates = {}, models = {} }) {
+export function applyOverrides(current, { gates = {}, models = {}, start }) {
   const next = { ...(current ?? {}) };
   const policy = { ...(next.policy ?? {}) };
   const older = { ...(next.gates ?? {}) };
@@ -407,6 +414,11 @@ export function applyOverrides(current, { gates = {}, models = {} }) {
   for (const [key, value] of [["policy", policy], ["gates", older], ["models", modelMap]]) {
     if (Object.keys(value).length) next[key] = value;
     else delete next[key];
+  }
+  if (start !== undefined) {
+    const model = String(start ?? "").trim();
+    if (model) next.ladder_start = model;
+    else delete next.ladder_start;
   }
   return next;
 }

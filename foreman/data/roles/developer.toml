@@ -6,6 +6,10 @@ description = "Writes code, tests, and documentation for assigned tasks"
 [agent]
 backend = "claude_code"
 model = ""
+# Models cheapest first, and the failures of its own work on one model before
+# the step moves up to the next (see ADR-0041):
+# model_ladder = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]
+# escalate_after = 2
 session_persistence = true
 permission_mode = "bypassPermissions"
 

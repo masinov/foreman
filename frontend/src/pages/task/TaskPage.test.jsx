@@ -904,6 +904,30 @@ describe("Overrides for this task", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Saved.");
   });
 
+  it("starts every step on a model of its role's, named by the model, and moves nothing else", async () => {
+    const task = taskDetail({ executor_overrides: { models: { develop: "claude-opus-5-5" } } });
+    const { section, fetchImpl } = await overrides(task);
+    const start = within(section).getByLabelText("Start on");
+    expect(start).toHaveValue("");
+    await within(start).findByRole("option", { name: "claude-opus-5-5" });
+    fireEvent.change(start, { target: { value: "claude-opus-5-5" } });
+    fireEvent.click(within(section).getByRole("button", { name: "Save overrides" }));
+    await waitFor(() => expect(calls(fetchImpl, "PATCH", PATCH)).toHaveLength(1));
+    expect(calls(fetchImpl, "PATCH", PATCH)[0].body).toEqual({
+      executor_overrides: { models: { develop: "claude-opus-5-5" }, ladder_start: "claude-opus-5-5" },
+    });
+  });
+
+  it("shows the model a task starts on, and takes it away", async () => {
+    const task = taskDetail({ executor_overrides: { ladder_start: "claude-opus-5-5" } });
+    const { section, fetchImpl } = await overrides(task);
+    expect(within(section).getByLabelText("Start on")).toHaveValue("claude-opus-5-5");
+    fireEvent.change(within(section).getByLabelText("Start on"), { target: { value: "" } });
+    fireEvent.click(within(section).getByRole("button", { name: "Save overrides" }));
+    await waitFor(() => expect(calls(fetchImpl, "PATCH", PATCH)).toHaveLength(1));
+    expect(calls(fetchImpl, "PATCH", PATCH)[0].body).toEqual({ executor_overrides: {} });
+  });
+
   it("clears what was set, in the older gates form too", async () => {
     const task = taskDetail({
       executor_overrides: { gates: { merge_approval: "human" }, models: { develop: "opus-5-5" } },

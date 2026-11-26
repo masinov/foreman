@@ -200,6 +200,27 @@ class RemovalTests(_Workspace):
             remove_definition(self.store, "p1", "role", "developer", changed_by="alice")
 
 
+class RoleModelsTomlTests(unittest.TestCase):
+    """A role's models and failures before moving up, as the role's TOML says them."""
+
+    def test_the_defaults_are_no_models_and_two_failures(self) -> None:
+        role = load_role_text(shipped_role("developer"), "developer")
+        self.assertEqual((role.agent.model_ladder, role.agent.escalate_after), ((), 2))
+
+    def test_a_role_names_its_models_and_when_to_move_up(self) -> None:
+        text = shipped_role("developer").replace(
+            'model = ""', 'model = ""\nmodel_ladder = ["a", "b"]\nescalate_after = 3', 1
+        )
+        role = load_role_text(text, "developer")
+        self.assertEqual((role.agent.model_ladder, role.agent.escalate_after), (("a", "b"), 3))
+
+    def test_escalate_after_is_a_whole_number_of_at_least_one(self) -> None:
+        for bad in ("0", "-1", '"two"', "true", "1.5"):
+            text = shipped_role("developer").replace('model = ""', f'model = ""\nescalate_after = {bad}', 1)
+            with self.assertRaisesRegex(RoleLoadError, "escalate_after"):
+                load_role_text(text, "developer")
+
+
 class ShippedRoleTests(unittest.TestCase):
     def test_a_misspelt_tool_is_refused_when_a_role_is_loaded(self) -> None:
         text = shipped_role("code_reviewer").replace('"NotebookEdit"', '"NotebookEdits"')
@@ -351,7 +372,7 @@ class CliTests(_Workspace):
         self.assertFalse({"role set", "role reset", "workflow set", "workflow reset"} & MANAGER_SESSION_COMMANDS)
 
 
-ROLE_FIELDS = ("name", "description", "model", "tools", "ends", "decisions", "timeout_minutes", "max_cost_usd", "prompt")
+ROLE_FIELDS = ("name", "description", "models", "escalate_after", "tools", "ends", "decisions", "timeout_minutes", "max_cost_usd", "prompt")
 
 
 def fields_of(described: dict) -> dict:
@@ -373,6 +394,8 @@ class FormTests(_Workspace):
                 self.assertEqual(again.completion, before.completion)
                 self.assertEqual(again.prompt_template, before.prompt_template)
                 self.assertEqual(again.agent.model, before.agent.model)
+                self.assertEqual(again.agent.model_ladder, before.agent.model_ladder)
+                self.assertEqual(again.agent.escalate_after, before.agent.escalate_after)
                 self.assertEqual(again.agent.flags, before.agent.flags)
                 self.assertEqual(again.signals, before.signals)
 
@@ -453,7 +476,7 @@ class ApiTests(_Workspace):
 
     def test_saving_the_form_changes_the_role_for_this_project(self) -> None:
         fields = fields_of(self.role("code_reviewer"))
-        fields["model"] = "claude-opus-5-5"
+        fields["models"] = ["claude-opus-5-5"]
         fields["tools"] = {"every": False, "chosen": ["Read", "Grep", "Glob", "Bash"]}
         fields["timeout_minutes"] = 20
 
@@ -468,6 +491,50 @@ class ApiTests(_Workspace):
         self.assertTrue(saved.completion.output.approve_needs_reading)
         self.assertEqual(self.role("code_reviewer")["origin"], "changed")
         self.assertEqual(self.role("code_reviewer", "p2")["origin"], "shipped")
+
+    def test_models_cheapest_first_and_failures_before_moving_up_are_saved_for_a_project(self) -> None:
+        fields = fields_of(self.role("developer"))
+        fields["models"] = ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"]
+        fields["escalate_after"] = 3
+
+        response = self.request("PUT", "/projects/p1/roles/developer", json={"fields": fields})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        saved = project_definitions(self.store, "p1").roles["developer"]
+        self.assertEqual(
+            saved.agent.model_ladder, ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5")
+        )
+        self.assertEqual(saved.agent.escalate_after, 3)
+        described = self.role("developer")
+        self.assertEqual(described["models"], list(saved.agent.model_ladder))
+        self.assertEqual(described["escalate_after"], 3)
+        # Another project keeps the shipped developer: no models, moves up after 2.
+        other = self.role("developer", "p2")
+        self.assertEqual((other["models"], other["escalate_after"]), ([], 2))
+
+    def test_one_model_is_the_roles_model_and_no_ladder_and_none_is_the_projects_default(self) -> None:
+        fields = fields_of(self.role("developer"))
+        fields["models"] = ["claude-sonnet-5-5"]
+        self.assertEqual(self.request("PUT", "/projects/p1/roles/developer", json={"fields": fields}).status_code, 200)
+        saved = project_definitions(self.store, "p1").roles["developer"]
+        self.assertEqual((saved.agent.model, saved.agent.model_ladder), ("claude-sonnet-5-5", ()))
+        self.assertEqual(self.role("developer")["models"], ["claude-sonnet-5-5"])
+
+        fields["models"] = []
+        self.assertEqual(self.request("PUT", "/projects/p1/roles/developer", json={"fields": fields}).status_code, 200)
+        saved = project_definitions(self.store, "p1").roles["developer"]
+        self.assertEqual((saved.agent.model, saved.agent.model_ladder), ("", ()))
+
+    def test_a_form_that_lists_a_model_twice_or_moves_up_after_nothing_is_refused(self) -> None:
+        fields = fields_of(self.role("developer"))
+        fields["models"] = ["claude-haiku-5-5", "claude-haiku-5-5"]
+        response = self.request("PUT", "/projects/p1/roles/developer", json={"fields": fields})
+        self.assertEqual(response.status_code, 400, response.text)
+        fields["models"] = ["claude-haiku-5-5", "claude-opus-5-5"]
+        for bad in (0, -1, "2", True):
+            fields["escalate_after"] = bad
+            response = self.request("PUT", "/projects/p1/roles/developer", json={"fields": fields})
+            self.assertEqual(response.status_code, 400, (bad, response.text))
 
     def test_a_decision_the_prompt_never_mentions_is_refused(self) -> None:
         fields = fields_of(self.role("security_reviewer"))
@@ -575,6 +642,19 @@ class WorkspaceDefaultTests(ApiTests):
         self.assertEqual(project_definitions(self.store, "p1").own_roles, {})
         self.assertEqual(self.role("code_reviewer")["origin"], "shipped")
 
+    def test_the_workspaces_role_sets_its_models_and_failures_before_moving_up(self) -> None:
+        fields = fields_of(self.role("developer"))
+        fields["models"] = ["claude-haiku-5-5", "claude-opus-5-5"]
+        fields["escalate_after"] = 1
+
+        response = self.request("PUT", "/roles/developer", json={"fields": fields})
+
+        self.assertEqual(response.status_code, 200, response.text)
+        for scope in (None, "p1"):
+            role = project_definitions(self.store, scope).roles["developer"]
+            self.assertEqual(role.agent.model_ladder, ("claude-haiku-5-5", "claude-opus-5-5"))
+            self.assertEqual(role.agent.escalate_after, 1)
+
     def test_a_project_that_drops_its_own_goes_back_to_the_workspaces_default(self) -> None:
         save_role(self.store, None, reviewer_on("claude-opus-5-5"), changed_by="alice")
         save_role(self.store, "p1", reviewer_on("claude-haiku-5-5"), changed_by="bob")
@@ -618,7 +698,7 @@ class WorkspaceDefaultTests(ApiTests):
         self.assertEqual(development["used_by"], ["p1", "p2"])
         reviewer = next(role for role in payload["roles"] if role["id"] == "code_reviewer")
         fields = fields_of(reviewer)
-        fields["model"] = "claude-opus-5-5"
+        fields["models"] = ["claude-opus-5-5"]
 
         response = self.request("PUT", "/roles/code_reviewer", json={"fields": fields})
 
@@ -672,7 +752,7 @@ class ModelCheckTests(ApiTests):
 
     def save_with(self, model: str):
         fields = fields_of(self.role("code_reviewer"))
-        fields["model"] = model
+        fields["models"] = [model]
         return self.request("PUT", "/projects/p1/roles/code_reviewer", json={"fields": fields})
 
     def test_a_model_the_program_cannot_run_is_refused_with_its_reason(self) -> None:

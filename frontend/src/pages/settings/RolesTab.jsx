@@ -60,7 +60,16 @@ export function RolesTab({ projectId = null }) {
             key: "model",
             header: "Model",
             className: "definition__nowrap",
-            render: (role) => (role.model ? <Mono>{role.model}</Mono> : projectId ? "Project default" : "Each project's default"),
+            render: (role) =>
+              role.models?.length ? (
+                <Mono>{role.models.join(" › ")}</Mono>
+              ) : role.model ? (
+                <Mono>{role.model}</Mono>
+              ) : projectId ? (
+                "Project default"
+              ) : (
+                "Each project's default"
+              ),
           },
           { key: "tools", header: "Tools", render: (role) => toolsWords(role.tools) },
           { key: "ends", header: "Ends with", render: endsWords },

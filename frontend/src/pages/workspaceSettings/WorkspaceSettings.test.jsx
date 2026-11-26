@@ -56,7 +56,7 @@ describe("Workspace settings", () => {
 
       await waitFor(() => expect(sent(fetchImpl, "PUT")).toHaveLength(1));
       expect(sent(fetchImpl, "PUT")[0].url).toMatch(/\/api\/v1\/roles\/code_reviewer$/);
-      expect(sent(fetchImpl, "PUT")[0].body.fields.model).toBe("claude-opus-5-5");
+      expect(sent(fetchImpl, "PUT")[0].body.fields.models).toEqual(["claude-opus-5-5"]);
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     });
 

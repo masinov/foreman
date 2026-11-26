@@ -1,7 +1,7 @@
 import { formatDuration, humanize, shortSha } from "../../ui/format";
 import { RULE_DECISIONS } from "../settings/settingsWords";
 import { gateDecider } from "./taskWords";
-import { FOREMAN, outcomeTone, runResult, runRole, runSeconds, SENT_BACK, stepOf, stepOutcome } from "../shared/activityWords";
+import { FOREMAN, modelSourceWords, outcomeTone, runResult, runRole, runSeconds, SENT_BACK, stepOf, stepOutcome } from "../shared/activityWords";
 
 // The facts of one step, the column beside its story (owner, 2026-11-22):
 // the same labels for every kind of step, each shown only where it applies.
@@ -9,13 +9,6 @@ import { FOREMAN, outcomeTone, runResult, runRole, runSeconds, SENT_BACK, stepOf
 // role may use, how it ended, what came next) is said here once.
 
 const HUMAN_GATE = "_builtin:human_gate";
-
-const MODEL_SOURCE = {
-  role: "set by the role",
-  project_default: "the project's default",
-  task_override: "set for this task",
-  ladder: "the next model on the role's ladder",
-};
 
 /** The data of the last event of a kind in a transcript, or null. */
 function last(transcript, kind) {
@@ -135,7 +128,7 @@ export function stepFacts(run, transcript, { previous = null, next = null, task 
   const chosen = last(transcript, "workflow.model_selected");
   const model = chosen?.model || run.model;
   if (model) {
-    const source = MODEL_SOURCE[chosen?.source] ?? "";
+    const source = modelSourceWords(chosen);
     facts.push({ key: "model", term: "Model", text: source ? `${model}, ${source}` : model });
   }
   const tools = toolsWords(last(transcript, "engine.role_policy"));

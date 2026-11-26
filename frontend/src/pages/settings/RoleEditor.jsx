@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useState } from "react";
 
+import { Button } from "../../ui/Button";
 import { Field } from "../../ui/Field";
 import { humanize } from "../../ui/format";
 import { DefinitionDialog } from "./DefinitionDialog";
@@ -25,18 +26,71 @@ function Ticks({ legend, names, chosen, onChange, label = (name) => name }) {
 const OTHER = "_other";
 
 /**
+ * One model of a role: chosen from the project's list, or typed when the list
+ * does not have it. The first model may be left to the project's default; a
+ * model it moves up to is always named.
+ */
+function ModelPicker({ label, value, models, defaultLabel, onChange, onRemove }) {
+  const id = useId();
+  // A model the list does not have is typed; so is one just picked as "Type a model id…".
+  const [typing, setTyping] = useState(false);
+  const other = typing || (Boolean(value) && !models.includes(value));
+  return (
+    <div className="field">
+      <label className="field__label" htmlFor={id}>
+        {label}
+      </label>
+      <select
+        id={id}
+        className="field__input"
+        value={other ? OTHER : value}
+        onChange={(event) => {
+          const picked = event.target.value;
+          setTyping(picked === OTHER);
+          onChange(picked === OTHER ? "" : picked);
+        }}
+      >
+        {defaultLabel !== null ? <option value="">{defaultLabel}</option> : <option value="">Choose a model</option>}
+        {models.map((entry) => (
+          <option key={entry} value={entry}>
+            {entry}
+          </option>
+        ))}
+        <option value={OTHER}>Type a model id…</option>
+      </select>
+      {other ? (
+        <input
+          className="field__input"
+          aria-label={`${label} id`}
+          placeholder="Model id, as the agent program takes it"
+          spellCheck={false}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      ) : null}
+      {onRemove ? (
+        <Button inRow variant="quiet" onClick={onRemove}>
+          Remove {label.toLowerCase()}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * One role, as a form: what it is called, the model, the tools, how its run
  * ends, its limits and its prompt. `role` is the role being edited; with
  * `isNew` it is the role a new one starts as a copy of.
  */
 export function RoleEditor({ open, projectId, role, isNew = false, vocabulary, onClose, onSaved }) {
-  const modelId = useId();
-  const [otherModel, setOtherModel] = useState(false);
+  const escalateId = useId();
   const endsId = useId();
   const everyId = useId();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [model, setModel] = useState("");
+  // Its models, cheapest first; the first may be empty (the project's default).
+  const [models, setModels] = useState([""]);
+  const [escalateAfter, setEscalateAfter] = useState("2");
   const [every, setEvery] = useState(false);
   const [tools, setTools] = useState([]);
   const [ends, setEnds] = useState("done");
@@ -49,8 +103,8 @@ export function RoleEditor({ open, projectId, role, isNew = false, vocabulary, o
     if (!open || !role) return;
     setName(isNew ? "" : role.name);
     setDescription(role.description);
-    setModel(role.model);
-    setOtherModel(Boolean(role.model) && !vocabulary.models.includes(role.model));
+    setModels(role.models?.length ? role.models : role.model ? [role.model] : [""]);
+    setEscalateAfter(String(role.escalate_after ?? 2));
     setEvery(role.tools.every);
     setTools(role.tools.chosen);
     setEnds(role.ends);
@@ -68,14 +122,21 @@ export function RoleEditor({ open, projectId, role, isNew = false, vocabulary, o
   function fields() {
     const timeout = Number(minutes);
     const limit = Number(cost);
+    const named = models.map((entry) => entry.trim());
+    const failures = Number(escalateAfter);
     if (!name.trim()) throw new Error("A role needs a name.");
+    if (named.slice(1).some((entry) => !entry)) throw new Error("Name each model it moves up to, or remove it.");
+    if (named.length > 1 && !named[0]) throw new Error("Name the first model before the ones it moves up to.");
+    if (new Set(named).size !== named.length) throw new Error("A model is listed once; it moves up to a different model.");
+    if (!Number.isInteger(failures) || failures < 1) throw new Error("Failures before it moves up are a whole number, 1 or more.");
     if (!Number.isInteger(timeout) || timeout <= 0) throw new Error("The time limit is a whole number of minutes.");
     if (!(limit > 0)) throw new Error("The cost limit is a number above zero.");
     if (ends === "decides" && !decisions.length) throw new Error("Tick at least one decision it may give.");
     return {
       name: name.trim(),
       description: description.trim(),
-      model: model.trim(),
+      models: named.filter(Boolean),
+      escalate_after: failures,
       tools: { every, chosen: every ? [] : tools },
       ends,
       decisions: ends === "decides" ? decisions : [],
@@ -99,44 +160,56 @@ export function RoleEditor({ open, projectId, role, isNew = false, vocabulary, o
     >
       <Field label="Name" value={name} onChange={(event) => setName(event.target.value)} data-autofocus />
       <Field label="What it does" value={description} onChange={(event) => setDescription(event.target.value)} />
+      <ModelPicker
+        // A different role starts the pickers over, so a typed model id is read again.
+        key={`${role.id}-${isNew}-first`}
+        label="Model"
+        value={models[0] ?? ""}
+        models={vocabulary.models}
+        defaultLabel={
+          vocabulary.default_model
+            ? `The project's default, ${vocabulary.default_model}`
+            : projectId
+              ? "The project's default"
+              : "Each project's default"
+        }
+        onChange={(value) => setModels((all) => [value, ...all.slice(1)])}
+      />
+      {models.slice(1).map((entry, index) => (
+        <ModelPicker
+          key={`${role.id}-${isNew}-${index}`}
+          label={`Moves up to ${index + 1}`}
+          value={entry}
+          models={vocabulary.models}
+          defaultLabel={null}
+          onChange={(value) => setModels((all) => all.map((one, at) => (at === index + 1 ? value : one)))}
+          onRemove={() => setModels((all) => all.filter((_, at) => at !== index + 1))}
+        />
+      ))}
       <div className="field">
-        <label className="field__label" htmlFor={modelId}>
-          Model
-        </label>
-        <select
-          id={modelId}
-          className="field__input"
-          value={otherModel ? OTHER : model}
-          onChange={(event) => {
-            const picked = event.target.value;
-            setOtherModel(picked === OTHER);
-            setModel(picked === OTHER ? "" : picked);
-          }}
-        >
-          <option value="">
-            {vocabulary.default_model
-              ? `The project's default, ${vocabulary.default_model}`
-              : projectId
-                ? "The project's default"
-                : "Each project's default"}
-          </option>
-          {vocabulary.models.map((entry) => (
-            <option key={entry} value={entry}>
-              {entry}
-            </option>
-          ))}
-          <option value={OTHER}>Type a model id…</option>
-        </select>
-        {otherModel ? (
-          <input
-            className="field__input"
-            aria-label="Model id"
-            placeholder="Model id, as the agent program takes it"
-            spellCheck={false}
-            value={model}
-            onChange={(event) => setModel(event.target.value)}
-          />
-        ) : null}
+        <Button inRow variant="quiet" onClick={() => setModels((all) => [...all, ""])}>
+          Add a model it moves up to
+        </Button>
+        {models.length > 1 ? (
+          <>
+            <label className="field__label" htmlFor={escalateId}>
+              Failures on one model before it moves up
+            </label>
+            <input
+              id={escalateId}
+              className="field__input"
+              inputMode="numeric"
+              value={escalateAfter}
+              onChange={(event) => setEscalateAfter(event.target.value)}
+            />
+            <span className="field__hint">
+              Cheapest first. The run ended without a result, the review sent it back or the tests failed: that is a failure.
+              After the last model fails that many times, the task waits for a person.
+            </span>
+          </>
+        ) : (
+          <span className="field__hint">With one model it never moves up.</span>
+        )}
       </div>
 
       <div className="field">
