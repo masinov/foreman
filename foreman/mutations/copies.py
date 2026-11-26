@@ -41,6 +41,13 @@ _BACKLOG_NOTICE = (
 )
 
 
+def has_directions(project: Project) -> bool:
+    """Whether the repository has ``docs/directions/`` on its default branch."""
+
+    result = run_git(project.repo_path, "cat-file", "-e", f"{project.default_branch}:{DIRECTIONS_DIR}", check=False)
+    return result.returncode == 0
+
+
 @dataclass(frozen=True, slots=True)
 class CopyFile:
     """One file to write: its path in the repository and its text."""
@@ -276,7 +283,8 @@ def render_status(store: ForemanStore, project: Project) -> str:
         "",
         "- How things work and what was decided: `docs/guide/`, `docs/adr/`.",
         "- Conflicts between the spec, the design and the code: `docs/guide/conflicts-spec-design-code.md`.",
-        "- Direction: `docs/ROADMAP.md`; the owner's directions, one file each: `docs/directions/`.",
+        "- Direction: `docs/ROADMAP.md`"
+        + ("; the owner's directions, one file each: `docs/directions/`." if has_directions(project) else "."),
         "- Open work: Foreman's backlog, copied to `docs/sprints/backlog.md`.",
         "- What changed: `CHANGELOG.md`.",
         "",
@@ -299,12 +307,15 @@ def render_backlog(store: ForemanStore, project: Project) -> str:
         "(a lower number first), as it was when this file was last written. "
         "File, accept, decline and plan work in Foreman (`foreman backlog`, or the project's Backlog tab).",
         "",
-        f"The owner's directions and the design decisions taken with the owner are not tasks. "
-        f"They are one file each in [`{DIRECTIONS_DIR}/`](../directions/README.md).",
-        "",
         f"Filed {counts['triage']}, accepted {counts['todo']}.",
         "",
     ]
+    if has_directions(project):
+        parts[parts.index(f"Filed {counts['triage']}, accepted {counts['todo']}."):0] = [
+            "The owner's directions and the design decisions taken with the owner are not tasks. "
+            f"They are one file each in [`{DIRECTIONS_DIR}/`](../directions/README.md).",
+            "",
+        ]
     for heading, group in (("Filed, not accepted", filed), ("Accepted, not planned", accepted)):
         parts += [f"## {heading} ({len(group)})", ""]
         if not group:
