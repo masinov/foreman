@@ -76,6 +76,9 @@ class SprintFlow:
             "sprint_id": next_sprint.id,
             "sprint_title": next_sprint.title,
         }, sprint=next_sprint)
+        checkpoints = SprintCheckpoints(self.store, self.records)
+        if checkpoints.copies_on(project):
+            checkpoints.write_copies(project, next_sprint, why=f"{next_sprint.title} started")
         return None
 
     def _announce_resolved(self, project: Project, sprint: Sprint) -> None:

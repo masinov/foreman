@@ -92,6 +92,7 @@ export const CODECS = {
   review_diff_max_chars: { ...whole({ required: true }) },
   write_checkpoint_notes: toggle,
   generate_changelog: toggle,
+  generate_copies: toggle,
   adr_dir: text,
 };
 

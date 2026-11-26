@@ -64,6 +64,12 @@ Read it if you need to understand the broader product direction.
   branch name become dashes when there is no key): a title line, then a few
   bullets for a reader of the changelog. Never edit `CHANGELOG.md`: Foreman
   generates it from the change files.
+- Do not write a pull-request note (`docs/prs/` is gone) and do not edit
+  `docs/STATUS.md`, `docs/sprints/current.md` or `docs/sprints/archive/`:
+  Foreman writes them from its database. Record a conflict between the spec,
+  the design and the code in `docs/guide/conflicts-spec-design-code.md`.
+  Your report and your change file are what the task keeps; the merge commit
+  carries the change file's text.
 - Create or update docs/ARCHITECTURE.md and docs/ROADMAP.md when your
   work changes the codebase structure or project direction
 - Interactive programs are not available, and nobody will type input. A

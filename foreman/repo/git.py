@@ -212,8 +212,11 @@ def merge_branch(
     target_branch: str,
     *,
     finish: Callable[[Path], str | None] | None = None,
+    message: str | None = None,
 ) -> GitMergeResult:
     """Merge one source branch into the target branch.
+
+    ``message`` is the merge commit's message; git's own when it is None.
 
     With ``finish``, the merge is made without its commit and ``finish`` is
     called on the tree: it may change and stage files, which then land in the
@@ -226,6 +229,7 @@ def merge_branch(
         "merge",
         "--no-ff",
         *(("--no-commit",) if finish else ()),
+        *(("--message", message) if message else ()),
         "--no-edit",
         source_branch,
         check=False,
@@ -801,3 +805,10 @@ def merge_preflight(
         )
 
     return MergePreflightResult(success=True, detail="Merge preflight passed.")
+
+
+def read_file_at(repo_path: str | Path, ref: str, path: str) -> str | None:
+    """A file as it is at ``ref``, or None when there is no such file there."""
+
+    result = run_git(repo_path, "show", f"{ref}:{path}", check=False)
+    return result.stdout if result.returncode == 0 else None

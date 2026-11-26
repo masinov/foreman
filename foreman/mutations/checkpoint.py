@@ -1,6 +1,7 @@
 """A finished sprint's checkpoint (spec 6.4): a tag on the default branch,
-and a note and the generated ``CHANGELOG.md`` committed before it where the
-project asks for them (one commit).
+and a note, the generated ``CHANGELOG.md`` and the generated copies
+(``docs/STATUS.md``, ``docs/sprints/current.md`` and the sprint's archive
+copy) committed before it where the project asks for them (one commit).
 
 Whoever finishes a sprint, a user (``transition_sprint``) or the engine
 (``SprintFlow``), the same checkpoint follows. The sprint is finished
@@ -34,6 +35,7 @@ from ..repo.git import (
 from ..repo.worktrees import WorktreeError, WorktreeManager
 from ..store import ForemanStore
 from .changelog import CHANGELOG_FILE, stage_changelog, unstage_changelog
+from .copies import render_copies, stage_copies
 
 #: Where checkpoint notes go, in the repository.
 NOTES_DIR = "docs/checkpoints"
@@ -184,17 +186,19 @@ class SprintCheckpoints:
         note_path: str | None = None
         changelog_path: str | None = None
         integration: Path | None = None
-        if settings.write_checkpoint_notes or settings.generate_changelog:
+        if settings.write_checkpoint_notes or settings.generate_changelog or settings.generate_copies:
             integration = WorktreeManager(project).ensure_integration()
             if settings.write_checkpoint_notes:
                 note_path = f"{NOTES_DIR}/{tag}.md"
             committed = self._commit_files(
                 integration,
+                project,
                 sprint,
                 tag,
                 completed,
                 note_path=note_path,
                 changelog=settings.generate_changelog,
+                copies=settings.generate_copies,
             )
             if isinstance(committed, Checkpoint):
                 return committed
@@ -233,14 +237,16 @@ class SprintCheckpoints:
     def _commit_files(
         self,
         integration: Path,
+        project: Project,
         sprint: Sprint,
         tag: str,
         completed: datetime,
         *,
         note_path: str | None,
         changelog: bool,
+        copies: bool = False,
     ) -> tuple[str, str | None] | Checkpoint:
-        """Write and commit the note and the changelog on the default branch.
+        """Write and commit the note, the changelog and the copies on the default branch.
 
         One commit. The new head and the changelog's path (``None`` when there
         were no change files), or why not.
@@ -266,16 +272,29 @@ class SprintCheckpoints:
                 if staged:
                     changelog_path = CHANGELOG_FILE
                     paths += staged
+            if copies:
+                files = render_copies(self.store, project, finished=sprint, tag=tag or None)
+                changed, created = stage_copies(integration, files)
+                paths += changed
+                written += created
         except (GitError, OSError) as exc:
             self._undo(integration, paths, written)
-            return Checkpoint(problem=f"The changelog or the checkpoint note could not be written: {exc}")
+            return Checkpoint(problem=f"The changelog, the copies or the checkpoint note could not be written: {exc}")
+        what = "checkpoint note" if note_path else "changelog" if changelog_path else "status and sprint copies"
+        done = self._commit(integration, paths, written, what, f"docs: {what}, {sprint.title}")
+        if isinstance(done, Checkpoint):
+            return done
+        return done, changelog_path
+
+    def _commit(
+        self, integration: Path, paths: list[str], written: list[Path], what: str, message: str
+    ) -> str | Checkpoint:
+        """Commit ``paths`` and return the new head; the head as it is when there are none."""
+
         if not paths:
             head = head_sha(integration)
-            return (head, None) if head else Checkpoint(problem="The default branch's head could not be read.")
-        what = "checkpoint note" if note_path else "changelog"
-        commit = run_git(
-            integration, "commit", "--message", f"docs: {what}, {sprint.title}", "--", *paths, check=False
-        )
+            return head if head else Checkpoint(problem="The default branch's head could not be read.")
+        commit = run_git(integration, "commit", "--message", message, "--", *paths, check=False)
         if commit.returncode != 0:
             self._undo(integration, paths, written)
             return Checkpoint(
@@ -284,7 +303,7 @@ class SprintCheckpoints:
         new_head = head_sha(integration)
         if new_head is None:
             return Checkpoint(problem=f"The {what} was committed, but its commit could not be read.")
-        return new_head, changelog_path
+        return new_head
 
     @staticmethod
     def _undo(integration: Path, paths: list[str], written: list[Path]) -> None:
@@ -316,7 +335,7 @@ class SprintCheckpoints:
         try:
             integration = WorktreeManager(project).ensure_integration()
             committed = self._commit_files(
-                integration, sprint, "", _completed_at(sprint), note_path=None, changelog=True
+                integration, project, sprint, "", _completed_at(sprint), note_path=None, changelog=True
             )
             if isinstance(committed, Checkpoint):
                 return committed
@@ -332,6 +351,53 @@ class SprintCheckpoints:
                 records.append(_push_record(pushed, {"remote": remote, "branch": project.default_branch, "sha": sha}))
             return Checkpoint(sha=sha, changelog_path=changelog_path)
         except (GitError, WorktreeError, SettingsError, OSError) as exc:
+            return Checkpoint(problem=str(exc))
+        finally:
+            self._emit(project, sprint, records)
+
+    def copies_on(self, project: Project) -> bool:
+        """Whether the project has Foreman write its status and sprint copies."""
+
+        try:
+            return settings_of(project).generate_copies
+        except SettingsError:
+            return False
+
+    def write_copies(self, project: Project, sprint: Sprint, *, why: str, archive: bool = False) -> Checkpoint:
+        """Write ``docs/STATUS.md`` and ``docs/sprints/current.md`` in a commit of their own.
+
+        Done when a sprint starts and by ``foreman copies``; a sprint's finish
+        writes them in its checkpoint's commit instead. With ``archive`` and a
+        finished ``sprint``, its archive copy is written too. Never raises:
+        ``problem`` says why nothing was written, and ``sha`` is the new head
+        (``None`` when nothing differed). The outcome is recorded on the sprint
+        (ADR-0037).
+        """
+
+        records: list[tuple[str, dict[str, Any]]] = []
+        try:
+            integration = WorktreeManager(project).ensure_integration()
+            files = render_copies(self.store, project, finished=sprint if archive and sprint.status == "completed" else None)
+            changed, created = stage_copies(integration, files)
+            if not changed:
+                return Checkpoint()
+            done = self._commit(
+                integration, changed, created, "status and sprint copies", f"docs: status and sprint copies, {why}"
+            )
+            if isinstance(done, Checkpoint):
+                records.append(("engine.copies_failed", {"sprint_id": sprint.id, "reason": done.problem}))
+                return done
+            followed = _checkout_record(project, done)
+            if followed is not None:
+                records.append(followed)
+            remote = settings_of(project).merge_push_remote
+            if remote:
+                pushed = push_branch(integration, remote=remote, branch=project.default_branch)
+                records.append(_push_record(pushed, {"remote": remote, "branch": project.default_branch, "sha": done}))
+            records.append(("engine.copies_written", {"sprint_id": sprint.id, "sha": done, "paths": changed, "why": why}))
+            return Checkpoint(sha=done, changelog_path=None)
+        except (GitError, WorktreeError, SettingsError, OSError) as exc:
+            records.append(("engine.copies_failed", {"sprint_id": sprint.id, "reason": str(exc)}))
             return Checkpoint(problem=str(exc))
         finally:
             self._emit(project, sprint, records)

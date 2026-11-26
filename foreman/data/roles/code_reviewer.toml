@@ -75,6 +75,10 @@ Use Read, Glob, and Grep to verify:
 8. The branch adds its change file, `changes/<task key>.md`, and it says what
    changed (a title and a few bullets). A branch that edits `CHANGELOG.md`
    instead is an S2 finding.
+9. The branch does not add a pull-request note under `docs/prs/` and does not
+   edit `docs/STATUS.md`, `docs/sprints/current.md` or a file under
+   `docs/sprints/archive/` that Foreman wrote: they are generated. A branch
+   that does is an S3 finding.
 
 ### Running things
 You work in a sandbox: a throwaway copy of the branch head, with the

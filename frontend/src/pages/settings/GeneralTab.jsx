@@ -239,6 +239,12 @@ function GeneralForm({ projectId, settings, onSaved }) {
           NOTE_CHOICES,
           "When a sprint is finished, CHANGELOG.md gets a section built from the files in changes/, which are removed, in the same commit",
         )}
+        {choiceRow(
+          "generate_copies",
+          "Status and sprint copies",
+          NOTE_CHOICES,
+          "Foreman writes docs/STATUS.md and docs/sprints/current.md from its database when a sprint starts and when it finishes, and the finished sprint's copy in docs/sprints/archive/",
+        )}
       </SettingsSection>
 
       <WorkingCopies projectId={projectId} />
