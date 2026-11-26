@@ -243,7 +243,7 @@ function GeneralForm({ projectId, settings, onSaved }) {
           "generate_copies",
           "Status and sprint copies",
           NOTE_CHOICES,
-          "Foreman writes docs/STATUS.md and docs/sprints/current.md from its database when a sprint starts and when it finishes, and the finished sprint's copy in docs/sprints/archive/",
+          "Foreman writes docs/STATUS.md and docs/sprints/current.md from its database when a sprint starts and when it finishes, with the finished sprint's copy in docs/sprints/archive/ and a copy of the backlog in docs/sprints/backlog.md",
         )}
       </SettingsSection>
 

@@ -128,8 +128,9 @@ class ProjectSettings:
     generate_changelog: bool = False
     # Foreman writes ``docs/STATUS.md`` and ``docs/sprints/current.md`` from its
     # database when a sprint starts and when it finishes (in the checkpoint's
-    # commit), and the finished sprint's archive copy (ADR-0040). Off: the
-    # files are left to whoever edits them.
+    # commit), the finished sprint's archive copy, and with the finish and
+    # ``foreman copies`` ``docs/sprints/backlog.md`` from its backlog (ADR-0040).
+    # Off: the files are left to whoever edits them.
     generate_copies: bool = False
     # The repository folder whose ADRs are numbered when a task merges and
     # whose index is generated (ADR-0040). Empty: none. A project without the

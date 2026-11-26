@@ -138,7 +138,7 @@ Ideas to generalise:
 |---|---|---|---|
 | Plan, for tasks over a set size or marked unclear | a planner role | the acceptance criteria in checkable form; one check per criterion (a test or a script) marked protected; the files it expects to touch | the checks committed before development starts |
 | Develop | the developer | the change, and a structured report: what changed, how each criterion was verified (command and output, screenshots), docs touched, risks, follow-ups | protected files unchanged; no interactive commands; time and cost caps |
-| Test | Foreman | the project's checks (tiers later, direction 5) | already |
+| Test | Foreman | the project's checks (tiers later, `docs/directions/tests-designed-not-only-watched.md`) | already |
 | Review | a reviewer in a fresh session | a verdict per criterion, with the evidence it checked. Severity on each finding; only real defects send the task back, and minor ones become notes or follow-ups | it can run the project's checks and open the application read-only (see open question 3); a cap on review rounds |
 | Approve | a user, or Foreman by setting | the merge decision | already |
 
@@ -323,7 +323,7 @@ Added in the same conversation:
   Measured in FOR-50 to FOR-59: 2 to 10 reads before the first edit, all
   targeted, because the task descriptions named the files.
 - **A generated code map** (like Aider's repo map) is a later deep survey,
-  recorded as owner direction 8 in the backlog; nothing depends on it.
+  recorded in `docs/directions/code-map-for-agents.md`; nothing depends on it.
 
 The build order is in ADR-0040.
 

@@ -13,7 +13,7 @@ which for Python's unittest is a lone "OK" (owner, 2026-11-22).
 
 Reading the count from the printed output would mean one parser for each
 tool's wording, and it would be thrown away once Foreman reads each test's
-result (owner direction 5, `docs/sprints/backlog.md`).
+result (`docs/directions/tests-designed-not-only-watched.md`).
 
 Two more facts shaped the decision:
 
@@ -83,7 +83,7 @@ Two more facts shaped the decision:
   --outputFile.junit="$FOREMAN_TEST_REPORT_DIR/vitest.xml"`. Python's
   unittest writes none, so a unittest project needs unittest-xml-reporting
   (`python -m xmlrunner discover -s tests -o "$FOREMAN_TEST_REPORT_DIR"`).
-- The same reports are where owner direction 5 starts: each test's name,
+- The same reports are where `docs/directions/tests-designed-not-only-watched.md` starts: each test's name,
   result, time and failure message.
 - A long test run writes one record per output line while it runs, instead
   of all of them at the end. The number of records does not change.

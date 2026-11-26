@@ -152,11 +152,14 @@ Primary persisted entities:
   `services/task_reads.py` and drawn by the Activity tab. No git call is
   made when a page is read.
 
-`docs/STATUS.md`, `docs/sprints/current.md` and a finished sprint's archive
-copy are projections: Foreman writes them from its database
-(`foreman/mutations/copies.py`) when a sprint starts, when it finishes (in the
-checkpoint's commit, `mutations/checkpoint.py`) and from `foreman copies`,
-where the project setting `generate_copies` is on (ADR-0040). A merge commit's
+`docs/STATUS.md`, `docs/sprints/current.md`, `docs/sprints/backlog.md` (the
+filed and accepted work, by priority, with keys) and a finished sprint's
+archive copy are projections: Foreman writes them from its database
+(`foreman/mutations/copies.py`). STATUS and current are written when a sprint
+starts, all of them when it finishes (in the checkpoint's commit,
+`mutations/checkpoint.py`) and from `foreman copies`, where the project setting
+`generate_copies` is on (ADR-0040). The owner's directions are not a
+projection: they are files of their own in `docs/directions/`. A merge commit's
 message carries the task's key, title and change file's text
 (`engine/builtins/merge.py`); `docs/prs/` is retired. The rest of the
 committed markdown is still bootstrap memory, which does not relax

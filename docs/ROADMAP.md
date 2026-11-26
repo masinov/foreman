@@ -19,8 +19,8 @@ replaced wholesale.
 ## The roadmap from 2026-11-19 (owner)
 
 Agreed with the owner on 2026-11-19 after sprint 60. It replaces the
-milestones below, which are kept as history, and orders the "Owner
-directions" of `docs/sprints/backlog.md`. Each stage gets an ADR before its
+milestones below, which are kept as history, and orders the owner's
+directions, one file each in `docs/directions/`. Each stage gets an ADR before its
 code, and before each subsystem's ADR the existing tools are surveyed.
 
 What Foreman is becoming: a software factory. People talk with clients,
@@ -40,8 +40,8 @@ left alone, and is judged by the numbers.
 
 ### Stage 2 — the manager and people
 
-The design agreed on 2026-11-19 is in `docs/sprints/backlog.md` ("Owner
-decisions, 2026-11-19"). In order:
+The design agreed on 2026-11-19 is in
+`docs/directions/the-manager-and-people.md` (owner decisions, 2026-11-19). In order:
 
 1. A simple identity system inside Foreman (owner, 2026-11-19: "We
    shouldn't be blocked by something so simple"). People sign in to Foreman
@@ -90,13 +90,14 @@ status read in place; the spec editor may grow from it), people, activity,
 statistics, tests (what must be tested, suites, coverage), settings.
 Workspace level: projects, shared roles and workflows, later machines. The
 views are designed together as one system before any one is built (owner,
-2026-11-23; backlog, owner directions 5 and 6). It revises the approved
+2026-11-23; `docs/directions/the-views-as-one-system.md` and
+`docs/directions/tests-designed-not-only-watched.md`). It revises the approved
 design (v7), so a design reference comes first, then one screen at a time.
 A view of the code and one of the repository's history are open questions
 in that design. The June rule against a code browser no longer holds (owner,
 2026-11-23).
 
-### Stage 6 — central server and workers (owner direction 1)
+### Stage 6 — central server and workers (`docs/directions/central-server-and-workers.md`)
 
 One Foreman on a server, agents run as a service user created at
 installation; sign-in through stage 2's identity, replaceable by the
@@ -112,7 +113,7 @@ Codex made real (smoke test, recorded cost, the same task through both),
 then others; harness and model chosen per role, step or task type by
 capability or price, judged by stage 1's numbers.
 
-### Stage 8 — above the task (owner directions 3 and 4)
+### Stage 8 — above the task (`docs/directions/releases-and-deployment-through-ci-cd.md` and `docs/directions/workflows-above-the-task.md`)
 
 A declarative sprint workflow (plan, tasks, checks on the integrated `main`,
 fix tasks into the same sprint until they pass); roles that look at a whole
@@ -129,7 +130,7 @@ instructions.
 
 ### Later, recorded but not scheduled
 
-Shared compute through a cluster manager (owner direction 2); ticketing apps
+Shared compute through a cluster manager (`docs/directions/shared-compute-through-a-cluster-manager.md`); ticketing apps
 in both directions; replying from notifications; recurring and
 event-triggered loops; projects over several repositories; the spec editor.
 
@@ -154,7 +155,7 @@ of not having one:
 The postponed research is done with it, as one subject, because stage 3
 already lists "which docs a change updates":
 - the method for the agents;
-- how a repository is organised (owner direction 7);
+- how a repository is organised (`docs/directions/how-a-repository-is-organised.md`);
 - the rules that let several tasks work in parallel without colliding.
 
 A proposal comes first, for the owner to correct, then an ADR, then the
