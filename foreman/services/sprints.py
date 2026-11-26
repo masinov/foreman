@@ -216,6 +216,7 @@ class SprintService(Service):
                 task_type=task_type if task_type in TASK_TYPES else "feature",
                 acceptance_criteria=str(task_data.get("acceptance_criteria") or "") or None,
                 description=str(task_data.get("description") or "") or None,
+                rests_on=task_data.get("rests_on"),
                 order_index=i,
             )
             created_tasks.append(

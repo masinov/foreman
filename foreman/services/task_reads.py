@@ -24,6 +24,7 @@ from .task_models import (
     CriterionClaim,
     FileChangeItem,
     FileDiff,
+    TaskDocument,
     MergeFacts,
     ReviewClaim,
     RunItem,
@@ -191,6 +192,30 @@ class TaskReads:
             status=match.status,
             old_path=match.old_path,
             diff=text[:DIFF_CAP_CHARS],
+            truncated=len(text) > DIFF_CAP_CHARS,
+            cap_chars=DIFF_CAP_CHARS,
+            total_chars=len(text),
+        )
+
+    def get_document(self, task_id: str, path: str) -> TaskDocument:
+        """A document the task names, read at the commit it was named at.
+
+        Only a path the task names is handed to git.
+        """
+
+        task, project = self._task_and_project(task_id)
+        ref = next((ref for ref in task.rests_on if ref.path == path), None)
+        if ref is None:
+            raise InvalidRequestError(f"{path!r} is not a document this task rests on.")
+        text = git.read_file_at(project.repo_path, ref.commit, ref.path)
+        if text is None:
+            raise NotFoundError(f"{ref.path} is not in the repository at {ref.commit[:10]}.")
+        return TaskDocument(
+            task_id=task.id,
+            path=ref.path,
+            heading=ref.heading,
+            commit=ref.commit,
+            text=text[:DIFF_CAP_CHARS],
             truncated=len(text) > DIFF_CAP_CHARS,
             cap_chars=DIFF_CAP_CHARS,
             total_chars=len(text),

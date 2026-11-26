@@ -43,6 +43,10 @@ _TASK_RULES = [
     "  found by reading the repository. Say what is out of scope.",
     "- acceptance_criteria: one per line, each something a reviewer can check",
     "  against the diff or a test.",
+    "- rests_on: the ADRs, spec sections and other documents the task is judged",
+    "  against, each `path` or `path#heading` of a file committed on the default",
+    "  branch (a path that is not there is refused). Foreman records the",
+    "  default branch's commit when it is named. Leave it out when none applies.",
     "- waits_for: only where a task needs another's result to start. Give each",
     "  task a `ref` and name refs there.",
 ]

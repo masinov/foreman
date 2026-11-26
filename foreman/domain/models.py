@@ -7,6 +7,7 @@ from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any, Literal
 
+from .rests_on import DocumentRef
 from .policy import GATE_DECISIONS, POLICY_DECISIONS, POLICY_VALUES, is_valid_value
 
 JsonDict = dict[str, Any]
@@ -252,6 +253,9 @@ class Task:
     worktree_path: str | None = None
     assigned_role: str | None = None
     acceptance_criteria: str | None = None
+    #: The documents of the repository the work rests on, each with the
+    #: default branch's commit at the time it was named (ADR-0041 section 6).
+    rests_on: list[DocumentRef] = field(default_factory=list)
     blocked_reason: str | None = None
     created_by: str = "human"
     depends_on_task_ids: list[str] = field(default_factory=list)

@@ -9,6 +9,7 @@ import sqlite3
 from dataclasses import asdict
 from typing import Any
 
+from ..domain.rests_on import documents_from_json
 from ..domain.models import (
     ApiToken,
     CompletionEvidence,
@@ -147,6 +148,11 @@ def _row_to_task(row: sqlite3.Row) -> Task:
         ),
         assigned_role=row["assigned_role"],
         acceptance_criteria=row["acceptance_criteria"],
+        rests_on=(
+            documents_from_json(_json_loads(row["rests_on_json"]))
+            if "rests_on_json" in row.keys()
+            else []
+        ),
         blocked_reason=row["blocked_reason"],
         created_by=row["created_by"],
         depends_on_task_ids=_load_json_list(row["depends_on_task_ids"]),

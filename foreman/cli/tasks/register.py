@@ -59,6 +59,14 @@ def _register_add(task_commands: argparse._SubParsersAction) -> None:
     task_add.add_argument("--criteria", required=True, help="Acceptance criteria.")
     task_add.add_argument("--description", help="Task description.")
     task_add.add_argument(
+        "--rests-on",
+        action="append",
+        metavar="PATH[#HEADING]",
+        help="A document of the repository the task rests on, optionally with a "
+        "heading: `docs/specs/engine-design-v3.md#6.3`. It must exist on the default "
+        "branch; Foreman records that branch's commit with it. Repeat for several.",
+    )
+    task_add.add_argument(
         "--sprint",
         dest="sprint_id",
         metavar="SPRINT_ID",
@@ -278,6 +286,20 @@ def _register_edit(task_commands: argparse._SubParsersAction) -> None:
         "--criteria-file",
         metavar="PATH",
         help="Read the new acceptance criteria from a file; `-` reads standard input.",
+    )
+    task_edit.add_argument(
+        "--rests-on",
+        action="append",
+        metavar="PATH[#HEADING]",
+        help="A document of the repository the task rests on, optionally with a "
+        "heading: `docs/specs/engine-design-v3.md#6.3`. It must exist on the default "
+        "branch; Foreman records that branch's commit with it. Repeat for several; the list replaces"
+        " the task's documents (those already named keep their commit).",
+    )
+    task_edit.add_argument(
+        "--no-rests-on",
+        action="store_true",
+        help="Name no documents: clear the task's list.",
     )
     task_edit.add_argument(
         "--edit",

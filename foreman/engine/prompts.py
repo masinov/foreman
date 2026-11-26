@@ -9,6 +9,7 @@ from pathlib import Path
 from ..repo.context import ProjectContextProjection, build_project_context
 from ..repo.git import GitError, changed_files, recent_commits, status_text
 from ..domain.models import CompletionEvidence, Project, Run, Task
+from ..domain.rests_on import pointers_text
 from ..definitions.roles import RoleDefinition
 from ..store import ForemanStore
 from .branch_sync import task_working_dir
@@ -273,4 +274,10 @@ class PromptBuilder:
                 "completion_builtin_test_result": evidence.builtin_test_result,
                 "completion_builtin_test_detail": evidence.builtin_test_detail,
             })
-        return role.render_prompt(context)
+        documents = pointers_text(task.rests_on)
+        context["task_documents"] = documents
+        rendered = role.render_prompt(context)
+        if documents and "{task_documents}" not in role.prompt_template:
+            # Every role is given them, a project's own template included.
+            rendered = f"{rendered.rstrip()}\n\n{documents}\n"
+        return rendered

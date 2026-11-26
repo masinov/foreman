@@ -112,6 +112,7 @@ def handle_backlog_add(args: argparse.Namespace) -> int:
                 task_type=args.task_type,
                 description=args.description,
                 acceptance_criteria=args.criteria,
+                rests_on=args.rests_on,
                 priority=args.priority,
                 created_by=mutations.actor or "human",
                 accept=args.accept,
@@ -289,6 +290,14 @@ def register_backlog(subparsers: argparse._SubParsersAction) -> None:
     )
     backlog_add.add_argument("--criteria", help="Acceptance criteria.")
     backlog_add.add_argument("--description", help="Task description.")
+    backlog_add.add_argument(
+        "--rests-on",
+        action="append",
+        metavar="PATH[#HEADING]",
+        help="A document of the repository the task rests on, optionally with a "
+        "heading: `docs/specs/engine-design-v3.md#6.3`. It must exist on the default "
+        "branch; Foreman records that branch's commit with it. Repeat for several.",
+    )
     backlog_add.add_argument("--priority", type=int, default=0, help="Priority (0 first).")
     backlog_add.add_argument(
         "--accept",

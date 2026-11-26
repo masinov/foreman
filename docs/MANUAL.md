@@ -265,7 +265,7 @@ reopened.
 ```bash
 foreman task add <project-id> --title TITLE --criteria CRITERIA \
     [--type TYPE] [--description DESC] [--sprint SPRINT_ID] \
-    [--depends-on id1,id2]
+    [--depends-on id1,id2] [--rests-on PATH[#HEADING] ...]
 
 foreman task override <task-id> \
     [--step STEP=MODEL ...] [--ladder-start MODEL] \
@@ -283,6 +283,7 @@ foreman task edit <task-id> [--title T] [--type TYPE] [--priority N]
                             [--description TEXT | --description-file PATH|-]
                             [--criteria TEXT | --criteria-file PATH|-]
                             [--edit description|criteria]
+                            [--rests-on PATH[#HEADING] ...] [--no-rests-on]
                             [--depends-on ID ...] [--no-dependencies]
                                       # what it waits for can change only before it starts
 foreman task cancel <task-id>         # also removes the task's worktree
@@ -303,6 +304,17 @@ dashboard), from a file or standard input (`--description-file PATH`,
 holding the current text, and closing it unchanged or emptied changes nothing
 ("Description unchanged."). It opens only with `--edit` and only on a
 terminal; elsewhere the command refuses and points to `--description-file -`.
+
+**Documents a task rests on.** `--rests-on PATH` or `--rests-on PATH#HEADING`
+(repeat for several; on `task add`, `task edit` and `backlog add`) names a file
+of the repository the work is judged against, such as an ADR section or a spec
+heading. The path must be a file on the project's default branch, or the
+command is refused saying so. Foreman records that branch's commit when each
+is named (never typed); `task edit --rests-on` replaces the list, and a
+document already on it keeps the commit it was named at; `--no-rests-on`
+clears it. The task page's Overview lists them with their commits and opens
+each as it was then, and every agent step is given them as pointers: path,
+heading and commit, not the text (ADR-0041 section 6).
 A text option with its `-file` form, `--edit` with an option for the same
 field, and two texts from `-` are refused. The command prints which fields
 changed, with a text counted in characters, never printed.
@@ -332,7 +344,7 @@ way: filed, accepted, planned.
 foreman backlog list <project-id> [--status filed|accepted|declined] \
     [--query TEXT] [--limit N] [--offset N] [--json]
 foreman backlog add <project-id> --title TITLE [--type TYPE] [--criteria C] \
-    [--description D] [--priority N] [--accept]
+    [--description D] [--rests-on PATH[#HEADING] ...] [--priority N] [--accept]
 foreman backlog accept <task-id>      # filed → accepted (same as task accept)
 foreman backlog decline <task-id> [--reason TEXT]
 foreman backlog plan <project-id> <task-id>... --sprint SPRINT_ID
@@ -2029,6 +2041,7 @@ curl -sS -X POST http://localhost:8000/api/projects/foreman/intake \
 |---|---|---|
 | `title` | yes | |
 | `description` · `acceptance_criteria` | no | free text |
+| `rests_on` | no | documents of the repository the task rests on: a list of `"path"`, `"path#heading"` or `{"path", "heading"}`. A path that is not a file on the default branch refuses the request (400) with the reason; each is stored with the default branch's commit when it was named |
 | `task_type` | no | defaults to `fix` (not `feature`: most work arriving from outside is a problem report) |
 | `priority` | no | integer |
 | `complexity` | no | Accepted and ignored: Foreman keeps no task size. A system that still sends it is not refused, and what it sends is not read (not even an unknown value) |

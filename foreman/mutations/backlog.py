@@ -52,6 +52,7 @@ class BacklogMutations(MutationBase):
         task_type: str = "feature",
         description: str | None = None,
         acceptance_criteria: str | None = None,
+        rests_on: object = None,
         priority: int = 0,
         created_by: str | None = None,
         source: Mapping[str, str | None] | None = None,
@@ -104,6 +105,7 @@ class BacklogMutations(MutationBase):
             task_type=task_type,  # type: ignore[arg-type]
             description=(description or "").strip() or None,
             acceptance_criteria=(acceptance_criteria or "").strip() or None,
+            rests_on=self._name_documents(project, rests_on) if rests_on else [],
             priority=int(priority or 0),
             order_index=self.store.next_task_order_index(target.id),
             created_by=created_by or self.actor or self.role,

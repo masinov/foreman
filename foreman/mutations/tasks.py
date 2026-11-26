@@ -25,6 +25,7 @@ TASK_EDIT_FIELDS: tuple[str, ...] = (
     "title",
     "task_type",
     "acceptance_criteria",
+    "rests_on",
     "description",
     "priority",
     "depends_on_task_ids",
@@ -321,6 +322,15 @@ class TaskMutations(MutationBase):
             if normalised != task.acceptance_criteria:
                 changed["acceptance_criteria"] = normalised
             task.acceptance_criteria = normalised
+        if "rests_on" in changes:
+            documents = self._name_documents(
+                self.store.get_project(task.project_id),
+                changes["rests_on"],
+                task.rests_on,
+            )
+            if documents != task.rests_on:
+                changed["rests_on"] = [ref.as_dict() for ref in documents]
+            task.rests_on = documents
         if "description" in changes:
             value = changes["description"]
             normalised = str(value).strip() if value is not None else None
@@ -420,6 +430,7 @@ class TaskMutations(MutationBase):
         acceptance_criteria: str | None = None,
         depends_on: Sequence[str] = (),
         order_index: int | None = None,
+        rests_on: object = None,
     ) -> Task:
         """Add a task to the end of a sprint's queue.
 
@@ -464,6 +475,11 @@ class TaskMutations(MutationBase):
             task_type=task_type,  # type: ignore[arg-type]
             acceptance_criteria=(acceptance_criteria or "").strip() or None,
             description=(description or "").strip() or None,
+            rests_on=self._name_documents(
+                self.store.get_project(sprint.project_id), rests_on
+            )
+            if rests_on
+            else [],
             depends_on_task_ids=depends_on_ids,
             order_index=order_index,
             created_by=self.role,
