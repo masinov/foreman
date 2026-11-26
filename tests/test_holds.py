@@ -367,7 +367,7 @@ class HoldEngineTests(OrchestratorTestCase):
             orchestrator.run_project(project.id)
             self.assertEqual(store.get_sprint(sprint.id).status, "completed")
 
-    def test_a_blocked_next_sprint_is_not_started(self) -> None:
+    def test_a_blocked_next_sprint_is_started_and_holds_until_unblocked(self) -> None:
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)
         with ForemanStore(db_path) as store:
@@ -378,13 +378,21 @@ class HoldEngineTests(OrchestratorTestCase):
             task.status = "done"
             store.save_task(task)
             store.save_sprint(Sprint(id="sprint-2", project_id=project.id, title="Next", status="planned", order_index=2))
-            Mutations(store, via="cli", actor="ana").block_sprint(store.get_sprint("sprint-2"), "wait for me")
+            store.save_task(Task(id="task-n", sprint_id="sprint-2", project_id=project.id, title="Next", status="todo"))
+            mutations = Mutations(store, via="cli", actor="ana")
+            mutations.block_sprint(store.get_sprint("sprint-2"), "wait for me")
+            orchestrator = self._orchestrator(store, ScriptedNativeRunner({}))
 
-            result = self._orchestrator(store, ScriptedNativeRunner({})).run_project(project.id)
+            result = orchestrator.run_project(project.id)
 
+            # Foreman finished the sprint and started the next, which holds.
             self.assertEqual(result.stop_reason, "held")
             self.assertEqual(store.get_sprint(sprint.id).status, "completed")
-            self.assertEqual(store.get_sprint("sprint-2").status, "planned")
+            self.assertEqual(store.get_sprint("sprint-2").status, "active")
+            self.assertEqual(store.list_runs(task_id="task-n"), [])
+            # Unblock is all it takes for the work to go on.
+            mutations.unblock_sprint(store.get_sprint("sprint-2"))
+            self.assertEqual(orchestrator.selector.select_next_task(store.get_project(project.id)).id, "task-n")
 
     def test_a_request_to_run_a_held_task_does_not_run_it(self) -> None:
         repo_path, db_path = self.create_workspace()
@@ -398,6 +406,24 @@ class HoldEngineTests(OrchestratorTestCase):
 
             self.assertEqual((result.stop_reason, result.executed_task_ids), ("held", ()))
             self.assertIn("paused by ana", result.detail)
+
+    def test_a_block_left_by_a_cut_step_is_applied_when_a_task_is_next_chosen(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _sprint, task = self.seed_project(store, repo_path=repo_path)
+            # The step the Block waited for was cut: no run is open any more.
+            task.status = "in_progress"
+            task.workflow_current_step = "develop"
+            store.save_task(task)
+            store.request_task_block(task.id, reason="wrong approach")
+
+            self._orchestrator(store, ScriptedNativeRunner({})).run_project(project.id)
+
+            blocked = store.get_task(task.id)
+            self.assertEqual((blocked.status, blocked.blocked_reason), ("blocked", "wrong approach"))
+            self.assertIsNone(blocked.block_requested)
 
     def test_a_block_requested_during_a_step_is_applied_when_it_ends(self) -> None:
         repo_path, db_path = self.create_workspace()
@@ -660,7 +686,7 @@ class CarriedOverTests(unittest.TestCase):
         store.migrate([m for m in MIGRATIONS if m[0] <= 30])
         connection = store._connection
         with connection:
-            for project_id in ("stopped", "running"):
+            for project_id in ("stopped", "running", "restarted"):
                 connection.execute(
                     "INSERT INTO projects (id, name, repo_path, workflow_id, created_at, updated_at)"
                     " VALUES (?, ?, '/tmp', 'development', 'x', 'x')",
@@ -692,6 +718,8 @@ class CarriedOverTests(unittest.TestCase):
                 ("stopped", "shutdown", "2026-11-02T00:00:00Z"),
                 ("running", "pause", "2026-11-01T00:00:00Z"),
                 ("running", "resume", "2026-11-02T00:00:00Z"),
+                # Shut down, then a worker started again by hand: not a stop.
+                ("restarted", "shutdown", "2026-11-02T00:00:00Z"),
             ):
                 connection.execute(
                     "INSERT INTO engine_commands (id, project_id, command, requested_by, requested_at,"
@@ -699,7 +727,15 @@ class CarriedOverTests(unittest.TestCase):
                     (f"{project_id}-{command}", project_id, command, at, at),
                 )
 
+            connection.execute(
+                "INSERT INTO leases (id, project_id, resource_type, resource_id, holder_id, lease_token,"
+                " status, acquired_at, heartbeat_at, expires_at) VALUES ('l-r', 'restarted', 'engine',"
+                " 'restarted', 'w', 't', 'active', '2026-11-03T00:00:00Z', '2026-11-03T00:00:00Z',"
+                " '2999-01-01T00:00:00Z')"
+            )
+
         store.migrate(MIGRATIONS)
+        self.assertIsNone(store.get_task("restarted-todo").paused_at)
 
         stopped = store.get_task("stopped-todo")
         self.assertEqual((stopped.paused_by, stopped.pause_mode), ("ana", "finish_step"))

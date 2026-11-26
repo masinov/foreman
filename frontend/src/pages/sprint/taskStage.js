@@ -50,7 +50,7 @@ export function holdStage(task) {
     return {
       tone: task.step_running ? "running" : "attention",
       word: task.step_running ? "Blocking" : "Blocked",
-      title: `Blocked ${who}: ${hold.reason}. The running step finishes first.`,
+      title: `Blocked when its step ends: ${hold.reason}`,
     };
   }
   const stopped = hold.mode === "now";

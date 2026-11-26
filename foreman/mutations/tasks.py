@@ -93,15 +93,22 @@ class TaskMutations(MutationBase):
             )
         if task.block_requested:
             raise MutationError(f"Task {task.id} is already being blocked.")
-        if task.status == "in_progress" and self.store.list_runs(
-            task_id=task.id, status="running"
-        ):
-            self.store.request_task_block(
-                task.id,
-                reason=reason,
-                by=self.actor or self.via,
-                at=self._now().isoformat(),
+        running = self.store.list_runs(task_id=task.id, status="running")
+        if any(run.role_id in ("_builtin:merge", "_builtin:mark_done") for run in running):
+            # Blocked after its merge, it would start over from the first
+            # step on a branch that is already merged.
+            raise MutationError(
+                f"Task {task.id} is being merged; block it once the merge has ended, "
+                "or reopen it later."
             )
+        engine_on_it = bool(running) or self.store.get_active_lease(
+            project_id=task.project_id, resource_type="task", resource_id=task.id
+        ) is not None
+        if task.status == "in_progress" and engine_on_it:
+            # The engine owns the task's status while it works on it, and its
+            # next write would undo a block made now: the Block waits on the
+            # task, holds it, and is applied when the engine lets it go.
+            self.store.request_task_block(task.id, reason=reason)
             fresh = self.store.get_task(task.id) or task
             self._audit(
                 fresh,
@@ -133,15 +140,19 @@ class TaskMutations(MutationBase):
         """
 
         if task.block_requested and self.store.withdraw_task_block_request(task.id):
-            fresh = self.store.get_task(task.id) or task
-            self._audit(
-                fresh,
-                "human.task_unblocked",
-                step="unblock",
-                from_status=task.status,
-                reason=task.block_requested,
-            )
-            return fresh
+            if task.status != "blocked":
+                fresh = self.store.get_task(task.id) or task
+                self._audit(
+                    fresh,
+                    "human.task_unblocked",
+                    step="unblock",
+                    from_status=task.status,
+                    reason=task.block_requested,
+                )
+                return fresh
+            # Blocked meanwhile by the engine itself: the request is moot,
+            # and Unblock goes on to unblock the task.
+            task.block_requested = None
         if task.status != "blocked":
             raise MutationError(f"Task {task.id} is not blocked.")
         project = self.store.get_project(task.project_id)

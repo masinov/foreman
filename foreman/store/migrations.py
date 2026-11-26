@@ -1071,8 +1071,10 @@ MIGRATIONS: list[tuple[int, str, str]] = [
             PRIMARY KEY (scope, scope_id)
         );
         -- A project whose engine stood paused, or was last stopped with the
-        -- engine's Stop, keeps its work held: each unfinished task of its
-        -- active sprint is paused, by whoever paused or stopped the engine.
+        -- engine's Stop and not started again since, keeps its work held:
+        -- each unfinished task of its active sprint is paused, by whoever
+        -- paused or stopped the engine. A pause held a restarted engine too;
+        -- a shutdown did not, so one followed by a worker's lease is history.
         WITH last_word AS (
             SELECT project_id, command, requested_by,
                    COALESCE(completed_at, requested_at) AS said_at,
@@ -1092,8 +1094,15 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         WHERE paused_at IS NULL
           AND status IN ('todo', 'in_progress', 'blocked')
           AND sprint_id IN (SELECT id FROM sprints WHERE status = 'active')
-          AND project_id IN (SELECT project_id FROM last_word
-                             WHERE n = 1 AND command IN ('pause', 'shutdown'));
+          AND project_id IN (
+              SELECT w.project_id FROM last_word w
+              WHERE w.n = 1
+                AND (w.command = 'pause'
+                     OR (w.command = 'shutdown' AND NOT EXISTS (
+                         SELECT 1 FROM leases l
+                         WHERE l.project_id = w.project_id
+                           AND l.resource_type = 'engine'
+                           AND julianday(l.acquired_at) > julianday(w.said_at)))));
         -- A task a user stopped was blocked "Stopped by <who>". It is now a
         -- paused task, resumable at its step, and not in Needs you.
         UPDATE tasks

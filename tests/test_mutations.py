@@ -112,13 +112,59 @@ class MutationsTests(unittest.TestCase):
 
         stored = self.store.get_task("t1")
         # The engine owns the status while the step runs; the Block waits on
-        # the task and holds it.
+        # the task and holds it, and is a hold of its own, not a pause.
         self.assertEqual(stored.status, "in_progress")
         self.assertEqual(stored.block_requested, "wrong approach")
+        self.assertIsNone(stored.paused_at)
         self.assertEqual(self.store.apply_requested_block("t1"), "wrong approach")
         blocked = self.store.get_task("t1")
         self.assertEqual((blocked.status, blocked.blocked_reason), ("blocked", "wrong approach"))
         self.assertIsNone(blocked.block_requested)
+
+    def test_a_block_during_a_merge_is_refused(self) -> None:
+        task = self.task(status="in_progress", workflow_current_step="merge")
+        self.store.save_run(
+            Run(
+                id="r-merge", task_id="t1", project_id=task.project_id, role_id="_builtin:merge",
+                workflow_step="merge", agent_backend="builtin", status="running",
+            )
+        )
+        with self.assertRaisesRegex(MutationError, "being merged"):
+            self.mutations.block_task(task, "too late")
+
+    def test_a_block_between_two_steps_waits_while_the_engine_holds_the_task(self) -> None:
+        """No run is open, but the engine is on the task: its next write would undo a block."""
+        task = self.task(status="in_progress", workflow_current_step="test")
+        self.store.acquire_lease(
+            project_id=task.project_id, resource_type="task", resource_id="t1",
+            holder_id="engine-x", lease_token="tok", duration_seconds=300,
+        )
+        self.mutations.block_task(task, "wrong approach")
+        stored = self.store.get_task("t1")
+        self.assertEqual((stored.status, stored.block_requested), ("in_progress", "wrong approach"))
+
+    def test_unblock_of_a_task_the_engine_blocked_meanwhile_unblocks_it_and_keeps_a_pause(self) -> None:
+        task = self.task(status="in_progress", workflow_current_step="develop")
+        self.store.save_run(
+            Run(
+                id="r-running", task_id="t1", project_id=task.project_id, role_id="developer",
+                workflow_step="develop", agent_backend="claude_code", status="running",
+            )
+        )
+        self.mutations.pause_task(task)
+        self.mutations.block_task(self.store.get_task("t1"), "wrong approach")
+        # The step fails and the engine blocks the task itself.
+        failed = self.store.get_task("t1")
+        failed.status = "blocked"
+        failed.blocked_reason = "Tests failed three times"
+        self.store.update_task_engine_state(failed)
+
+        self.mutations.unblock_task(self.store.get_task("t1"))
+
+        stored = self.store.get_task("t1")
+        self.assertEqual(stored.status, "todo")
+        self.assertIsNone(stored.block_requested)
+        self.assertIsNotNone(stored.paused_at, "Unblock lifts only the block")
 
     def test_unblock_withdraws_a_block_still_waiting_for_its_step(self) -> None:
         task = self.task(status="in_progress", workflow_current_step="develop")

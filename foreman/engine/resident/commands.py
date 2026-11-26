@@ -66,6 +66,9 @@ class CommandHandling(ResidentEngineBase):
         for command in self.store.list_engine_commands(
             self.project_id, status="pending", limit=1000
         ):
+            if command.command in RETIRED_COMMANDS:
+                self._finish_command(command, "rejected", retired_detail(command.command))
+                continue
             if command.command not in ENGINE_COMMANDS_NEEDING_A_RESIDENT_ENGINE:
                 continue
             self._finish_command(command, "rejected", STALE_COMMAND_DETAIL)

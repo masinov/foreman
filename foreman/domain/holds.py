@@ -95,13 +95,7 @@ def task_hold(
                 reason=block.reason,
             )
     if task.block_requested:
-        return Hold(
-            scope="task",
-            kind="blocking",
-            by=task.paused_by or "",
-            at=task.paused_at or "",
-            reason=task.block_requested,
-        )
+        return Hold(scope="task", kind="blocking", by="", at="", reason=task.block_requested)
     if task.paused_at:
         return Hold(
             scope="task",

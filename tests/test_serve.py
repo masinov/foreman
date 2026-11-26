@@ -1432,8 +1432,11 @@ class EngineCommandStartupTests(unittest.TestCase):
             settled = self.store.get_engine_command(command.id)
             assert settled is not None
             self.assertEqual(settled.status, "rejected", command.command)
-            self.assertEqual(settled.result_detail, "no engine was resident")
             self.assertTrue(settled.completed_at)
+        # A retired command says where it went (ADR-0043); a stale one says why.
+        self.assertIn("ADR-0043", self.store.get_engine_command(pause.id).result_detail)
+        self.assertIn("ADR-0043", self.store.get_engine_command(stop.id).result_detail)
+        self.assertEqual(self.store.get_engine_command(shutdown.id).result_detail, "no engine was resident")
 
     def test_a_rejected_stale_command_does_not_pause_the_starting_engine(self) -> None:
         self._enqueue("pause")

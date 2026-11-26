@@ -125,30 +125,26 @@ class HoldStore(StoreBase):
             )
         )
 
-    def request_task_block(self, task_id: str, *, reason: str, by: str, at: str) -> None:
-        """Hold a running task and block it with ``reason`` once its step ends."""
+    def request_task_block(self, task_id: str, *, reason: str) -> None:
+        """Hold a task the engine is on, and block it with ``reason`` once its step ends.
+
+        The request is a hold of its own; a user's pause, if any, is left as
+        it is, and stays after the block is applied or withdrawn.
+        """
 
         self._write(
             lambda connection: connection.execute(
-                """
-                UPDATE tasks
-                SET block_requested = ?,
-                    paused_at = COALESCE(paused_at, ?),
-                    paused_by = COALESCE(paused_by, ?),
-                    pause_mode = COALESCE(pause_mode, 'finish_step')
-                WHERE id = ?
-                """,
-                (reason, at, by, task_id),
+                "UPDATE tasks SET block_requested = ? WHERE id = ?",
+                (reason, task_id),
             )
         )
 
     def withdraw_task_block_request(self, task_id: str) -> bool:
-        """Unblock a task whose Block was still waiting for its step to end."""
+        """Forget a Block that was still waiting for the task's step to end."""
 
         def _write(connection: sqlite3.Connection) -> bool:
             cursor = connection.execute(
-                "UPDATE tasks SET block_requested = NULL, paused_at = NULL, "
-                "paused_by = NULL, pause_mode = NULL "
+                "UPDATE tasks SET block_requested = NULL "
                 "WHERE id = ? AND block_requested IS NOT NULL",
                 (task_id,),
             )
@@ -159,8 +155,10 @@ class HoldStore(StoreBase):
     def apply_requested_block(self, task_id: str) -> str | None:
         """Block a task whose requested Block was waiting for its step to end.
 
-        The engine calls it when the step has ended. Returns the reason, or
-        None when there was no Block waiting (a user unblocked it meanwhile).
+        The engine calls it when the step has ended, or when it finds the
+        request on a task no step of which runs (the step was cut, or the
+        engine stopped). Returns the reason, or None when there was no Block
+        waiting (a user unblocked it meanwhile). A user's pause stays.
         """
 
         def _write(connection: sqlite3.Connection) -> str | None:
@@ -175,8 +173,7 @@ class HoldStore(StoreBase):
                 """
                 UPDATE tasks
                 SET status = 'blocked', blocked_reason = block_requested,
-                    block_requested = NULL, paused_at = NULL, paused_by = NULL,
-                    pause_mode = NULL,
+                    block_requested = NULL,
                     -- Unblock starts the workflow over; a step left here could
                     -- read as a gate waiting for a decision.
                     workflow_current_step = NULL, workflow_carried_output = NULL

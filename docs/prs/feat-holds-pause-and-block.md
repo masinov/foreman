@@ -95,6 +95,19 @@
   be): it is lifted from "Unblock all" above the projects, which is where
   it shows.
 
+## Review
+
+An independent review of the backend found five defects and a race, all
+fixed with a test each before merging: migration 31 would have paused a
+project whose engine was stopped by command and then started again by hand
+(the live database's shape); a Block requested during a step that was then
+cut was never applied; unblocking a blocked next sprint started nothing
+(it is now started and holds); a Block during a merge would have restarted
+a merged task (now refused); Unblock of a task the engine blocked meanwhile
+needed two presses and erased a pause; and a Block between two steps could
+be overwritten by the engine's next write (it now waits whenever the engine
+holds the task).
+
 ## Tests
 
 - `./venv/bin/python -m pytest tests -n auto -q`: see the merge note.

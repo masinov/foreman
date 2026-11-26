@@ -103,7 +103,10 @@ dependency chain that already exists:
 - **the next sprint's start,** which waits for that finish.
 
 A blocked sprint is neither finished nor followed by the next one either,
-even when its work is all done ("Blocked · ready to finish"). So Foreman
+even when its work is all done ("Blocked · ready to finish"). A next sprint
+that is itself blocked is started all the same when Foreman finishes the one
+before, and holds everything in it, so Unblock is all it takes for its work
+to go on (added 2026-11-26, from the review of the build). So Foreman
 finishes and starts sprints by itself, where the project lets it
 (`sprint_completion = auto`), unless a hold stops it: a task that is not
 done, a blocked sprint, a blocked workspace.
