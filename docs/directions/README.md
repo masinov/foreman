@@ -55,3 +55,7 @@ The repository and the agents' view of it:
 - [How a project's repository is organised](how-a-repository-is-organised.md) (ADR-0040)
 - [A code map for agents](code-map-for-agents.md)
 - [Statuses stay strings](statuses-stay-strings.md)
+
+Other projects:
+
+- [Assay and Foreman: an evidence base that feeds projects](assay-and-foreman.md) (2026-11-26)
