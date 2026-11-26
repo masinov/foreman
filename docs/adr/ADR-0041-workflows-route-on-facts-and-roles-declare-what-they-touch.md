@@ -149,7 +149,7 @@ developer's prompt. They remain an input a role may declare.
 
 Agents still search the code themselves; the layers tell them where to
 start. A generated code map, like Aider's repo map, is a later survey
-(owner direction 8). The layers are judged by measurement: Foreman counts,
+(`docs/directions/code-map-for-agents.md`). The layers are judged by measurement: Foreman counts,
 for each step, the reads before the first edit and the tokens used.
 
 ### 7. Existing definitions keep working
@@ -169,7 +169,7 @@ of ADR-0040 land.
   scope: tests; output: the plan record), a route on `no_criteria` or
   `label:unclear`, and a freeze on what it committed.
 - **The same parts serve more than the plan step:**
-  - test tiers, as routes on changed path groups (owner direction 5);
+  - test tiers, as routes on changed path groups (`docs/directions/tests-designed-not-only-watched.md`);
   - a security review only when sensitive paths change;
   - capped review rounds;
   - the legitimate way out (ADR-0040);

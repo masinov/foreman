@@ -12,7 +12,7 @@ run of 2026-11-16 sprint 60 closed itself the moment its only filed task was
 done, although more tasks were going to be filed into it. The person had to
 open a new sprint for work that belonged in the first one. The finding is
 recorded in `docs/sprints/current.md` ("Found in the supervised run") and
-`docs/sprints/backlog.md` ("Found in the supervised run of sprint 60").
+`docs/sprints/archive/backlog-lists-through-2026-11-23.md` ("Found in the supervised run of sprint 60").
 
 "All filed tasks are resolved" does not mean "the sprint is finished". Only a
 person, or a policy that has handed the decision to Foreman, knows whether more

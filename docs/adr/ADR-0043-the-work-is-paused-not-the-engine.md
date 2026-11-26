@@ -32,7 +32,7 @@ stopping it changes. The honest answers:
 - **The switch is the wrong thing.** "Is the program alive" and "may the
   work go ahead" are two questions. They were the same while one program on
   one machine did a project's work. With several workers, and the machine
-  pool the owner has asked for (backlog, owner direction 1), a per-project
+  pool the owner has asked for (`docs/directions/central-server-and-workers.md`), a per-project
   on/off for "the program" means nothing.
 
 The owner and Claude compared three models as trees of actions and
@@ -233,7 +233,7 @@ The program that runs the work is called a **worker**.
   button reads Restart.
 - **A Workers view** (which workers are alive, on which machine, idle or on
   which task, their restarts and Restart) is part of the machines view of
-  the views designed together (backlog, owner direction 6; owner,
+  the views designed together (`docs/directions/the-views-as-one-system.md`; owner,
   2026-11-26), not a settings page. It is built with the supervisor or the
   machine pool, whichever is first, after that design.
 - **The command line keeps worker control:** `foreman serve` starts one and
@@ -319,8 +319,8 @@ is a row, not a command.
   intake API and every worker read the same rows.
 - **Dependencies stay within a sprint.** "Waits for" names tasks of the
   same sprint, and sprints follow each other in queue order. That is all §2
-  needs. Dependencies across sprints are in the backlog (owner direction
-  10), for when sprints can run side by side.
+  needs. Dependencies across sprints are in `docs/directions/dependencies-across-sprints.md`,
+  for when sprints can run side by side.
 - **The design changes** (`docs/design/dashboard-v7/README.md`): the Engine
   bullet becomes the status line and the controls of §1; "Activate"
   becomes "Start sprint"; the task Status bullet gains who held it and

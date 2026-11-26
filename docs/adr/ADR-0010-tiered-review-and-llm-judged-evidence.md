@@ -79,4 +79,4 @@ gone. An approving code review of the branch head covers the criteria
 (status `covered`); until there is one they are `unverified`. A second
 opinion is a second reviewer on another model, as the tiered and secure
 workflows have. Roles that run once at the end of a sprint, for the whole
-sprint, are recorded as a direction in `docs/sprints/backlog.md`.
+sprint, are recorded as a direction in `docs/directions/workflows-above-the-task.md`.

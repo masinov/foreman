@@ -73,7 +73,7 @@ drifted from it.
   (`merge_approval = auto`) never stops at that gate, and does not wait.
 - **Several tasks at once stays a separate decision.** Several agents
   working together, each in its own working copy, would be real
-  parallelism, with its own rule for shared files (owner direction 7). It is
-  recorded in the backlog.
+  parallelism, with its own rule for shared files (`docs/directions/how-a-repository-is-organised.md`). It is
+  recorded in `docs/directions/several-tasks-at-once.md`.
 - **The run result changes.** A one-shot `foreman run` that stops at a gate
   now reports `waiting_for_decision`, not `blocked`.
