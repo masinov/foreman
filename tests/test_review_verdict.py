@@ -127,10 +127,16 @@ class AgreementTests(unittest.TestCase):
 
     def test_an_approval_listing_no_criteria_of_a_task_that_has_some_is_an_error(self) -> None:
         text = f"Looked.\n\n{verdict(criteria=[])}\nAPPROVE"
-        reading = read_completion(self.role, text, task_has_criteria=True)
+        reading = read_completion(self.role, text, task_criteria=2)
         self.assert_disagrees(reading, "without listing")
         # A task with no criteria may be approved with none listed.
-        self.assertEqual(read_completion(self.role, text, task_has_criteria=False).outcome, "approve")
+        self.assertEqual(read_completion(self.role, text, task_criteria=0).outcome, "approve")
+
+    def test_a_verdict_that_leaves_out_one_of_the_tasks_criteria_is_refused(self) -> None:
+        text = f"Looked.\n\n{verdict()}\nAPPROVE"
+        reading = read_completion(self.role, text, task_criteria=2)
+        self.assert_disagrees(reading, "lists 1 criteria", "task has 2")
+        self.assertEqual(read_completion(self.role, text, task_criteria=1).outcome, "approve")
 
     def test_a_severity_in_lower_case_is_read_as_declared(self) -> None:
         reading = self.read(verdict(findings=[{"severity": "s3", "finding": "x"}]), "APPROVE")

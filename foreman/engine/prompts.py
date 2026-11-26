@@ -192,6 +192,7 @@ class PromptBuilder:
     ) -> str:
         latest_run = self.latest_agent_run(task.id)
         previous_output = latest_run.outcome_detail if latest_run else ""
+        developer_report = self.developer_report(task.id, previous_output)
         if context_projection is None:
             context_projection = build_project_context(
                 self.store,
@@ -224,8 +225,11 @@ class PromptBuilder:
             "environment_rules": environment_rules(repo_instructions),
             "spec_path": project.spec_path or "",
             "previous_feedback": carried_output or "",
-            "previous_output": previous_output,
-            "developer_report": self.developer_report(task.id, previous_output),
+            # Both are the developer's report: a project's own reviewer that
+            # uses {previous_output} gets the record, not only the words
+            # outside it.
+            "previous_output": developer_report,
+            "developer_report": developer_report,
             # Status describes the tree the agent works in; diffs and log come
             # from refs, which every worktree shares.
             "git_status": safe_git_status(task_working_dir(project, task)),
