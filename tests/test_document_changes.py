@@ -213,3 +213,96 @@ class RestsOnListTests(_Fixture):
         self.assertEqual([[ref["path"] for ref in task["rests_on"]] for task in tasks], [[SPEC]])
 
 
+
+
+class ReviewFindingTests(_Fixture):
+    """What the review of FOR-94 found: who is told, how often, and how a notice ends."""
+
+    def head(self) -> str:
+        return self.git(self.repo, "rev-parse", "refs/heads/main").stdout.strip()
+
+    def merge(self, files: dict[str, str]) -> tuple[Task, str]:
+        """As the fixture's, from a working copy of its own, so a test can merge more than once."""
+
+        merging = self.mutations.add_task(self.store.get_sprint("s"), title="The change", acceptance_criteria="x")
+        branch = f"feat/{merging.id}"
+        copy = self.repo.parent / f"copy-{merging.id}"
+        self.git(self.repo, "worktree", "add", "-q", "-b", branch, str(copy), "main")
+        for path, text in files.items():
+            self.write_text(copy / path, text)
+        self.commit_all(copy, "feat: change")
+        self.git(self.repo, "worktree", "remove", "--force", str(copy))
+        merging.branch_name = branch
+        merging.status = "in_progress"
+        self.store.save_task(merging)
+        step = self.orchestrator.workflows["development"].get_step("merge")
+        run, outcome, _ = self.orchestrator.runner._run_builtin_step(
+            self.project, merging, step, step="merge", visit_count=1, carried_output=None
+        )
+        self.assertEqual(outcome, "success", run.outcome_detail)
+        return merging, self.head()
+
+    def run_cli(self, *argv: str) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main([*argv, "--db", str(self.db_path)])
+        return code, out.getvalue(), err.getvalue()
+
+    def test_backlog_and_triage_tasks_are_told_and_listed(self) -> None:
+        accepted = self.mutations.file_task(self.project, title="Accepted", rests_on=[ADR], accept=True).task
+        # Work another system files waits in triage until a person accepts it.
+        self.project.settings = {**self.project.settings, "triage_policy": "triage"}
+        self.store.save_project(self.project)
+        token, _ = self.store.create_api_token(project_id="p", name="x")
+        intake = Services(self.store).intake
+        triage = self.store.get_task(intake.intake_task("p", token=token, title="Triage", rests_on=[ADR])["id"])
+        declined = self.store.get_task(intake.intake_task("p", token=token, title="Declined", rests_on=[ADR])["id"])
+        self.mutations.decline_task(declined, "Not now.")
+        self.assertEqual(self.store.get_task(triage.id).status, "triage")
+        self.assertEqual(self.store.get_task(declined.id).status, "declined")
+
+        self.merge({ADR: "# changed\n"})
+
+        self.assertEqual(len(self.lines(accepted)), 1)
+        self.assertEqual(len(self.lines(triage)), 1)
+        self.assertEqual(self.lines(declined), [])
+        code, out, err = self.run_cli("task", "list", "p", "--rests-on", ADR)
+        self.assertEqual(code, 0, err)
+        for task in (accepted, triage, declined):
+            self.assertIn(task.id, out)
+        self.assertIn("Backlog:", out)
+
+    def test_one_path_under_two_headings_is_one_line_and_each_entry_opens_its_own_change(self) -> None:
+        task = self.task("Two", [f"{ADR}#6", f"{ADR}#7"])
+        _, first_merge = self.merge({ADR: "# once\n"})
+        self.assertEqual(len(self.lines(task)), 1)
+        self.assertIn(f"{ADR}#6, {ADR}#7 changed in", self.lines(task)[0])
+
+        # #7 is read again; then another merge changes the file.
+        self.mutations.restamp_document(self.store.get_task(task.id), f"{ADR}#7")
+        _, second_merge = self.merge({ADR: "# twice\n"})
+
+        self.assertEqual(len(self.lines(task)), 2)
+        self.assertIn(f"named it at {self.named_at[:7]} and {first_merge[:7]}", self.lines(task)[1])
+        reads = TaskReads(self.store)
+        six = reads.get_document_change(task.id, ADR, "6")
+        seven = reads.get_document_change(task.id, ADR, "7")
+        self.assertEqual((six.from_commit, six.to_commit), (self.named_at, second_merge))
+        self.assertEqual((seven.from_commit, seven.to_commit), (first_merge, second_merge))
+        self.assertEqual(reads.get_document(task.id, ADR, "7").commit, first_merge)
+        self.assertEqual(reads.get_document(task.id, ADR, "6").commit, self.named_at)
+
+    def test_a_heading_change_keeps_the_notice_and_marking_as_read_ends_it(self) -> None:
+        task = self.task("Waits", [f"{ADR}#6"])
+        _, sha = self.merge({ADR: "# changed\n"})
+        api = Services(self.store).tasks
+
+        detail = api.update_task_fields(task.id, updates={"rests_on": [f"{ADR}#7"]})
+
+        shown = detail["rests_on"][0]
+        self.assertEqual((shown["heading"], shown["commit"]), ("7", self.named_at))
+        self.assertEqual(shown["changed"]["commit"], sha)
+        self.assertEqual(shown["changed"]["default_commit"], self.head())
+        detail = api.restamp_document(task.id, path=ADR, heading="7")
+        self.assertEqual(detail["rests_on"][0]["commit"], self.head())
+        self.assertIsNone(detail["rests_on"][0]["changed"])

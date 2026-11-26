@@ -307,6 +307,14 @@ def _register_edit(task_commands: argparse._SubParsersAction) -> None:
         help="Name no documents: clear the task's list.",
     )
     task_edit.add_argument(
+        "--restamp",
+        action="append",
+        metavar="PATH[#HEADING]",
+        help="Mark a document the task rests on as read at the default branch's commit now: "
+        "its entry is stamped with that commit, which ends a \"changed since it was named\" "
+        "notice. Repeat for several. A heading changed with --rests-on keeps the commit.",
+    )
+    task_edit.add_argument(
         "--edit",
         choices=["description", "criteria"],
         help="Edit one text in $VISUAL, else $EDITOR, else nano or vi. Needs a "

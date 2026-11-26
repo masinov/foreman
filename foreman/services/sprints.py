@@ -199,29 +199,32 @@ class SprintService(Service):
             raise InvalidRequestError("Sprint title is required.")
 
 
-        try:
-            sprint = self._mutations().create_sprint(project, title=title, goal=goal)
-        except MutationError as exc:
-            raise InvalidRequestError(str(exc)) from exc
+        # The sprint and its first tasks are made whole or not at all: a task
+        # refused (a document not on the default branch) leaves nothing made.
         created_tasks = []
         mutations = self._mutations()
-        for i, task_data in enumerate(initial_tasks or []):
-            task_title = str(task_data.get("title", "")).strip()
-            if not task_title:
-                continue
-            task_type = str(task_data.get("task_type", "feature"))
-            task = mutations.add_task(
-                sprint,
-                title=task_title,
-                task_type=task_type if task_type in TASK_TYPES else "feature",
-                acceptance_criteria=str(task_data.get("acceptance_criteria") or "") or None,
-                description=str(task_data.get("description") or "") or None,
-                rests_on=task_data.get("rests_on"),
-                order_index=i,
-            )
-            created_tasks.append(
-                {"id": task.id, "task_key": task.task_key, "title": task.title, "task_type": task.task_type}
-            )
+        try:
+            with self.store.atomic():
+                sprint = mutations.create_sprint(project, title=title, goal=goal)
+                for i, task_data in enumerate(initial_tasks or []):
+                    task_title = str(task_data.get("title", "")).strip()
+                    if not task_title:
+                        continue
+                    task_type = str(task_data.get("task_type", "feature"))
+                    task = mutations.add_task(
+                        sprint,
+                        title=task_title,
+                        task_type=task_type if task_type in TASK_TYPES else "feature",
+                        acceptance_criteria=str(task_data.get("acceptance_criteria") or "") or None,
+                        description=str(task_data.get("description") or "") or None,
+                        rests_on=task_data.get("rests_on"),
+                        order_index=i,
+                    )
+                    created_tasks.append(
+                        {"id": task.id, "task_key": task.task_key, "title": task.title, "task_type": task.task_type}
+                    )
+        except MutationError as exc:
+            raise InvalidRequestError(str(exc)) from exc
 
         return {
             "id": sprint.id,

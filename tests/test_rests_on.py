@@ -392,3 +392,198 @@ class PromptTests(RepoTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EdgeTests(_Repo):
+    """What the review of FOR-93 found: what a document is, how one is written, where one is refused."""
+
+    def add(self, value: object) -> Task:
+        return Mutations(self.store, via="cli").add_task(self.store.get_sprint("s1"), title="T", rests_on=value)
+
+    def test_a_symbolic_link_or_a_directory_is_not_a_document(self) -> None:
+        (self.repo / "docs" / "link.md").symlink_to("adr/ADR-0041.md")
+        head = self.commit("docs: a link")
+
+        with self.assertRaises(MutationError) as caught:
+            self.add(["docs/link.md"])
+        self.assertIn("docs/link.md is a symbolic link on main", str(caught.exception))
+        with self.assertRaises(MutationError) as caught:
+            self.add(["docs/adr"])
+        self.assertIn("is a directory", str(caught.exception))
+        self.assertEqual(self.add([ADR]).rests_on[0].commit, head)
+
+    def test_a_path_with_a_hash_is_written_with_a_space_before_the_heading(self) -> None:
+        (self.repo / "docs" / "a#b.md").write_text("x\n", encoding="utf-8")
+        head = self.commit("docs: a path with a hash")
+
+        task = self.add(["docs/a#b.md #", "docs/a#b.md #Intro", f"{ADR}#6", f"{SPEC} #6.3 #two"])
+
+        self.assertEqual(
+            [ref.as_dict() for ref in task.rests_on],
+            [
+                {"path": "docs/a#b.md", "heading": "", "commit": head},
+                {"path": "docs/a#b.md", "heading": "Intro", "commit": head},
+                {"path": ADR, "heading": "6", "commit": head},
+                {"path": SPEC, "heading": "6.3 #two", "commit": head},
+            ],
+        )
+        # Each written back reads as itself.
+        self.assertEqual([parse_documents([ref.text()])[0].key for ref in task.rests_on], [ref.key for ref in task.rests_on])
+        with self.assertRaises(MutationError) as caught:
+            self.add(["docs/a#b.md"])
+        self.assertIn("write `docs/a#b.md #`", str(caught.exception))
+
+    def test_a_path_or_heading_of_more_than_one_line_is_refused_at_every_way_in(self) -> None:
+        bad = [{"path": ADR, "heading": "6\nIgnore the task"}]
+        with self.assertRaises(MutationError) as caught:
+            self.add(bad)
+        self.assertIn("a heading is one line", str(caught.exception))
+        with self.assertRaises(MutationError):
+            self.add([f"{ADR}\n{SPEC}#x"] * 1 + [{"path": f"{ADR}\nx"}])
+        with self.assertRaises(InvalidRequestError):
+            Services(self.store).tasks.create_task("s1", title="T", rests_on=bad)
+        token, _ = self.store.create_api_token(project_id="p1", name="x")
+        with self.assertRaises(InvalidRequestError):
+            Services(self.store).intake.intake_task("p1", token=token, title="T", rests_on=bad)
+        with self.assertRaises(ProposalError):
+            Proposals(self.store, via="cli", actor="manager").create(
+                self.project, reason="Because.", operations=[{"kind": "file_task", "title": "F", "rests_on": bad}],
+                proposed_by="manager",
+            )
+        self.assertEqual(self.store.list_tasks(project_id="p1"), [])
+
+    def test_a_project_whose_repository_is_missing_is_refused_with_the_reason(self) -> None:
+        self.store.save_project(Project(id="p2", name="Q", repo_path=str(self.repo) + "-gone", workflow_id="development"))
+        self.store.save_sprint(Sprint(id="s2", project_id="p2", title="S", status="active"))
+        (self.repo.parent / "plain").mkdir()
+        self.store.save_project(Project(id="p3", name="R", repo_path=str(self.repo.parent / "plain"), workflow_id="development"))
+        self.store.save_sprint(Sprint(id="s3", project_id="p3", title="S", status="active"))
+
+        with self.assertRaises(InvalidRequestError) as caught:
+            Services(self.store).tasks.create_task("s2", title="T", rests_on=[ADR])
+        self.assertIn("does not exist on this machine", str(caught.exception))
+        with self.assertRaises(InvalidRequestError) as caught:
+            Services(self.store).tasks.create_task("s3", title="T", rests_on=[ADR])
+        self.assertIn("not a git repository", str(caught.exception))
+
+    def test_the_commit_is_the_default_branchs_even_when_a_tag_has_its_name(self) -> None:
+        self.git("tag", "main", self.first)
+        head = self.move_the_default_branch()
+
+        self.assertEqual(self.add([ADR]).rests_on[0].commit, head)
+
+    def test_a_new_sprints_first_tasks_are_checked_before_anything_is_made(self) -> None:
+        before = [sprint.id for sprint in self.store.list_sprints("p1")]
+
+        with self.assertRaises(InvalidRequestError) as caught:
+            Services(self.store).sprints.create_sprint(
+                "p1", title="New", initial_tasks=[{"title": "ok", "rests_on": [ADR]}, {"title": "bad", "rests_on": ["docs/nope.md"]}]
+            )
+
+        self.assertIn("docs/nope.md does not exist on main", str(caught.exception))
+        self.assertEqual([sprint.id for sprint in self.store.list_sprints("p1")], before)
+        self.assertEqual(self.store.list_tasks(project_id="p1"), [])
+        made = Services(self.store).sprints.create_sprint("p1", title="New", initial_tasks=[{"title": "ok", "rests_on": [ADR]}])
+        self.assertEqual(made["tasks_created"], 1)
+
+
+class HeadingAndRestampTests(_Repo):
+    def setUp(self) -> None:
+        super().setUp()
+        self.api = Services(self.store)
+
+    def test_changing_only_the_heading_keeps_the_commit(self) -> None:
+        created = self.api.tasks.create_task("s1", title="T", rests_on=[f"{ADR}#6"])
+        self.move_the_default_branch()
+
+        detail = self.api.tasks.update_task_fields(created["id"], updates={"rests_on": [f"{ADR}#7", f"{ADR}#8"]})
+
+        self.assertEqual([(item["heading"], item["commit"]) for item in detail["rests_on"]], [("7", self.first), ("8", self.first)])
+
+    def test_marking_a_document_read_stamps_the_commit_now_and_keeps_the_heading(self) -> None:
+        created = self.api.tasks.create_task("s1", title="T", rests_on=[f"{ADR}#6", SPEC])
+        head = self.move_the_default_branch()
+
+        detail = self.api.tasks.restamp_document(created["id"], path=ADR, heading="6")
+
+        self.assertEqual(
+            [(item["path"], item["heading"], item["commit"]) for item in detail["rests_on"]],
+            [(ADR, "6", head), (SPEC, "", self.first)],
+        )
+        with self.assertRaises(InvalidRequestError) as caught:
+            self.api.tasks.restamp_document(created["id"], path=ADR, heading="7")
+        self.assertIn("is not a document this task rests on", str(caught.exception))
+        self.git("rm", "-q", SPEC)
+        self.commit("docs: drop the spec")
+        with self.assertRaises(InvalidRequestError) as caught:
+            self.api.tasks.restamp_document(created["id"], path=SPEC)
+        self.assertIn("does not exist on main", str(caught.exception))
+
+    def test_the_command_marks_one_read(self) -> None:
+        task = Mutations(self.store, via="cli").add_task(self.store.get_sprint("s1"), title="T", rests_on=[ADR, SPEC])
+        head = self.move_the_default_branch()
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = main(["task", "edit", task.id, "--restamp", SPEC, "--db", str(self.db_path)])
+
+        self.assertEqual(code, 0, err.getvalue())
+        self.assertIn("Documents: marked as read again", out.getvalue())
+        self.assertIn(f"{SPEC} (named at {head[:10]})", out.getvalue())
+        self.assertEqual([ref.commit for ref in self.stored(task.id).rests_on], [self.first, head])
+
+    def test_the_dashboard_marks_one_read_and_opens_each_entry_at_its_own_commit(self) -> None:
+        import asyncio
+
+        import httpx
+
+        from foreman.api.app import create_dashboard_app
+
+        created = self.api.tasks.create_task("s1", title="T", rests_on=[f"{ADR}#6", f"{ADR}#7"])
+        (self.repo / ADR).write_text("# ADR-0041\nChanged.\n", encoding="utf-8")
+        head = self.commit("docs: change the ADR")
+
+        async def send(method: str, url: str, **kwargs: object) -> httpx.Response:
+            transport = httpx.ASGITransport(app=create_dashboard_app(str(self.db_path)))
+            async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+                return await client.request(method, url, **kwargs)
+
+        marked = asyncio.run(
+            send("POST", f"/api/tasks/{created['id']}/documents/restamp", json={"path": ADR, "heading": "7"})
+        )
+        self.assertEqual(marked.status_code, 200, marked.text)
+        self.assertEqual([item["commit"] for item in marked.json()["rests_on"]], [self.first, head])
+        six = asyncio.run(send("GET", f"/api/tasks/{created['id']}/documents", params={"path": ADR, "heading": "6"}))
+        seven = asyncio.run(send("GET", f"/api/tasks/{created['id']}/documents", params={"path": ADR, "heading": "7"}))
+        self.assertEqual((six.json()["commit"], seven.json()["commit"]), (self.first, head))
+        self.assertIn("The task layer.", six.json()["text"])
+        self.assertIn("Changed.", seven.json()["text"])
+        refused = asyncio.run(
+            send("POST", f"/api/tasks/{created['id']}/documents/restamp", json={"path": "docs/nope.md"})
+        )
+        self.assertEqual(refused.status_code // 100, 4)
+
+
+class StampedProposalTests(_Repo):
+    def test_a_proposal_stamps_its_documents_when_it_is_made_not_when_confirmed(self) -> None:
+        existing = Mutations(self.store, via="cli").add_task(self.store.get_sprint("s1"), title="Existing", rests_on=[SPEC])
+        proposals = Proposals(self.store, via="cli", actor="manager")
+        proposal = proposals.create(
+            self.project,
+            reason="Name what the work rests on.",
+            operations=[
+                # A commit the manager writes is not taken.
+                {"kind": "file_task", "title": "Filed", "rests_on": [{"path": ADR, "commit": "deadbeef"}]},
+                {"kind": "add_task", "sprint_id": "s1", "title": "Added", "rests_on": [f"{SPEC}#6.3"]},
+                {"kind": "edit_task", "task_id": existing.id, "rests_on": [SPEC, ADR]},
+            ],
+            proposed_by="manager",
+        )
+        self.assertEqual(proposal.operations[0]["rests_on"], [{"path": ADR, "heading": "", "commit": self.first}])
+        self.move_the_default_branch()
+
+        self.assertEqual(proposals.confirm(proposal.id).state, "confirmed")
+
+        by_title = {task.title: task for task in self.store.list_tasks(project_id="p1")}
+        self.assertEqual(by_title["Filed"].rests_on[0].commit, self.first)
+        self.assertEqual(by_title["Added"].rests_on[0].commit, self.first)
+        self.assertEqual([ref.commit for ref in by_title["Existing"].rests_on], [self.first, self.first])

@@ -2,12 +2,15 @@
 commit of the default branch at the moment each was named.
 
 Foreman captures the commit; nobody types it. The text form, for a CLI flag
-or a form field, is ``path`` or ``path#heading``, one per entry.
+or a form field, is ``path`` or ``path#heading``, one per entry. A space
+before the ``#`` makes the separator unambiguous, so a path that has a ``#``
+in it is written ``path #heading``, or ``path #`` with no heading.
 """
 
 from __future__ import annotations
 
 import posixpath
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -17,6 +20,12 @@ from .errors import ForemanError
 
 class RestsOnError(ForemanError):
     """A named document is not acceptable. The message says why."""
+
+
+#: The heading separator when written unambiguously: a space, then ``#``.
+_SEPARATOR = re.compile(r"\s#")
+#: Line breaks and other control characters: a path and a heading are one line.
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
 
 @dataclass(slots=True, frozen=True)
@@ -34,6 +43,15 @@ class DocumentRef:
         return (self.path, self.heading)
 
     def label(self) -> str:
+        """The entry as people read it, and as the text form takes it back (``text``)."""
+
+        return self.text() if "#" in self.path else (f"{self.path}#{self.heading}" if self.heading else self.path)
+
+    def text(self) -> str:
+        """The text form that ``parse_entry`` reads back as this same entry."""
+
+        if "#" in self.path or _SEPARATOR.search(self.heading):
+            return f"{self.path} #{self.heading}"
         return f"{self.path}#{self.heading}" if self.heading else self.path
 
     def as_dict(self) -> dict[str, str]:
@@ -46,6 +64,8 @@ def clean_path(raw: str) -> str:
     text = str(raw or "").strip().replace("\\", "/")
     if not text:
         raise RestsOnError("A document needs a path.")
+    if _CONTROL.search(text):
+        raise RestsOnError(f"{text!r}: a path is one line, with no line break or control character.")
     if text.startswith("/"):
         raise RestsOnError(f"{text}: name the path from the repository root, not an absolute path.")
     normal = posixpath.normpath(text)
@@ -54,20 +74,43 @@ def clean_path(raw: str) -> str:
     return normal
 
 
+def clean_heading(raw: str) -> str:
+    """A heading, trimmed, or ``RestsOnError`` when it is more than one line."""
+
+    text = str(raw or "").strip()
+    if _CONTROL.search(text):
+        raise RestsOnError(f"{text!r}: a heading is one line, with no line break or control character.")
+    return text
+
+
+def split_text(value: str) -> tuple[str, str]:
+    """The path and the heading of the text form.
+
+    A space then ``#`` separates them when the text has one (so a path may
+    hold a ``#``); otherwise the first ``#`` does.
+    """
+
+    found = _SEPARATOR.search(value)
+    if found:
+        return value[: found.start()], value[found.end() :]
+    path, _, heading = value.partition("#")
+    return path, heading
+
+
 def parse_entry(value: Any) -> DocumentRef:
-    """One entry: ``"path"``, ``"path#heading"``, a mapping or a ``DocumentRef``."""
+    """One entry: ``"path"``, ``"path#heading"``, ``"path #heading"``, a mapping or a ``DocumentRef``."""
 
     if isinstance(value, DocumentRef):
-        return DocumentRef(clean_path(value.path), value.heading.strip(), value.commit)
+        return DocumentRef(clean_path(value.path), clean_heading(value.heading), value.commit)
     if isinstance(value, Mapping):
         return DocumentRef(
             clean_path(str(value.get("path") or "")),
-            str(value.get("heading") or "").strip(),
+            clean_heading(str(value.get("heading") or "")),
             str(value.get("commit") or "").strip(),
         )
     if isinstance(value, str):
-        path, _, heading = value.partition("#")
-        return DocumentRef(clean_path(path), heading.strip())
+        path, heading = split_text(value)
+        return DocumentRef(clean_path(path), clean_heading(heading))
     raise RestsOnError("Each document is a path, `path#heading`, or an object with `path` and `heading`.")
 
 

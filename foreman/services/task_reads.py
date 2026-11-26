@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..domain.rests_on import DocumentRef
 from ..engine.document_changes import changes_by_document
 from ..engine.verdict import REVIEW_VERDICT, command_was_run
 from ..repo import git
@@ -199,17 +200,38 @@ class TaskReads:
             total_chars=len(text),
         )
 
-    def get_document(self, task_id: str, path: str) -> TaskDocument:
-        """A document the task names, read at the commit it was named at.
+    @staticmethod
+    def _entry(task: Task, path: str, heading: str | None) -> DocumentRef:
+        """The entry the task names by ``path`` and ``heading``.
+
+        Each entry has its own commit, so a path named under two headings is
+        told apart by the heading. Without one, the entry with no heading is
+        meant, else the first of that path.
+        """
+
+        if heading is not None:
+            ref = next((ref for ref in task.rests_on if ref.key == (path, heading.strip())), None)
+        else:
+            ref = next((ref for ref in task.rests_on if ref.key == (path, "")), None) or next(
+                (ref for ref in task.rests_on if ref.path == path), None
+            )
+        if ref is None:
+            named = f"{path}#{heading}" if heading else path
+            raise InvalidRequestError(f"{named!r} is not a document this task rests on.")
+        return ref
+
+    def get_document(self, task_id: str, path: str, heading: str | None = None) -> TaskDocument:
+        """A document the task names, read at the commit its entry was named at.
 
         Only a path the task names is handed to git.
         """
 
         task, project = self._task_and_project(task_id)
-        ref = next((ref for ref in task.rests_on if ref.path == path), None)
-        if ref is None:
-            raise InvalidRequestError(f"{path!r} is not a document this task rests on.")
-        text = git.read_file_at(project.repo_path, ref.commit, ref.path)
+        ref = self._entry(task, path, heading)
+        try:
+            text = git.read_file_at(project.repo_path, ref.commit, ref.path)
+        except OSError:
+            text = None
         if text is None:
             raise NotFoundError(f"{ref.path} is not in the repository at {ref.commit[:10]}.")
         return TaskDocument(
@@ -223,20 +245,18 @@ class TaskReads:
             total_chars=len(text),
         )
 
-    def get_document_change(self, task_id: str, path: str) -> TaskDocumentChange:
-        """What a merge changed in a document the task rests on, since it was named."""
+    def get_document_change(self, task_id: str, path: str, heading: str | None = None) -> TaskDocumentChange:
+        """What a merge changed in a document the task rests on, since its entry was named."""
 
         task, project = self._task_and_project(task_id)
-        ref = next((ref for ref in task.rests_on if ref.path == path), None)
-        if ref is None:
-            raise InvalidRequestError(f"{path!r} is not a document this task rests on.")
+        ref = self._entry(task, path, heading)
         change = changes_by_document(self.store, task).get(ref.key)
         if change is None:
             raise NotFoundError(f"{ref.path} has not changed since this task named it.")
         sha = str(change.get("merge_sha") or "")
         try:
             text = git.path_diff(project.repo_path, ref.commit, sha, ref.path)
-        except git.GitError as exc:
+        except (OSError, git.GitError) as exc:
             raise NotFoundError(str(exc)) from exc
         return TaskDocumentChange(
             task_id=task.id,

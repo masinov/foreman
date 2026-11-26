@@ -21,9 +21,11 @@ from ..domain.models import (
     Task,
 )
 from ..domain.policy import PolicyMatrix, describe_resolution
+from ..domain.rests_on import RestsOnError
 from ..engine.document_changes import changes_by_document
 from ..mutations import MutationError
 from ..mutations.gates import GateVersionChanged, current_gate_version
+from ..repo.rests_on import default_branch_commit
 from .base import Service
 from .errors import (
     ActionFailedError,
@@ -111,6 +113,15 @@ class TaskService(Service):
         """The documents the task rests on; one that a merge changed since it was named says which."""
 
         changes = changes_by_document(self.store, task) if task.rests_on else {}
+        # Where "Mark as read" would stamp a changed document: the default
+        # branch's commit now. Asked only when something changed.
+        now_at: str | None = None
+        project = self.store.get_project(task.project_id) if changes else None
+        if project is not None:
+            try:
+                now_at = default_branch_commit(project.repo_path, project.default_branch)
+            except RestsOnError:
+                now_at = None
         items = []
         for ref in task.rests_on:
             item: dict[str, Any] = ref.as_dict()
@@ -120,6 +131,7 @@ class TaskService(Service):
                     "commit": change.get("merge_sha"),
                     "task_key": change.get("merged_task_key") or None,
                     "at": change.get("timestamp"),
+                    "default_commit": now_at,
                 }
                 if change
                 else None
@@ -349,6 +361,17 @@ class TaskService(Service):
         except MutationError as exc:
             raise InvalidRequestError(str(exc)) from exc
 
+        return self.get_task(task_id)
+
+    def restamp_document(self, task_id: str, *, path: str, heading: str = "") -> dict[str, Any]:
+        """Mark one document the task rests on as read at the default branch's commit now
+        (see ``Mutations.restamp_document``); return the task's detail."""
+
+        task = self._require_task(task_id)
+        try:
+            self._mutations().restamp_document(task, {"path": path, "heading": heading})
+        except MutationError as exc:
+            raise InvalidRequestError(str(exc)) from exc
         return self.get_task(task_id)
 
     def _project_workflow_step_ids(self, project_id: str) -> set[str] | None:
