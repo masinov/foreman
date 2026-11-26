@@ -6,7 +6,7 @@ The work filed in Foreman's backlog and not yet in a sprint, by priority (a lowe
 
 The owner's directions and the design decisions taken with the owner are not tasks. They are one file each in [`docs/directions/`](../directions/README.md).
 
-Filed 2, accepted 19.
+Filed 2, accepted 18.
 
 ## Filed, not accepted (2)
 
@@ -15,14 +15,13 @@ Filed 2, accepted 19.
 | FOR-43 | Proposal card: the 'Then' row for a send-back and a summary line for earlier proposals | feature | 0 | agent:developer | 2026-11-12 |
 | FOR-66 | Tests leak a running asyncio loop onto a parallel worker, failing test_meta_agent intermittently | fix | 0 | agent:developer | 2026-11-25 |
 
-## Accepted, not planned (19)
+## Accepted, not planned (18)
 
 | Key | Task | Type | Priority | Filed by | Filed |
 |-----|------|------|----------|----------|-------|
 | FOR-73 | Settle whether AGENTS.md reaches the agent once in a task's worktree | spike | 0 | masis | 2026-11-26 |
 | FOR-74 | Reads before the first edit are miscounted in places | fix | 0 | masis | 2026-11-26 |
 | FOR-75 | The review sandbox: run_scope none is not enforced, and pushes are only deterred | fix | 0 | masis | 2026-11-26 |
-| FOR-76 | A verdict's criteria are not compared with the task's own list | fix | 0 | masis | 2026-11-26 |
 | FOR-77 | A branch is not brought up to date when its working copy is dirty | fix | 0 | masis | 2026-11-26 |
 | FOR-78 | Decide whether "This machine" settings stay read-only on the page | spike | 0 | masis | 2026-11-26 |
 | FOR-79 | A task moves from one sprint to another directly | feature | 0 | masis | 2026-11-26 |

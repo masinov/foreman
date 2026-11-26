@@ -7,6 +7,48 @@ memory changes rather than versioned product releases.
 
 <!-- foreman:changelog - sprints below, newest first; earlier history follows -->
 
+## Sprint 66: the evidence behind a review (2026-11-26)
+
+### docs-direction-assay-and-foreman: Assay and Foreman: a direction
+
+- `docs/directions/assay-and-foreman.md` records the owner's question of 2026-11-26 and the proposal they found sound: Assay stays a product of its own, connected to Foreman through each side's API (agent briefing in, bindings out at merge, findings through intake), and Foreman borrows three of its ideas now.
+- First Foreman work on it: the reviewer's verdict records how each criterion was verified.
+
+### FOR-76: A verdict must list each of the task's criteria
+
+- A review verdict that lists fewer criteria than the task has is refused as an error, so a review can no longer skip one.
+- A project's own reviewer that uses `{previous_output}` now gets the developer's report, as `{developer_report}` does, not only the words outside the record.
+
+### FOR-92: A review says how it verified each criterion, and Foreman checks what it can
+
+- Each criterion of a reviewer's verdict records its basis: the commands it ran, the files it read, and whether it relied on the developer's report.
+- A command the verdict cites that the review did not run makes the verdict disagree with its outcome, with the reason.
+- A reviewer role's `approve_needs` (`checked` by default, `ran`, `stated`) sets what an approval needs of each criterion; a criterion resting only on the developer's report is not verified. It is set in Settings › Roles, "An approval needs", for the workspace and for a project.
+- The task page shows each criterion's basis in the review step's details and marks the commands Foreman saw run.
+
+### FOR-93: A task names the documents it rests on, with the commit it named them at
+
+- A task has a list of documents of the repository, each a path and optionally a heading; Foreman records the default branch's commit when each is named. It is set from the task form and page, `foreman task add`, `foreman task edit` and `foreman backlog add` (`--rests-on PATH[#HEADING]`), the manager's proposals and the intake API (`rests_on`).
+- A path that is not a file on the default branch is refused, with the reason.
+- The task page's Overview lists them with their commits, and each opens as it was at that commit.
+- Every agent step is given them as pointers (path, heading and commit, not the text). ADR-0041 section 6 is amended to say so.
+
+### FOR-94: A task hears when a document it rests on changes
+
+- A merge that changes a document that an unfinished task (todo, in progress, blocked or paused) rests on adds one line to that task's Activity, with the merge and the commit the task named the document at. Nothing in the task is changed and it is not stopped.
+- The task page's "Rests on" says the document changed and opens the diff between the two commits; the task's next agent step is told in its context. Naming the document again clears the notice.
+- `foreman task list <project> --rests-on PATH[#HEADING]` lists every task that rests on a document, finished ones included. ADR-0041 section 6 is amended.
+
+### FOR-95: A gate decision records the version it decided on
+
+- A merge approval records the task branch's head commit and the default branch's head; a plan approval records a fingerprint of the task's description and criteria and the run whose plan it was. Older decisions open as before (migration 35).
+- An approval that names a version (`foreman approve --version`, or the task page, which names the one it showed) is refused with the reason when the branch or plan has changed since; the page then shows the new version. Without a version the decision is recorded as before, and the CLI says which version it was recorded against.
+- The task's Activity line reads "Approved at abc1234", and `foreman history` shows the commits (or plan fingerprint) on the decision.
+
+### FOR-96: The generated copies link to docs/directions only where it exists
+
+- `docs/STATUS.md` and `docs/sprints/backlog.md` name `docs/directions/` only when the project's repository has it on the default branch; otherwise the line is left out.
+
 ## Sprint 65: the method, second part (2026-11-26)
 
 ### fix-sprint-65-review: Sprint 65's work, fixed after an independent review

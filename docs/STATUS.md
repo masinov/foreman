@@ -6,11 +6,7 @@ Project: Foreman. Default branch: main. Schema version: 33.
 
 ## Active sprint
 
-Sprint 66: the evidence behind a review (started 2026-11-26): 6 todo.
-
-From docs/directions/assay-and-foreman.md: a review says how it verified each criterion and Foreman checks what it can; a task names the documents it rests on, with their commit, and hears when one changes; a gate decision records the version it decided on. Plus FOR-76 and a link fix.
-
-The tasks are in `docs/sprints/current.md`.
+None is active.
 
 ## Held or blocked
 
@@ -18,11 +14,11 @@ Nothing is held or blocked.
 
 ## Last finished sprints
 
+- Sprint 66: the evidence behind a review, finished 2026-11-26: 6 of 6 tasks done.
 - Sprint 65: the method, second part, finished 2026-11-26: 6 of 6 tasks done, tag `checkpoint-20261126-sprint-65-the-method-second-part`.
 - Sprint 64: trial of the new reviewer, finished 2026-11-25: 1 of 1 tasks done, tag `checkpoint-20261125-sprint-64-trial-of-the-new-reviewer`.
 - Sprint 63: the method, first part, finished 2026-11-25: 5 of 5 tasks done, tag `checkpoint-20261125-sprint-63-the-method-first-part`.
 - Sprint 62: finish what's there, finished 2026-11-24: 10 of 10 tasks done, tag `checkpoint-20261124-sprint-62-finish-what-s-there`.
-- Sprint 60c: defaults from a terminal, finished 2026-11-18: 2 of 2 tasks done.
 
 ## Where the rest is
 
