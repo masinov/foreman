@@ -117,6 +117,9 @@ def run_dashboard_server(
             "Dashboard backend dependencies are missing; install FastAPI and uvicorn."
         ) from exc
 
+    with ForemanStore(db_path) as schema_store:
+        schema_store.check_schema()
+
     if frontend_mode == "dist":
         prepare_dashboard_assets()
     elif frontend_mode == "dev":
@@ -125,10 +128,6 @@ def run_dashboard_server(
         raise RuntimeError(
             f"Unsupported dashboard frontend mode: {frontend_mode}. Expected `dist` or `dev`."
         )
-
-    init_store = ForemanStore(db_path)
-    init_store.initialize()
-    init_store.close()
 
     if frontend_mode == "dist":
         print(f"Foreman dashboard running at http://{host}:{port}/dashboard")

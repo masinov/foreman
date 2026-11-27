@@ -24,7 +24,7 @@ from ..notifications.delivery import (
 )
 from ..runner.process import EngineShutdown, install_shutdown_handlers
 from ..services import Services
-from ..store import ForemanStore
+from ..store import ForemanStore, SchemaVersionError
 from .common import (
     read_or_print,
     DB_OPTION_NOTE,
@@ -185,7 +185,11 @@ def handle_serve(args: argparse.Namespace) -> int:
     configure_json_logging()
 
     with ForemanStore(db_path) as store:
-        store.initialize()
+        try:
+            store.check_schema()
+        except SchemaVersionError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
         project = resolve_project_or_print(store, args.project_id)
         if project is None:
             return 1
@@ -232,6 +236,9 @@ def handle_dashboard(args: argparse.Namespace) -> int:
             allow_insecure_network=args.allow_insecure_network,
             allow_remote_manager=args.allow_remote_manager,
         )
+    except SchemaVersionError as exc:
+        print(f"Dashboard not started: {exc}", file=sys.stderr)
+        return 1
     except (OSError, RuntimeError) as exc:
         print(f"Failed to start dashboard: {exc}", file=sys.stderr)
         return 1
