@@ -40,6 +40,10 @@ def context_mirror_dirs(project: Project, task: Task) -> tuple[Path, ...]:
     return (context_directory(project, root=working_dir),)
 
 
+#: The words that mark the note about an update skipped over uncommitted work.
+DIRTY_SKIP_MARK = "so Foreman did not update it."
+
+
 def prepare_task_branch_for_step(
     *,
     project: Project,
@@ -182,15 +186,21 @@ def refresh_task_branch(
         # A cut-off develop pass left uncommitted work. Merging over it is not
         # safe, so the update waits; say so in the record and tell the
         # developer to save the work and bring the branch up to date.
-        guidance = append_feedback_note(
-            carried_output,
-            (
-                f"Branch {branch!r} is {behind} commit(s) behind "
-                f"{project.default_branch!r}, but its working tree has uncommitted "
-                "changes (an earlier pass was cut off), so Foreman did not update it. "
-                "Commit or discard that work, then merge "
-                f"{project.default_branch!r} into the branch and resolve any conflict."
-            ),
+        # Said once: a pass cut off again before the work is saved would
+        # otherwise carry the same note twice, three times...
+        guidance = (
+            carried_output
+            if DIRTY_SKIP_MARK in (carried_output or "")
+            else append_feedback_note(
+                carried_output,
+                (
+                    f"Branch {branch!r} is {behind} commit(s) behind "
+                    f"{project.default_branch!r}, but its working tree has uncommitted "
+                    f"changes (an earlier pass was cut off), {DIRTY_SKIP_MARK} "
+                    "That work is the task's: commit it, then merge "
+                    f"{project.default_branch!r} into the branch and resolve any conflict."
+                ),
+            )
         )
         return (
             guidance,

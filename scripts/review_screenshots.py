@@ -88,6 +88,16 @@ def main() -> int:
         subprocess.run(["npm", "--prefix", "frontend", "run", "build"], check=True, stdin=subprocess.DEVNULL,
                        stdout=subprocess.DEVNULL)
     copy_database(source, out / "review.db")
+    # The dashboard no longer migrates when it opens (a deploy step since
+    # FOR-87): the copy is brought to this checkout's schema, so a branch that
+    # adds a migration can still be looked at.
+    migrated = subprocess.run(
+        [str(root / "venv/bin/foreman"), "db", "migrate", "--db", str(out / "review.db")],
+        stdin=subprocess.DEVNULL, capture_output=True, text=True,
+    )
+    if migrated.returncode != 0:
+        print(f"Could not migrate the copy of the database:\n{migrated.stderr or migrated.stdout}", file=sys.stderr)
+        return 1
 
     from playwright.sync_api import sync_playwright
 
@@ -98,7 +108,12 @@ def main() -> int:
         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
     )
     try:
-        wait_for(f"http://127.0.0.1:{port}/dashboard")
+        try:
+            wait_for(f"http://127.0.0.1:{port}/dashboard")
+        except SystemExit:
+            log.flush()
+            print((out / "dashboard.log").read_text(encoding="utf-8")[-2000:], file=sys.stderr)
+            raise
         executable = next((shutil.which(name) for name in BROWSERS if shutil.which(name)), None)
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(executable_path=executable) if executable else playwright.chromium.launch()

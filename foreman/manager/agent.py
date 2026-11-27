@@ -113,10 +113,13 @@ def manager_process_env(env: dict[str, str] | None) -> dict[str, str]:
 
     The short list every agent gets (ADR-0023) and the session's marks, with
     this installation's `foreman` first on the path: the session may run only
-    commands that begin with that word.
+    commands that begin with that word. Claude Code's auto-memory is off.
     """
 
     environment = agent_environment(env)
+    # The operator's Claude Code memory for the repository is theirs, not
+    # the manager's: it is not loaded into the session (as for every agent).
+    environment["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
     bin_dir = Path(sys.executable).parent
     if (bin_dir / "foreman").exists():
         environment["PATH"] = os.pathsep.join(

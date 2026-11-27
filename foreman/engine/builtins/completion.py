@@ -22,6 +22,26 @@ def _short(sha: str) -> str:
     return sha[:7]
 
 
+def only_stale(evidence: CompletionEvidence) -> bool:
+    """Whether the evidence falls short only because the branch moved since it was checked.
+
+    The tests passed and the review approved, on a commit the branch has
+    since left: nothing failed, the new commits are just unchecked. Such a
+    task is tested and reviewed again rather than blocked.
+    """
+
+    head = evidence.head_sha
+    if not head or evidence.review_outcome != "approve":
+        return False
+    tests_stale = evidence.tests_status == "stale"
+    review_stale = bool(evidence.reviewed_sha and evidence.reviewed_sha != head)
+    if not (tests_stale or review_stale):
+        return False
+    if evidence.tests_status not in {"stale", "passed"}:
+        return False
+    return not any("no acceptance criteria" in r.lower() for r in evidence.failure_reasons)
+
+
 def proof_refusal_text(evidence: CompletionEvidence) -> str:
     """Say in plain sentences why a merge is refused for lack of proof.
 

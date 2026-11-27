@@ -441,7 +441,21 @@ class BranchAndMergeTests(OrchestratorTestCase):
             self.assertEqual(sync_event[1]["mode"], "refresh_skipped_dirty")
             self.assertEqual(sync_event[1]["commits_behind"], 1)
             self.assertIn("uncommitted", carried_output or "")
+            self.assertIn("commit it", carried_output or "")
+            self.assertNotIn("discard", carried_output or "")
             self.assertFalse((repo_path / "notes.txt").exists())
+
+            # Cut off again before the work is saved: the event is recorded
+            # again, the note is not repeated.
+            again, again_event = prepare_task_branch_for_step(
+                project=project,
+                task=task,
+                step="develop",
+                carried_output=carried_output,
+            )
+            assert again_event is not None
+            self.assertEqual(again_event[1]["mode"], "refresh_skipped_dirty")
+            self.assertEqual(again, carried_output)
 
     def test_develop_visit_resumes_on_a_branch_with_an_unconcluded_merge(self) -> None:
         from foreman.repo.git import checkout_branch, merge_in_progress

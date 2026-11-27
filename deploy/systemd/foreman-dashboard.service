@@ -7,9 +7,13 @@ StartLimitBurst=10
 [Service]
 Type=simple
 WorkingDirectory=@REPO@
+# The PATH of the person who installed the unit: a user unit's own PATH
+# lacks ~/.local/bin, where `claude` usually is, and every agent step would
+# fail with "executable `claude` was not found".
+Environment="PATH=@PATH@"
 ExecStart=@FOREMAN@ dashboard
 Restart=always
-RestartSec=10
+RestartSec=30
 TimeoutStopSec=30
 
 [Install]

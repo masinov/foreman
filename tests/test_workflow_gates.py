@@ -263,6 +263,83 @@ class MergeGateFlowTests(unittest.TestCase):
             ["git", "rev-parse", "HEAD"], cwd=path, check=True, capture_output=True, text=True
         ).stdout.strip()
 
+    def test_a_branch_that_moved_while_waiting_at_the_gate_is_tested_and_reviewed_again(self) -> None:
+        # The person approves the new head (the page showed it), but the tests
+        # and review ran on the commit before it: it goes back through them to
+        # the gate, with no unblock, and the next approval merges it.
+        repo, db_path = self._workspace()
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, task = self._seed(store, repo, settings={"merge_approval": "human"})
+            orchestrator = ForemanOrchestrator(
+                store,
+                agent_runners={
+                    "claude_code": _ScriptedRunner(
+                        [
+                            self._developer(repo),
+                            _reviewer_sees_tests_then_approves,
+                            _reviewer_sees_tests_then_approves,
+                        ]
+                    )
+                },
+            )
+            self.assertEqual(orchestrator.run_project(project.id).stop_reason, "waiting_for_decision")
+            branch = store.get_task(task.id).branch_name
+            moved_to = self._commit_on_task_branch(repo, branch)
+
+            orchestrator.resume_human_gate(task.id, outcome="approve", seen_version=moved_to)
+
+            back = store.get_task(task.id)
+            self.assertEqual(
+                (back.status, back.workflow_current_step, back.blocked_reason),
+                ("blocked", "merge_approval", "Awaiting human approval"),
+            )
+            self.assertEqual(self._steps(store, task.id)[-4:], ["merge", "test", "review", "merge_approval"])
+            guard = [e for e in store.list_events(task_id=task.id) if e.event_type == "engine.completion_guard"]
+            self.assertTrue(guard[-1].payload["retest"])
+
+            orchestrator.resume_human_gate(task.id, outcome="approve", seen_version=moved_to)
+            self.assertEqual(store.get_task(task.id).status, "done")
+            on_main = subprocess.run(
+                ["git", "merge-base", "--is-ancestor", moved_to, "main"], cwd=repo
+            ).returncode
+            self.assertEqual(on_main, 0, "the new head, tested and reviewed, was merged")
+
+    def test_the_merge_lands_the_approved_commit_not_a_later_one(self) -> None:
+        # A commit made on the branch while the merge runs is not merged with it.
+        from unittest import mock
+
+        import foreman.engine.builtins.merge as merge_module
+
+        repo, db_path = self._workspace()
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, task = self._seed(store, repo, settings={"merge_approval": "human"})
+            orchestrator = ForemanOrchestrator(
+                store,
+                agent_runners={
+                    "claude_code": _ScriptedRunner([self._developer(repo), _reviewer_sees_tests_then_approves])
+                },
+            )
+            orchestrator.run_project(project.id)
+            branch = store.get_task(task.id).branch_name
+            approved = orchestrator.resume_human_gate(task.id, outcome="approve", defer=True)
+            real_merge = merge_module.merge_branch
+            late: dict[str, str] = {}
+
+            def racing(*args, **kwargs):
+                late["sha"] = self._commit_on_task_branch(repo, branch)
+                return real_merge(*args, **kwargs)
+
+            with mock.patch.object(merge_module, "merge_branch", racing):
+                orchestrator.run_project(project.id)
+
+            def on_main(sha: str) -> bool:
+                return subprocess.run(["git", "merge-base", "--is-ancestor", sha, "main"], cwd=repo).returncode == 0
+
+            self.assertTrue(on_main(approved.version.branch_sha))
+            self.assertFalse(on_main(late["sha"]))
+
     def test_a_branch_that_moved_after_its_approval_is_tested_and_reviewed_again(self) -> None:
         repo, db_path = self._workspace()
         with ForemanStore(db_path) as store:

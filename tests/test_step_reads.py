@@ -103,6 +103,25 @@ class MiscountedCasesTests(unittest.TestCase):
     def test_a_python_script_that_only_reads_is_not_a_change(self) -> None:
         self.assertIsNone(classify_command("python3 - <<'EOF'\nprint(open('a.py').read())\nEOF"))
         self.assertEqual(classify_command("git apply --check fix.patch"), "read")
+        # A path built by a call is not a mode, and neither is a file name with an a in it.
+        self.assertIsNone(
+            classify_command("python3 -c \"import json, os; json.load(open(os.path.join('docs','data.json')))\"")
+        )
+        self.assertIsNone(classify_command("python3 -c \"print(open('data.txt', 'r').read())\""))
+
+    def test_a_python_write_through_a_built_path_is_a_change(self) -> None:
+        for line in [
+            "python3 -c \"import os; open(os.path.join('a','b.txt'), 'w').write('x')\"",
+            "python3 -c \"open('a.txt', mode='ab').write(b'x')\"",
+            "python3 -c \"open('a.txt', 'r+').write('x')\"",
+        ]:
+            with self.subTest(line=line):
+                self.assertEqual(classify_command(line), "change")
+
+    def test_a_here_string_is_not_a_heredoc(self) -> None:
+        # The line after a here-string is a command of its own.
+        self.assertEqual(classify_command("grep foo <<< 'abc'\nsed -i s/a/b/ f"), "change")
+        self.assertEqual(classify_command("grep foo <<< 'abc'"), "read")
 
     def test_a_codex_command_is_counted_once(self) -> None:
         events = [

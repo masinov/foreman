@@ -192,10 +192,12 @@ Built-in (non-agent) steps are prefixed `_builtin:` — `_builtin:run_tests`,
 A Claude Code agent starts in the task's worktree. It is given that
 worktree's own `CLAUDE.md` and `AGENTS.md`, once each (the main checkout's
 copies are not loaded), and the prompt Foreman builds. It is **not** given the
-operator's Claude Code memory: the runner starts every Claude Code agent with
-`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, so the notes under
-`~/.claude/projects/<repository path>/memory/` are neither read by the agent
-nor open to its writes. (`--bare` is not used: it also stops `CLAUDE.md`
+operator's Claude Code memory: the runner starts every Claude Code agent, and
+the manager's sessions, with `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, so the notes
+under `~/.claude/projects/<repository path>/memory/` are not loaded and Claude
+Code does not write to them. An agent with Bash or Write runs as your user,
+though, and could still write those files on purpose: the setting stops the
+loading, not the access. (`--bare` is not used: it also stops `CLAUDE.md`
 loading.) A role's `[agent.env]` can set the variable back to `0`.
 
 ---
@@ -600,12 +602,15 @@ refused, when it is lost to another engine, or on a project-level error.
 `deploy/systemd/` holds two systemd **user** units: `foreman-worker@.service`
 (one instance per project, `foreman serve <project>`) and
 `foreman-dashboard.service`. Both start at boot and start again after any
-exit, a crash or a SIGKILL included, ten seconds later; after ten starts in ten
-minutes systemd gives up, and the dashboard says "no worker" with Restart.
+exit, a crash or a SIGKILL included, thirty seconds later; after ten starts in
+ten minutes systemd gives up, and the dashboard says "no worker" with Restart.
+A fault that does not pass, such as a database that needs `foreman db migrate`,
+ends there: `journalctl` shows the message.
 `foreman serve` exits 0 when ended with `foreman engine shutdown`, so the unit
 starts it again: ending a worker holds nothing (ADR-0043). A worker started
 again takes over the project's engine lock when the dead one's lease has
-expired and carries on the task it was on, as after any engine restart.
+expired (up to two minutes after a SIGKILL; the starts before that fail and
+are retried) and carries on the task it was on, as after any engine restart.
 
 Installing them is your step; Foreman does not do it. From the checkout, with
 `foreman` in `./venv/bin`:
@@ -613,7 +618,7 @@ Installing them is your step; Foreman does not do it. From the checkout, with
 ```bash
 mkdir -p ~/.config/systemd/user
 for f in deploy/systemd/*.service; do
-  sed "s|@REPO@|$PWD|g; s|@FOREMAN@|$PWD/venv/bin/foreman|g" "$f" \
+  sed "s|@REPO@|$PWD|g; s|@FOREMAN@|$PWD/venv/bin/foreman|g; s|@PATH@|$PATH|g" "$f" \
     > ~/.config/systemd/user/$(basename "$f")
 done
 systemctl --user daemon-reload
@@ -623,13 +628,20 @@ systemctl --user status foreman-worker@foreman.service
 journalctl --user -u foreman-worker@foreman.service -f
 ```
 
-Replace `foreman` in `foreman-worker@foreman.service` with the project id. Run
+The units are given your `PATH` as it is when you run this, so the agent
+programs (`claude`, `codex`) are found as they are in your shell; run it again
+after one moves. Replace `foreman` in `foreman-worker@foreman.service` with the
+project id. Run
 `foreman db migrate` before starting after an update (section 20). To remove:
 `systemctl --user disable --now <unit>` and delete the file.
 
-A killed worker leaves no agent behind: each agent's process group has a small
-guard process that kills the group (the agent and every tool it started) when
-the worker's end of a pipe closes.
+A killed worker leaves no agent behind: each agent has a small guard process
+that, when the worker's end of a pipe closes, kills the agent's process group
+and every process it saw below the agent. Claude Code runs each tool command in
+a session of its own, outside the group, so the guard looks at the agent's
+process tree every two seconds; a tool started in the last two seconds before
+the worker died can be missed. Under the systemd unit, systemd ends everything
+left in the unit's control group as well.
 
 ## 7. Roles
 
@@ -2000,12 +2012,23 @@ A server's admin login (Assay's `.env.admin`) or any other secret is **never
 linked**: do not list one in `worktree_link_paths`. The reviewer has Bash, so
 whatever is linked, it can read.
 
-The sandbox is enforced, not only asked for:
+What the sandbox enforces, and where it stops:
 
-- `run_scope = "none"` removes Bash from the agent whatever its tool list says.
-- A push to an address given on the command line cannot reach anything. A push
-  to a configured remote goes to an empty repository of the sandbox's own and
-  fails the step with "tried to push", so the attempt is on the task's record.
+- `run_scope = "none"` refuses a Claude Code agent every tool that runs a
+  command (Bash, Monitor, PowerShell) whatever its tool list says. A Codex
+  agent runs commands in Codex's own sandbox without asking, so on Codex the
+  scope is not enforced.
+- Pushes are turned away by git settings Foreman gives the step's environment:
+  a push to a configured remote goes to an empty repository of the sandbox's
+  own and fails the step with "tried to push", so the attempt is on the task's
+  record, and a push to an address given on the command line goes nowhere.
+  This stops a push made the ordinary way. It does not stop an agent that sets
+  out to get round it: the reviewer has Bash and runs as your user, with your
+  git credentials, so it can drop those settings and push. Keeping the
+  reviewer from your credentials and the network is FOR-100.
+- The task's branch is put back if the step moved or deleted it, whether or
+  not it also pushed. Other refs and the repository's config are shared with
+  your checkout and are not checked.
 - A sandbox a killed engine left behind is removed when an engine starts for
   the project again.
 

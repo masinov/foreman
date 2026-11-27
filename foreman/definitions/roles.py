@@ -164,6 +164,8 @@ CLAUDE_CODE_TOOLS: tuple[str, ...] = (
     "Write",
     "NotebookEdit",
     "Bash",
+    "Monitor",
+    "PowerShell",
     "WebFetch",
     "WebSearch",
     "Task",
@@ -171,6 +173,11 @@ CLAUDE_CODE_TOOLS: tuple[str, ...] = (
     "LSP",
     "ToolSearch",
 )
+
+#: The Claude Code tools that run a command: Bash, Monitor (a command whose
+#: output is watched) and PowerShell (Windows). ``run_scope = "none"`` refuses
+#: them all, not only Bash.
+COMMAND_TOOLS: tuple[str, ...] = ("Bash", "Monitor", "PowerShell")
 
 KNOWN_TOOLS: dict[str, tuple[str, ...]] = {"claude_code": CLAUDE_CODE_TOOLS}
 
@@ -271,11 +278,15 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
             f"{role_path}: agent.run_scope must be one of {', '.join(RUN_SCOPES)}; "
             f"got {run_scope!r}."
         )
-    if run_scope == "none" and "Bash" in _require_string_list(
-        tools_data, "allowed", role_path, default=()
-    ):
+    listed_commands = [
+        tool
+        for tool in _require_string_list(tools_data, "allowed", role_path, default=())
+        if tool in COMMAND_TOOLS
+    ]
+    if run_scope == "none" and listed_commands:
         raise RoleLoadError(
-            f"{role_path}: agent.run_scope is none, and agent.tools.allowed lists Bash."
+            f"{role_path}: agent.run_scope is none, and agent.tools.allowed lists "
+            f"{', '.join(listed_commands)}, which runs commands."
         )
 
     role = RoleDefinition(
@@ -333,16 +344,17 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
 
 
 def _can_run_commands(role: RoleDefinition) -> bool:
-    """Whether a role's agent can run a command (Claude Code's Bash; Codex always can)."""
+    """Whether a role's agent can run a command (Claude Code's command tools; Codex always can)."""
 
     tools = role.agent.tools
     if tools.none:
         return False
     if role.agent.backend != "claude_code":
         return True
-    if "Bash" in tools.disallowed:
+    usable = [tool for tool in COMMAND_TOOLS if tool not in tools.disallowed]
+    if not usable:
         return False
-    return not tools.allowed or "Bash" in tools.allowed
+    return not tools.allowed or any(tool in tools.allowed for tool in usable)
 
 
 def load_roles(directory: str | Path | None = None) -> dict[str, RoleDefinition]:

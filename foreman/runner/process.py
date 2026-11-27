@@ -164,7 +164,9 @@ class ManagedProcess:
         for thread in self._threads:
             thread.start()
 
-        self._guard_release: int | None = _start_group_guard(proc)
+        guard = _start_group_guard(proc)
+        self._guard_release: int | None = guard[0] if guard else None
+        self._guard: subprocess.Popen[bytes] | None = guard[1] if guard else None
 
         with _registry_lock:
             _registry.add(self)
@@ -316,6 +318,14 @@ class ManagedProcess:
             os.close(fd)
         except OSError:
             pass
+        guard, self._guard = self._guard, None
+        if guard is not None:
+            # It exits as soon as it reads the byte; reaped here, it leaves
+            # no zombie behind.
+            try:
+                guard.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                pass
 
     def _release_streams(self) -> None:
         """Close the child's pipes once it has exited and the pumps are done."""
@@ -430,33 +440,77 @@ def _iter_stream(stream: Any) -> Iterator[str]:
 #: Runs in a process of its own for each child group. It holds the read end of
 #: a pipe whose write end only the worker has. If the worker dies by SIGKILL,
 #: the out-of-memory killer or a crash, the pipe reaches end of file and the
-#: guard kills the whole group: the agent and every tool it started, which the
-#: parent-death signal (agent process only) does not reach. A byte means the
-#: worker settled the group itself.
+#: guard kills the agent's group and every process it saw below the agent.
+#: Claude Code starts each tool command in a session of its own, outside the
+#: agent's group, so the guard looks at the agent's process tree every two
+#: seconds while it waits and kills what it saw, even a tool whose agent
+#: already died (a process is matched by its pid and start time, so a reused
+#: pid is never hit). A tool started in the last two seconds before the worker
+#: died may be missed; under the systemd unit its control group catches it. A
+#: byte means the worker settled the group itself.
 _GROUP_GUARD_SOURCE = """
 import os, select, signal, sys
-pgid, fd = int(sys.argv[1]), int(sys.argv[2])
+root, fd = int(sys.argv[1]), int(sys.argv[2])
+
+def stat(pid):
+    try:
+        with open("/proc/%d/stat" % pid, "rb") as handle:
+            data = handle.read()
+    except OSError:
+        return None
+    fields = data[data.rindex(b")") + 2:].split()
+    return int(fields[1]), fields[19]
+
+def tree():
+    children = {}
+    for name in os.listdir("/proc"):
+        if name.isdigit():
+            found = stat(int(name))
+            if found is not None:
+                children.setdefault(found[0], []).append((int(name), found[1]))
+    seen, stack = {}, [root]
+    while stack:
+        for pid, start in children.get(stack.pop(), ()):
+            if pid not in seen:
+                seen[pid] = start
+                stack.append(pid)
+    return seen
+
+def alive(pid, start):
+    found = stat(pid)
+    return found is not None and found[1] == start
+
+seen = {}
 while True:
+    seen = {pid: start for pid, start in seen.items() if alive(pid, start)}
+    seen.update(tree())
     ready = select.select([fd], [], [], 2.0)[0]
     if ready:
         if os.read(fd, 1) == b"x":
             sys.exit(0)
         break
     try:
-        os.killpg(pgid, 0)
+        os.killpg(root, 0)
     except ProcessLookupError:
         sys.exit(0)
     except PermissionError:
         pass
+seen.update(tree())
 try:
-    os.killpg(pgid, signal.SIGKILL)
+    os.killpg(root, signal.SIGKILL)
 except OSError:
     pass
+for pid, start in seen.items():
+    if alive(pid, start):
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
 """
 
 
-def _start_group_guard(proc: Any) -> int | None:
-    """Start the guard for a real child's process group; return the release fd."""
+def _start_group_guard(proc: Any) -> tuple[int, subprocess.Popen[bytes]] | None:
+    """Start the guard for a real child's process group; return the release fd and the guard."""
 
     if not isinstance(proc, subprocess.Popen) or not sys.platform.startswith("linux"):
         return None
@@ -465,7 +519,7 @@ def _start_group_guard(proc: Any) -> int | None:
         return None
     read_fd, write_fd = os.pipe()
     try:
-        subprocess.Popen(  # noqa: S603 - fixed argv
+        guard = subprocess.Popen(  # noqa: S603 - fixed argv
             [sys.executable, "-I", "-c", _GROUP_GUARD_SOURCE, str(pid), str(read_fd)],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -478,7 +532,7 @@ def _start_group_guard(proc: Any) -> int | None:
         return None
     finally:
         os.close(read_fd)
-    return write_fd
+    return write_fd, guard
 
 
 def _kill_leftover_group(proc: Any) -> None:

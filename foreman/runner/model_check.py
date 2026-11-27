@@ -45,6 +45,8 @@ def check_model(backend: str, model: str) -> str | None:
             timeout=_TIMEOUT_SECONDS,
             check=False,
             stdin=subprocess.DEVNULL,
+            # One question with no tools; the operator's memory has no place in it.
+            env={**os.environ, "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"},
         )
         answer = json.loads(done.stdout)
     except (OSError, subprocess.TimeoutExpired, ValueError):
