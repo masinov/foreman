@@ -373,3 +373,54 @@ A merge git cannot compare notes nothing: the merge is done whatever happens.
 
 `foreman task list <project> --rests-on PATH[#HEADING]` lists every task that
 rests on the document, finished ones and the backlog's included.
+
+## Amendment (2026-11-28, FOR-108): the syntax of a route's facts, and how they are chosen and recorded
+
+Section 1 left the TOML syntax open. Decided here (Claude, 2026-11-28):
+
+```toml
+[[transitions]]
+from = "route"
+trigger = "completion:go"
+to = "plan"
+when = ["no_criteria"]          # every fact must hold
+
+[[transitions]]
+from = "route"
+trigger = "completion:go"
+to = "develop"                  # no `when`: the default
+```
+
+- `when` is a list of facts, all of which must hold. A transition without it
+  is the default of its step and trigger.
+- Routes from one step and trigger are tried in the file's order and the
+  first whose facts all hold is taken. Every step and trigger that has routes
+  has exactly one default, and it comes last. Without `when` anywhere, a
+  step and trigger have one transition, as before.
+- The facts are written `label:<name>`, `no_criteria`, `changed:<group>`,
+  `changed_only:<group>[,<group>]` and `visits:<step>>=<n>`, matched by
+  these forms and nothing else. `not:` before a fact holds when the fact does
+  not (`not:label:ui`). `frozen_touched` comes with write scope and frozen
+  checks (ADR-0040 build item 8); until then the validator refuses it by name,
+  saying so.
+- What a change is: the paths changed between the merge base of the task's
+  branch with the default branch and the branch's head. A task with no branch
+  has changed nothing; `changed_only` is false for a change that touched
+  nothing.
+- `_builtin:route` is a step with no agent whose outcome is always `go`.
+- A workflow is refused before it runs (ADR-0027) when a fact is not one of
+  the list; when a step and trigger have routes but no default, or a default
+  that is not last; when `visits:` names a step the workflow does not have;
+  and when a route tests `changed` or `changed_only` from a step that can be
+  reached before any step that commits (a role with `run_scope = "branch"`;
+  the committing step's own route is allowed). A route that names a label or
+  path group the project does not name is refused where the project is known:
+  when a workflow is set for a project (`foreman init`, the settings), and
+  when the engine starts work on the project.
+- Every route taken where a step and trigger have facts is recorded on the
+  task: a `workflow.route_taken` event (the route, the facts that held, and
+  for the default the facts of the earlier routes that did not) on a system
+  run whose line is the Activity's: "Took the route to plan: no criteria", or,
+  for the default, "No route's facts held: the default, to develop".
+- A workflow with `when` is edited as text: the form has one next step per
+  outcome and would drop the routes, so it refuses to save over them.
