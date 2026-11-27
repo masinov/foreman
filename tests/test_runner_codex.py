@@ -11,7 +11,14 @@ from unittest.mock import patch
 
 from foreman.runner import AgentRunConfig, CodexRunner, InfrastructureError, PreflightError
 from foreman.runner.env import NON_INTERACTIVE_ENV
-from foreman.runner.codex import _JsonRpcClient
+from foreman.definitions.roles import COMMAND_TOOLS
+from foreman.runner.base import SandboxPolicy
+from foreman.runner.codex import (
+    _JsonRpcClient,
+    _approval_response,
+    _build_thread_request,
+    check_thread_started,
+)
 
 
 class _FakeInput:
@@ -407,12 +414,12 @@ class CodexRunnerTests(unittest.TestCase):
                         "id": 2,
                         "result": {
                             "thread": {"id": "thread-123"},
-                            "approvalPolicy": "on-request",
+                            "approvalPolicy": "untrusted",
                             "approvalsReviewer": "user",
                             "cwd": str(repo_path),
                             "model": "gpt-5.4",
                             "modelProvider": "openai",
-                            "sandbox": "workspace-write",
+                            "sandbox": {"type": "readOnly", "networkAccess": False},
                         },
                     }
                 )
@@ -473,6 +480,17 @@ class CodexRunnerTests(unittest.TestCase):
         ]
         self.assertEqual(requests[1]["method"], "thread/resume")
         self.assertEqual(requests[1]["params"]["threadId"], "thread-123")
+        # A role without a command tool asks about every command, in a
+        # read-only sandbox without network; Foreman declines.
+        self.assertEqual(requests[1]["params"]["approvalPolicy"], "untrusted")
+        self.assertEqual(requests[1]["params"]["sandbox"], "read-only")
+        self.assertEqual(
+            requests[1]["params"]["config"],
+            {
+                "sandbox_workspace_write": {"network_access": False},
+                "features": {"shell_tool": False, "unified_exec": False},
+            },
+        )
         self.assertEqual(requests[-1]["id"], "req-1")
         self.assertEqual(requests[-1]["result"], {"decision": "decline"})
 
@@ -556,6 +574,92 @@ class CodexRunnerTests(unittest.TestCase):
             list(runner.run(config))
 
         self.assertIn("app server crashed", str(exc.exception))
+
+
+class CodexSandboxTests(unittest.TestCase):
+    """A sandboxed step runs in Codex's sandbox, and a role without commands asks about each."""
+
+    def config(self, **overrides: object) -> AgentRunConfig:
+        values: dict[str, object] = dict(
+            backend="codex",
+            model="m",
+            prompt="go",
+            working_dir=Path("/tmp/box"),
+            session_id=None,
+            permission_mode="bypassPermissions",
+            sandbox=SandboxPolicy(),
+        )
+        values.update(overrides)
+        return AgentRunConfig(**values)  # type: ignore[arg-type]
+
+    def test_a_sandboxed_step_runs_workspace_write_without_network_and_is_never_asked(self) -> None:
+        method, params = _build_thread_request(self.config())
+        self.assertEqual(method, "thread/start")
+        self.assertEqual(params["sandbox"], "workspace-write")
+        self.assertEqual(params["approvalPolicy"], "never")
+        self.assertEqual(params["config"], {"sandbox_workspace_write": {"network_access": False}})
+
+    def test_a_role_flag_cannot_loosen_a_sandboxed_step(self) -> None:
+        config = self.config(
+            extra_flags={"sandbox": "danger-full-access", "approval_policy": "never"}
+        )
+        _, params = _build_thread_request(config)
+        self.assertEqual(params["sandbox"], "workspace-write")
+
+    def test_a_role_that_runs_no_command_asks_about_each_in_a_read_only_sandbox(self) -> None:
+        config = self.config(sandbox=None, disallowed_tools=tuple(COMMAND_TOOLS))
+        _, params = _build_thread_request(config)
+        self.assertEqual(params["approvalPolicy"], "untrusted")
+        self.assertEqual(params["sandbox"], "read-only")
+        self.assertEqual(params["config"]["features"], {"shell_tool": False, "unified_exec": False})
+
+    def test_an_ordinary_step_is_started_as_before(self) -> None:
+        _, params = _build_thread_request(self.config(sandbox=None))
+        self.assertEqual(params["sandbox"], "workspace-write")
+        self.assertEqual(params["approvalPolicy"], "on-request")
+        self.assertNotIn("config", params)
+
+    def test_every_request_for_a_command_is_declined(self) -> None:
+        for config in (
+            self.config(),
+            self.config(sandbox=None, disallowed_tools=tuple(COMMAND_TOOLS)),
+        ):
+            with self.subTest(sandbox=config.sandbox):
+                answer = _approval_response(
+                    "item/commandExecution/requestApproval",
+                    {"availableDecisions": ["accept", "decline"]},
+                    config,
+                )
+                self.assertEqual(answer, {"decision": "decline"})
+                self.assertEqual(
+                    _approval_response("item/permissions/requestApproval", {"permissions": {"network": True}}, config),
+                    {"permissions": {}, "scope": "turn"},
+                )
+
+    def test_a_sandboxed_step_is_not_given_a_file_change_outside_its_sandbox(self) -> None:
+        answer = _approval_response(
+            "item/fileChange/requestApproval", {"availableDecisions": ["accept", "decline"]}, self.config()
+        )
+        self.assertEqual(answer, {"decision": "decline"})
+
+    def test_a_thread_in_another_sandbox_than_asked_is_refused(self) -> None:
+        config = self.config()
+        good = {
+            "approvalPolicy": "never",
+            "sandbox": {"type": "workspaceWrite", "networkAccess": False},
+        }
+        check_thread_started(good, config)
+        for bad in (
+            {**good, "sandbox": {"type": "dangerFullAccess"}},
+            {**good, "sandbox": {"type": "workspaceWrite", "networkAccess": True}},
+            {**good, "approvalPolicy": "on-request"},
+            {},
+        ):
+            with self.subTest(bad=bad), self.assertRaisesRegex(InfrastructureError, "did not start the thread"):
+                check_thread_started(bad, config)
+
+    def test_an_ordinary_thread_is_not_checked(self) -> None:
+        check_thread_started({}, self.config(sandbox=None))
 
 
 if __name__ == "__main__":

@@ -13,6 +13,19 @@ from ..domain.errors import ForemanError
 from ..domain.models import utc_now_text
 
 
+@dataclass(frozen=True, slots=True)
+class SandboxPolicy:
+    """The reach of one sandboxed step (see ``runner.sandbox`` for what enforces it)."""
+
+    #: Hosts the step may reach (names or ``*.example.com``); none by default.
+    allowed_hosts: tuple[str, ...] = ()
+    #: Directories closed to reads, each except what ``read_paths`` names inside it.
+    deny_roots: tuple[Path, ...] = ()
+    #: What stays readable inside the closed directories: the step's own
+    #: working copy, the repository objects it reads, its toolchain.
+    read_paths: tuple[Path, ...] = ()
+
+
 @dataclass(slots=True)
 class AgentRunConfig:
     """Runtime configuration for one native agent invocation."""
@@ -37,6 +50,9 @@ class AgentRunConfig:
     #: run. A backend that reports a resumed session's running total takes
     #: this off, so the run's cost and its cost gate are the run's own.
     session_cost_baseline_usd: float = 0.0
+    #: Set for a ``run_scope = "sandbox"`` step: what it may reach, enforced
+    #: by the backend's own sandbox (see ``runner.sandbox``).
+    sandbox: SandboxPolicy | None = None
 
 
 @dataclass(slots=True)

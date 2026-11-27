@@ -30,12 +30,17 @@ REVIEW_KINDS: tuple[str, ...] = ("code", "security")
 _AGENT_DEFAULT_OUTCOMES: tuple[str, ...] = ("done", "blocked", "error")
 
 #: Where a role may run commands (ADR-0041 section 5). ``none``: it runs no
-#: command, and is refused a Bash tool. ``sandbox``: it runs in a throwaway
-#: working copy of the commit under review, removed when the step ends.
+#: command, and is refused a Bash tool. ``sandbox``: it runs in its own clone
+#: of the commit under review, removed when the step ends, inside the
+#: backend's sandbox: it writes only there, has no network but the hosts the
+#: project lists, and cannot read the operator's home directory.
 #: ``branch``: it works in the task's own worktree, as the developer does; a
 #: role that does not say gets this, which is how every role ran before.
 RUN_SCOPES: tuple[str, ...] = ("none", "sandbox", "branch")
 DEFAULT_RUN_SCOPE = "branch"
+#: The flag under ``[agent.flags]`` with which a ``sandbox`` role on Codex
+#: accepts that Codex's sandbox leaves reads of the home directory open.
+ACCEPT_OPEN_READS_FLAG = "accept_open_reads"
 
 #: What an approval needs of each criterion of a verdict (ADR-0041 section 2):
 #: ``checked``, a command it ran, a file it read, or its judgement with a
@@ -289,6 +294,20 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
             f"{', '.join(listed_commands)}, which runs commands."
         )
 
+    flags = _as_mapping(agent_data.get("flags"), default={})
+    if (
+        run_scope == "sandbox"
+        and agent_data.get("backend") == "codex"
+        and flags.get(ACCEPT_OPEN_READS_FLAG) is not True
+    ):
+        raise RoleLoadError(
+            f"{role_path}: agent.run_scope is sandbox, and Codex cannot enforce it. Its "
+            "sandbox keeps a step from writing outside its working copy and from the "
+            "network, but not from reading your home directory, your credentials and "
+            "other projects. Run this role on claude_code, or accept the open reads "
+            f"with {ACCEPT_OPEN_READS_FLAG} = true under [agent.flags]."
+        )
+
     role = RoleDefinition(
         id=_require_string(role_data, "id", role_path),
         name=_require_string(role_data, "name", role_path),
@@ -302,7 +321,7 @@ def parse_role(data: Mapping[str, Any], role_path: Path) -> RoleDefinition:
                 _require_string_list(agent_data, "model_ladder", role_path, default=())
             ),
             escalate_after=_escalate_after(agent_data, role_path),
-            flags=_as_mapping(agent_data.get("flags"), default={}),
+            flags=flags,
             env=_require_string_mapping(agent_data, "env", role_path, default={}),
             tools=AgentToolConfig(
                 allowed=_require_string_list(tools_data, "allowed", role_path, default=()),

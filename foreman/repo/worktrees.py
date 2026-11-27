@@ -28,7 +28,6 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -37,6 +36,7 @@ from pathlib import Path
 from ..domain.errors import ForemanError
 from ..domain.models import Project, Task
 from ..domain.settings import ProjectSettings, SettingsError, settings_of
+from ..runner.base import SandboxPolicy
 from ..store import ForemanStore
 from .git import (
     GitError,
@@ -58,10 +58,8 @@ INTEGRATION_WORKTREE_NAME = "_integration"
 
 #: Name prefix, inside the worktree root, of a sandbox worktree (ADR-0041).
 SANDBOX_WORKTREE_PREFIX = "_sandbox-"
-#: The file a sandbox's push guard writes when a push is attempted.
-PUSH_MARKER_NAME = "push-attempted"
-#: Where a push to an address given on the command line is rewritten to: nowhere.
-NO_PUSH_PREFIX = "/nonexistent/foreman-sandbox-no-push/"
+#: A file in a sandbox clone's git directory; its presence says Foreman made it.
+SANDBOX_CLONE_MARKER = "foreman-sandbox-clone"
 
 #: Default ceiling on live task worktrees when the project does not set
 #: ``max_live_worktrees``. 0 means unlimited.
@@ -105,15 +103,19 @@ class WorktreeEntry:
 
 @dataclass(slots=True)
 class Sandbox:
-    """One sandboxed step's throwaway worktree and the guard on the task branch.
+    """One sandboxed step's own clone of the commit under review, and the guard on the task branch.
 
-    The worktree is detached at ``commit``, so a commit made in it moves
-    nothing. All worktrees share one ``.git``, though, so an agent with a shell
-    can still move a ref (``git branch -f``, ``git update-ref``) or push.
-    ``env`` turns away a push made the ordinary way (see ``_no_push_env`` for
-    where that stops), and ``check`` compares the task branch with the head
+    The step has a shell and runs as the operator, so what it can reach is
+    set by the backend's sandbox (``policy``, see ``runner.sandbox``): it
+    writes only in ``path``, has no network and cannot read your home
+    directory. The copy is a clone (objects shared with the repository, no
+    remote, its own refs and config), not a linked worktree: a linked
+    worktree writes the main repository's refs, a clone cannot reach them. A
+    commit made in it, a ref moved in it, a config changed in it stay in it.
+
+    ``check`` still compares the task's branch in the repository with the head
     it had when the sandbox opened, puts it back if it moved, and returns why
-    the step must fail.
+    the step must fail: the sandbox is the wall, this is the proof it held.
     """
 
     path: Path
@@ -121,34 +123,16 @@ class Sandbox:
     branch: str
     #: The commit the sandbox is checked out at and the branch head at the start.
     commit: str
-    env: dict[str, str] = field(default_factory=dict)
+    policy: SandboxPolicy = field(default_factory=SandboxPolicy)
     violation: str | None = None
-    #: A file the push guard's hook writes to when a push is attempted.
-    push_marker: Path | None = None
-    #: The empty repository every push is rewritten to; a ref in it is a push.
-    push_sink: Path | None = None
 
     @property
     def ref(self) -> str:
         return f"refs/heads/{self.branch}"
 
     def check(self) -> str | None:
-        """Return why the step broke the sandbox, or None; a moved branch is restored.
+        """Return why the step broke the sandbox, or None; a moved branch is restored."""
 
-        The branch is checked and put back on every call, a push or not: a
-        step that moved the branch and then pushed leaves it where it began.
-        """
-
-        reasons: list[str] = []
-        pushed = self.push_marker is not None and self.push_marker.exists()
-        if not pushed and self.push_sink is not None and self.push_sink.is_dir():
-            refs = run_git(self.push_sink, "for-each-ref", check=False)
-            pushed = bool(refs.stdout.strip())
-        if pushed:
-            reasons.append(
-                "The sandboxed step tried to push. A sandbox never pushes: the push was "
-                "refused, and the step fails so the attempt is on the task's record."
-            )
         current = head_sha(self.repo_path, self.ref)
         if current != self.commit:
             found = f"moved to {current[:12]}" if current else "was deleted"
@@ -160,20 +144,17 @@ class Sandbox:
                 if restore.returncode == 0
                 else f"Foreman could not put it back: {restore.stderr or restore.stdout}"
             )
-            reasons.append(
+            reason = (
                 f"The sandboxed step changed the task's branch: {self.branch} was at "
                 f"{self.commit[:12]} when the step began and {found}. A sandboxed step may "
                 f"not commit to, move or push the task's branch. {restored}"
             )
-        if self.violation is not None:
             # A later call finds the branch already put back; what the first
             # call found still stands.
-            for reason in reasons:
-                if reason not in self.violation:
-                    self.violation = f"{self.violation} {reason}"
-            return self.violation
-        if reasons:
-            self.violation = " ".join(reasons)
+            if self.violation is None:
+                self.violation = reason
+            elif reason not in self.violation:
+                self.violation = f"{self.violation} {reason}"
         return self.violation
 
 
@@ -374,14 +355,14 @@ class WorktreeManager:
 
     @contextmanager
     def sandbox(self, task: Task) -> Iterator[Sandbox]:
-        """Open a throwaway worktree of the task's branch head for one step.
+        """Open a clone of the task's branch head for one step.
 
-        Checked out detached at the commit under review, linked and set up as
-        a task worktree is (``worktree_link_paths``, ``worktree_setup_command``,
-        run afresh because the tree is new), and removed on the way out
-        whether the step succeeded, failed, was killed, or never started
-        because setup failed. A tree an earlier engine left behind under the
-        same name is replaced.
+        A clone of the repository (objects shared, no remote), detached at the
+        commit under review, linked and set up as a task worktree is
+        (``worktree_link_paths``, ``worktree_setup_command``, run afresh
+        because the tree is new), and removed on the way out whether the step
+        succeeded, failed, was killed, or never started because setup failed.
+        A copy an earlier engine left behind under the same name is replaced.
         """
 
         branch = (task.branch_name or "").strip()
@@ -397,24 +378,17 @@ class WorktreeManager:
             if path.exists():
                 raise WorktreeError(f"{path} exists and is not a Foreman sandbox. Remove it.")
         path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            run_git(self.repo_path, "worktree", "add", "--detach", str(path), commit)
-        except GitError as exc:
-            raise WorktreeError(f"Could not create sandbox at {path}: {exc}") from exc
-        guard_dir: Path | None = None
         box: Sandbox | None = None
         try:
-            guard_dir = Path(tempfile.mkdtemp(prefix="foreman-sandbox-guard-"))
+            self._clone_without_remote(path, commit)
+            self._link_shared_paths(path)
             box = Sandbox(
                 path=path,
                 repo_path=self.repo_path,
                 branch=branch,
                 commit=commit,
-                env=self._no_push_env(guard_dir),
-                push_marker=guard_dir / PUSH_MARKER_NAME,
-                push_sink=guard_dir / "sink.git",
+                policy=self._sandbox_policy(path),
             )
-            self._link_shared_paths(path)
             self._run_setup_command(path)
             yield box
         finally:
@@ -424,12 +398,71 @@ class WorktreeManager:
                 if box is not None:
                     box.check()
             finally:
-                self.remove_path(path)
-                if guard_dir is not None:
-                    shutil.rmtree(guard_dir, ignore_errors=True)
+                self._remove_clone(path)
+
+    def _clone_without_remote(self, path: Path, commit: str) -> None:
+        """Make ``path`` a clone of the repository at ``commit``, with no remote."""
+
+        try:
+            run_git(
+                self.repo_path, "clone", "--shared", "--no-checkout", "--quiet",
+                str(self.repo_path), str(path),
+            )
+            run_git(path, "remote", "remove", "origin")
+            run_git(path, "checkout", "--quiet", "--detach", commit)
+            git_dir = self.admin_dir(path)
+            if git_dir is None:
+                raise GitError(f"{path} is not a git repository after the clone.")
+            (git_dir / SANDBOX_CLONE_MARKER).write_text("sandbox\n", encoding="utf-8")
+        except GitError as exc:
+            self._remove_clone(path)
+            raise WorktreeError(f"Could not create sandbox at {path}: {exc}") from exc
+
+    def _remove_clone(self, path: Path) -> None:
+        if not self._is_inside_root(path):
+            raise WorktreeError(
+                f"Refusing to remove {path}: it is outside the Foreman worktree root "
+                f"{self.root}."
+            )
+        if path.exists() and self._is_sandbox_clone(path):
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            self.remove_path(path)
+
+    def _is_sandbox_clone(self, path: Path) -> bool:
+        return (path / ".git" / SANDBOX_CLONE_MARKER).is_file()
+
+    def _sandbox_policy(self, path: Path) -> SandboxPolicy:
+        """What a step in the sandbox at ``path`` may read, write and reach.
+
+        Reads of the operator's home directory and of the directory the
+        repository sits in (other projects) are closed, except the sandbox
+        itself, the repository's objects (the clone shares them), what
+        ``worktree_link_paths`` links in, and the project's own
+        ``sandbox_read_paths``. Hosts: the project's ``sandbox_allowed_hosts``.
+        """
+
+        settings = _settings(self.project)
+        repo = _resolve(self.repo_path)
+        readable = [_resolve(path), repo / ".git" / "objects"]
+        for name in _link_paths(self.project):
+            target = path / name
+            if target.is_symlink():
+                readable.append(_resolve(target))
+        readable.extend(
+            _resolve(Path(entry).expanduser()) for entry in settings.sandbox_read_paths
+        )
+        roots = [_resolve(Path.home())]
+        if repo.parent != repo.parent.parent:
+            roots.append(repo.parent)
+        return SandboxPolicy(
+            allowed_hosts=settings.sandbox_allowed_hosts,
+            deny_roots=tuple(dict.fromkeys(roots)),
+            read_paths=tuple(dict.fromkeys(readable)),
+        )
 
     def remove_stale_sandboxes(self) -> tuple[Path, ...]:
-        """Remove every sandbox worktree; call it only when no step can be running one.
+        """Remove every sandbox; call it only when no step can be running one.
 
         A sandbox is removed when its step ends, however it ends, unless the
         engine was killed hard. The engine holds the project's lock, so at its
@@ -440,61 +473,11 @@ class WorktreeManager:
         self.prune_registrations()
         removed: list[Path] = []
         for entry in self.list():
-            if entry.is_sandbox and entry.owned and self.remove_path(entry.path):
-                removed.append(entry.path)
+            if entry.is_sandbox and entry.owned:
+                self._remove_clone(entry.path)
+                if not entry.path.exists():
+                    removed.append(entry.path)
         return tuple(removed)
-
-    def _no_push_env(self, guard_dir: Path) -> dict[str, str]:
-        """Git settings, as environment, that point every remote's push nowhere.
-
-        Environment config outranks the repository's own, so an agent cannot
-        undo it with ``git config``; ``git remote set-url --push`` is a
-        repository config write and loses to it too. A push to a URL or path
-        given on the command line is rewritten to nowhere too (``pushInsteadOf``),
-        and so cannot reach anything. A push to a configured remote goes to an
-        empty repository of the sandbox's own, where a ``pre-push`` hook
-        refuses it and leaves a mark; a ref found in that repository (the hook
-        skipped with ``--no-verify``) is a push too. Either way the step is
-        failed, so the attempt is on the task. A push to an address is
-        prevented, not detected.
-
-        These are settings in the step's environment: they stop a push made
-        the ordinary way, not an agent that unsets them on purpose (it runs
-        as the operator, with their credentials). That needs the step kept
-        from the credentials and the network, which this does not do.
-        """
-
-        # Pushes to a configured remote land in an empty repository of the
-        # sandbox's own, never in the real remote.
-        sink = guard_dir / "sink.git"
-        run_git(guard_dir, "init", "--bare", "--quiet", str(sink))
-        hook = guard_dir / "hooks" / "pre-push"
-        hook.parent.mkdir(parents=True, exist_ok=True)
-        hook.write_text(
-            "#!/bin/sh\n"
-            f"echo pushed > '{guard_dir / PUSH_MARKER_NAME}'\n"
-            "echo 'foreman: a sandbox never pushes' >&2\n"
-            "exit 1\n"
-        )
-        hook.chmod(0o755)
-
-        result = run_git(self.repo_path, "remote", check=False)
-        remotes = result.stdout.split() if result.returncode == 0 else []
-        # ``GIT_CONFIG_PARAMETERS`` is what ``git -c`` sets. Each entry is
-        # written ``'key=value'``, the one form every git version reads: the
-        # ``'key'='value'`` form needs git 2.31, and older git refuses the
-        # whole variable, so every git command in the sandbox failed with
-        # "bogus format in GIT_CONFIG_PARAMETERS" (git 2.25, 2026-11-25).
-        entries = " ".join(
-            f"'remote.{remote}.pushurl={sink}'"
-            for remote in remotes
-        )
-        entries += " " + " ".join(
-            f"'url.{NO_PUSH_PREFIX}.pushinsteadof={prefix}'"
-            for prefix in ("https://", "http://", "ssh://", "git://", "file://", "git@", "/", "./", "../")
-        )
-        entries += f" 'core.hookspath={guard_dir / 'hooks'}'"
-        return {"GIT_CONFIG_PARAMETERS": entries.strip()}
 
     def remove(self, task: Task) -> bool:
         """Remove one task's worktree. Returns whether anything was removed."""
@@ -563,7 +546,8 @@ class WorktreeManager:
                         exists=True,
                         is_integration=child.name == INTEGRATION_WORKTREE_NAME,
                         is_sandbox=child.name.startswith(SANDBOX_WORKTREE_PREFIX),
-                        owned=self._is_linked_to_this_repository(child),
+                        owned=self._is_linked_to_this_repository(child)
+                        or self._is_sandbox_clone(child),
                     )
                 )
         return tuple(sorted(entries, key=lambda entry: entry.slug))
@@ -607,7 +591,11 @@ class WorktreeManager:
         whose registration was pruned while the directory survived).
         """
 
-        return self._is_registered(path) or self._is_linked_to_this_repository(path)
+        return (
+            self._is_registered(path)
+            or self._is_linked_to_this_repository(path)
+            or self._is_sandbox_clone(path)
+        )
 
     def _is_linked_to_this_repository(self, path: Path) -> bool:
         git_file = path / ".git"

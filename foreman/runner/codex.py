@@ -78,6 +78,7 @@ class CodexRunner(AgentRunner):
             thread = thread_result.get("thread")
             if not isinstance(thread, dict):
                 raise InfrastructureError("Codex thread start response did not include thread metadata.")
+            check_thread_started(thread_result, config)
             thread_id = _optional_string(thread.get("id"))
             if not thread_id:
                 raise InfrastructureError("Codex thread start response did not include a thread id.")
@@ -464,14 +465,81 @@ class _JsonRpcClient:
             raise InfrastructureError("Codex app server emitted a non-object JSON-RPC message.")
 
 
+def commands_refused(config: AgentRunConfig) -> bool:
+    """Whether the role may run no command (``run_scope = "none"``, or no tools)."""
+
+    return not _tool_permitted(config, "Bash")
+
+
+def _approval_and_sandbox(config: AgentRunConfig) -> tuple[str, str]:
+    """The approval policy and sandbox mode a thread is started with.
+
+    A step that runs no command asks about each one (``untrusted``) in a
+    read-only sandbox, and Foreman declines what it is asked. A sandboxed step
+    (``run_scope = "sandbox"``) runs in Codex's ``workspace-write`` sandbox
+    and is never asked to leave it (``never``); a command that needs to fails.
+    Neither can be loosened by a role's flags.
+    """
+
+    if commands_refused(config):
+        return "untrusted", "read-only"
+    if config.sandbox is not None:
+        return "never", "workspace-write"
+    return (
+        _optional_string(config.extra_flags.get("approval_policy")) or "on-request",
+        _optional_string(config.extra_flags.get("sandbox")) or _sandbox_mode_for(config),
+    )
+
+
+def _thread_config(config: AgentRunConfig) -> dict[str, Any] | None:
+    """Codex configuration overrides for a thread; the network is off where Foreman limits it."""
+
+    if config.sandbox is None and not commands_refused(config):
+        return None
+    overrides: dict[str, Any] = {"sandbox_workspace_write": {"network_access": False}}
+    if commands_refused(config):
+        # No command tool at all, besides the approval policy that declines.
+        overrides["features"] = {"shell_tool": False, "unified_exec": False}
+    return overrides
+
+
+def check_thread_started(thread_result: dict[str, Any], config: AgentRunConfig) -> None:
+    """Fail the run when Codex did not start the thread in the sandbox Foreman asked for.
+
+    The app server answers a thread request with the policy it applies; a
+    step limited to a sandbox must never run under another one.
+    """
+
+    if config.sandbox is None and not commands_refused(config):
+        return
+    approval, mode = _approval_and_sandbox(config)
+    applied = thread_result.get("sandbox")
+    kind = applied.get("type") if isinstance(applied, dict) else None
+    wanted_kind = {"read-only": "readOnly", "workspace-write": "workspaceWrite"}[mode]
+    network = applied.get("networkAccess") if isinstance(applied, dict) else None
+    if (
+        kind != wanted_kind
+        or network not in (False, "restricted")
+        or thread_result.get("approvalPolicy") != approval
+    ):
+        raise InfrastructureError(
+            "Codex did not start the thread in the sandbox Foreman asked for "
+            f"({mode}, no network, approvals {approval}): it reports "
+            f"sandbox {applied!r}, approvals {thread_result.get('approvalPolicy')!r}. "
+            "The step was not run."
+        )
+
+
 def _build_thread_request(config: AgentRunConfig) -> tuple[str, dict[str, Any]]:
-    approval_policy = _optional_string(config.extra_flags.get("approval_policy")) or "on-request"
-    sandbox = _optional_string(config.extra_flags.get("sandbox")) or _sandbox_mode_for(config)
+    approval_policy, sandbox = _approval_and_sandbox(config)
     params: dict[str, Any] = {
         "cwd": str(config.working_dir),
         "approvalPolicy": approval_policy,
         "sandbox": sandbox,
     }
+    thread_config = _thread_config(config)
+    if thread_config is not None:
+        params["config"] = thread_config
     if config.model:
         params["model"] = config.model
     developer_instructions = _optional_string(config.extra_flags.get("developer_instructions"))
@@ -516,8 +584,12 @@ def _approval_response(
     if not isinstance(params, dict):
         return None
 
+    # A sandboxed step is never allowed out of its sandbox; whatever Codex asks
+    # (it should not ask under ``never``) is declined.
+    sandboxed = config.sandbox is not None
+
     if method == "item/commandExecution/requestApproval":
-        allowed = _tool_permitted(config, "Bash")
+        allowed = _tool_permitted(config, "Bash") and not sandboxed
         available_decisions = params.get("availableDecisions")
         cancel_decision = "cancel"
         if isinstance(available_decisions, list) and "decline" in available_decisions:
@@ -525,7 +597,9 @@ def _approval_response(
         return {"decision": "accept" if allowed else cancel_decision}
 
     if method == "item/fileChange/requestApproval":
-        allowed = all(_tool_permitted(config, tool) for tool in _WRITE_TOOL_NAMES)
+        allowed = (
+            all(_tool_permitted(config, tool) for tool in _WRITE_TOOL_NAMES) and not sandboxed
+        )
         available_decisions = params.get("availableDecisions")
         cancel_decision = "cancel"
         if isinstance(available_decisions, list) and "decline" in available_decisions:
@@ -533,7 +607,11 @@ def _approval_response(
         return {"decision": "accept" if allowed else cancel_decision}
 
     if method == "item/permissions/requestApproval":
-        allowed = config.permission_mode == "bypassPermissions"
+        allowed = (
+            config.permission_mode == "bypassPermissions"
+            and not sandboxed
+            and not commands_refused(config)
+        )
         permissions = params.get("permissions")
         if not isinstance(permissions, dict):
             permissions = {}
