@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .routes import CHANGE_FACTS, VISITS, FactError, parse_fact, project_route_errors
 from ._toml import TOMLDecodeError, load_toml_file, load_toml_text
 from ..domain.errors import ForemanError
 from ..data import WORKFLOWS_DIR
@@ -22,6 +23,9 @@ _BUILTIN_OUTCOMES: dict[str, set[str]] = {
     # human_gate emits the human's decision (approve/deny/steer) as workflow outcome
     "_builtin:human_gate": {"approve", "deny", "steer"},
     "_builtin:orchestrator": {"done", "blocked", "error"},
+    # A routing step has no agent; its outcome is always ``go``, and the
+    # routes from it are chosen by facts (ADR-0041).
+    "_builtin:route": {"go"},
 }
 
 
@@ -51,6 +55,9 @@ class WorkflowTransition:
     trigger: str
     to_step: str
     carry_output: bool = False
+    #: Facts that must all hold for this route (``foreman.definitions.routes``);
+    #: none makes it the default of its step and trigger.
+    when: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -106,18 +113,22 @@ class WorkflowDefinition:
         self,
         *,
         role_outcomes: Mapping[str, Collection[str]] | None = None,
+        branch_roles: Collection[str] | None = None,
     ) -> list[str]:
         """Validate the workflow definition and return a list of error messages.
 
         ``role_outcomes`` maps agent role ids to the outcomes they declare;
         steps using those roles may only transition on declared outcomes.
+        ``branch_roles`` are the roles that commit (``run_scope = "branch"``):
+        a route that reads what changed must come after one of them.
 
         Validation checks:
         - builtin role steps support listed outcomes
         - reviewer role transitions include only valid reviewer outcomes
         - terminal _builtin:mark_done has no outgoing transition
         - every non-terminal step has at least one outgoing transition
-        - duplicate transition triggers are rejected
+        - a step and trigger are routed to one default only, and it comes last
+        - the facts of a route are facts, and name steps that exist
         - each step only emits outcomes that match its role's contract
         """
         errors: list[str] = []
@@ -133,17 +144,7 @@ class WorkflowDefinition:
             if transition.to_step not in step_ids:
                 errors.append(f"Transition to unknown step {transition.to_step!r}.")
 
-        # Check for duplicate transition triggers
-        seen_triggers: dict[str, str] = {}
-        for transition in self.transitions:
-            key = (transition.from_step, transition.trigger)
-            if key in seen_triggers:
-                errors.append(
-                    f"Duplicate transition trigger {transition.trigger!r} "
-                    f"from {transition.from_step!r} (first: {seen_triggers[key]!r}, "
-                    f"second: {transition.to_step!r})."
-                )
-            seen_triggers[key] = transition.to_step
+        errors.extend(self._route_errors(step_ids, branch_roles))
 
         # Group transitions by from_step for coverage checks
         outgoing: dict[str, list[WorkflowTransition]] = {}
@@ -192,6 +193,91 @@ class WorkflowDefinition:
         if not errors:
             errors.extend(self._soundness_errors(contracts))
         return errors
+
+    def _route_errors(
+        self, step_ids: Collection[str], branch_roles: Collection[str] | None
+    ) -> list[str]:
+        """What is wrong with how routes share a step and trigger (ADR-0041 section 1).
+
+        Routes from one step and trigger are tried in the file's order and the
+        first whose facts all hold is taken, so exactly one has no ``when``
+        (the default) and it is the last.
+        """
+
+        errors: list[str] = []
+        groups: dict[tuple[str, str], list[WorkflowTransition]] = {}
+        for transition in self.transitions:
+            groups.setdefault((transition.from_step, transition.trigger), []).append(transition)
+
+        for (step, trigger), routes in groups.items():
+            defaults = [route for route in routes if not route.when]
+            if len(defaults) > 1:
+                errors.append(
+                    f"Duplicate transition trigger {trigger!r} from {step!r}: "
+                    f"{len(defaults)} routes have no facts ({', '.join(repr(r.to_step) for r in defaults)}); "
+                    "only the last may be the default."
+                )
+            elif not defaults:
+                errors.append(
+                    f"Step {step!r} has routes on {trigger!r} but none without `when`: "
+                    "the last route must be the default, for when no facts hold."
+                )
+            elif routes[-1].when:
+                errors.append(
+                    f"The default route from {step!r} on {trigger!r} (to {defaults[0].to_step!r}) "
+                    "is not last: routes after it would never be tried."
+                )
+
+        committing = self._steps_that_commit(branch_roles)
+        reached_without_commit = (
+            # A step that commits has its own commit by the time its route is chosen.
+            self._reached_before_a_commit(committing) - committing
+            if branch_roles is not None
+            else set()
+        )
+        for transition in self.transitions:
+            where = f"The route from {transition.from_step!r} to {transition.to_step!r} on {transition.trigger!r}"
+            if not isinstance(transition.when, tuple) or any(not isinstance(f, str) for f in transition.when):
+                errors.append(f"{where}: `when` must be a list of facts.")
+                continue
+            for text in transition.when:
+                try:
+                    fact = parse_fact(text)
+                except FactError as exc:
+                    errors.append(f"{where}: {exc}")
+                    continue
+                if fact.kind == VISITS and fact.names[0] not in step_ids:
+                    errors.append(f"{where} tests visits to unknown step {fact.names[0]!r}.")
+                if fact.kind in CHANGE_FACTS and transition.from_step in reached_without_commit:
+                    errors.append(
+                        f"{where} tests {text!r} from step {transition.from_step!r}, which a task can "
+                        "reach before any step that commits (a role with run_scope = \"branch\"): "
+                        "nothing has changed yet there."
+                    )
+        return errors
+
+    def _steps_that_commit(self, branch_roles: Collection[str] | None) -> set[str]:
+        wanted = set(branch_roles or ())
+        return {step.id for step in self.steps if step.role in wanted}
+
+    def _reached_before_a_commit(self, committing: Collection[str]) -> set[str]:
+        """Steps a task can reach from the first without passing a step that commits.
+
+        A step that commits is in the set when it can be reached that way, but
+        what follows it is not: by then its commit exists.
+        """
+
+        reached = {self.entry_step}
+        queue = [self.entry_step]
+        while queue:
+            here = queue.pop(0)
+            if here in committing:
+                continue
+            for transition in self.transitions:
+                if transition.from_step == here and transition.to_step not in reached:
+                    reached.add(transition.to_step)
+                    queue.append(transition.to_step)
+        return reached
 
     def _soundness_errors(self, contracts: Mapping[str, Collection[str]]) -> list[str]:
         """Say why a task could not get through this workflow properly.
@@ -288,12 +374,38 @@ class WorkflowDefinition:
         step_id: str,
         trigger: str,
     ) -> WorkflowTransition | None:
-        """Return the transition matching one step and trigger, if present."""
+        """Return the transition matching one step and trigger, if present.
 
-        for transition in self.transitions:
-            if transition.from_step == step_id and transition.trigger == trigger:
-                return transition
-        return None
+        Where routes depend on facts, this is the first of them; the engine
+        chooses among them (``routes_from``).
+        """
+
+        routes = self.routes_from(step_id, trigger)
+        return routes[0] if routes else None
+
+    def routes_from(self, step_id: str, trigger: str) -> tuple[WorkflowTransition, ...]:
+        """Every route from one step on one trigger, in the file's order."""
+
+        return tuple(
+            transition
+            for transition in self.transitions
+            if transition.from_step == step_id and transition.trigger == trigger
+        )
+
+    def route_project_errors(
+        self, *, labels: Mapping[str, str], path_groups: Mapping[str, object]
+    ) -> list[str]:
+        """The labels and path groups the routes name that a project does not."""
+
+        return project_route_errors(
+            (
+                (f"The route from {t.from_step!r} to {t.to_step!r} on {t.trigger!r}", t.when)
+                for t in self.transitions
+                if t.when
+            ),
+            labels=labels,
+            path_groups=path_groups,
+        )
 
 
 GATE_POLICIES: tuple[str, ...] = ("merge_approval", "plan_approval")
@@ -325,6 +437,7 @@ def load_workflow(
     *,
     available_role_ids: Collection[str] | None = None,
     role_outcomes: Mapping[str, Collection[str]] | None = None,
+    branch_roles: Collection[str] | None = None,
 ) -> WorkflowDefinition:
     """Load one workflow definition from disk."""
 
@@ -334,6 +447,7 @@ def load_workflow(
         workflow_path,
         available_role_ids=available_role_ids,
         role_outcomes=role_outcomes,
+        branch_roles=branch_roles,
     )
 
 
@@ -343,6 +457,7 @@ def load_workflow_text(
     *,
     available_role_ids: Collection[str] | None = None,
     role_outcomes: Mapping[str, Collection[str]] | None = None,
+    branch_roles: Collection[str] | None = None,
 ) -> WorkflowDefinition:
     """Load one workflow definition from TOML text; ``source`` names it in errors."""
 
@@ -351,7 +466,11 @@ def load_workflow_text(
     except TOMLDecodeError as exc:
         raise WorkflowLoadError(f"{source}: not valid TOML: {exc}") from exc
     return parse_workflow(
-        data, Path(source), available_role_ids=available_role_ids, role_outcomes=role_outcomes
+        data,
+        Path(source),
+        available_role_ids=available_role_ids,
+        role_outcomes=role_outcomes,
+        branch_roles=branch_roles,
     )
 
 
@@ -361,6 +480,7 @@ def parse_workflow(
     *,
     available_role_ids: Collection[str] | None = None,
     role_outcomes: Mapping[str, Collection[str]] | None = None,
+    branch_roles: Collection[str] | None = None,
 ) -> WorkflowDefinition:
     """Build one workflow definition from decoded TOML."""
 
@@ -420,10 +540,10 @@ def parse_workflow(
                 workflow_path,
                 default=False,
             ),
+            when=_optional_facts(transition_data, workflow_path),
         )
         for transition_data in transitions_data
     )
-    transition_keys: set[tuple[str, str]] = set()
     valid_step_ids = set(step_ids)
     for transition in transitions:
         if transition.from_step not in valid_step_ids:
@@ -434,12 +554,6 @@ def parse_workflow(
             raise WorkflowLoadError(
                 f"{workflow_path}: transition to unknown step {transition.to_step!r}."
             )
-        key = (transition.from_step, transition.trigger)
-        if key in transition_keys:
-            raise WorkflowLoadError(
-                f"{workflow_path}: duplicate transition for step {transition.from_step!r} and trigger {transition.trigger!r}."
-            )
-        transition_keys.add(key)
 
     gates = tuple(
         WorkflowGate(
@@ -476,7 +590,7 @@ def parse_workflow(
         source_path=workflow_path,
     )
 
-    validation_errors = definition.validate(role_outcomes=role_outcomes)
+    validation_errors = definition.validate(role_outcomes=role_outcomes, branch_roles=branch_roles)
     if validation_errors:
         raise WorkflowLoadError(
             f"{workflow_path}: validation errors: {'; '.join(validation_errors)}"
@@ -490,6 +604,7 @@ def load_workflows(
     *,
     available_role_ids: Collection[str] | None = None,
     role_outcomes: Mapping[str, Collection[str]] | None = None,
+    branch_roles: Collection[str] | None = None,
 ) -> dict[str, WorkflowDefinition]:
     """Load all workflow definitions from one directory."""
 
@@ -503,6 +618,7 @@ def load_workflows(
             path,
             available_role_ids=available_role_ids,
             role_outcomes=role_outcomes,
+            branch_roles=branch_roles,
         )
         if workflow.id in workflows:
             raise WorkflowLoadError(
@@ -510,6 +626,20 @@ def load_workflows(
             )
         workflows[workflow.id] = workflow
     return workflows
+
+
+def _optional_facts(data: Mapping[str, Any], path: Path) -> tuple[str, ...]:
+    """A transition's ``when``: a non-empty list of facts, or none for the default."""
+
+    if "when" not in data:
+        return ()
+    value = data["when"]
+    if not isinstance(value, list) or not value or any(not isinstance(item, str) for item in value):
+        raise WorkflowLoadError(
+            f"{path}: `when` on a transition is a list of facts, such as [\"no_criteria\"]; "
+            "leave it out for the default route."
+        )
+    return tuple(item.strip() for item in value)
 
 
 def _duplicates(values: list[str]) -> set[str]:

@@ -131,6 +131,7 @@ def describe_workflow(
                 ),
                 "to": transition.to_step,
                 "carry_output": transition.carry_output,
+                "when": list(transition.when),
             }
             for transition in workflow.transitions
         ],

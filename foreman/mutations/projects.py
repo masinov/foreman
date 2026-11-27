@@ -193,6 +193,16 @@ class ProjectMutations(MutationBase):
                 raise MutationError(f"The workflow could not be loaded: {exc}") from exc
             if workflow_id not in workflows:
                 raise SettingError(f"There is no workflow {workflow_id!r}.", field="workflow_id")
+            # Its routes may only name the labels and path groups this project names.
+            named = ProjectSettings.from_raw(merged)
+            unnamed = workflows[workflow_id].route_project_errors(
+                labels=named.labels, path_groups=named.path_groups
+            )
+            if unnamed:
+                raise SettingError(
+                    f"Workflow {workflow_id!r} cannot be used by this project: {' '.join(unnamed)}",
+                    field="workflow_id",
+                )
         if "autonomy_level" in fields:
             value = str(fields["autonomy_level"])
             if value not in AUTONOMY_LEVELS:

@@ -15,6 +15,8 @@ KILLED = "killed"
 PAUSED = "paused"
 CONFLICT = "conflict"
 UPDATED = "updated"
+# The one outcome of a routing step, which has no agent and no way to fail
+GO = "go"
 
 # Reviewer decisions
 APPROVE = "approve"
@@ -65,6 +67,8 @@ def normalize_agent_outcome(raw: str) -> str:
         return CONFLICT
     if normalized == "updated":
         return UPDATED
+    if normalized == "go":
+        return GO
     if normalized in ("success", "succeeded"):
         return SUCCESS
 

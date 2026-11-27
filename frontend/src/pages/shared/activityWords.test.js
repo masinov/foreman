@@ -152,6 +152,31 @@ describe("a step on Overview", () => {
   });
 });
 
+describe("a route taken by the facts of a task", () => {
+  const took = (outcome_detail) => ({
+    role_id: "_builtin:orchestrator",
+    agent_backend: "orchestrator",
+    status: "completed",
+    outcome: "success",
+    outcome_detail,
+  });
+
+  it("is one line with the facts that chose it", () => {
+    expect(runResult(took("Took the route to plan: no criteria"))).toEqual({
+      tone: "idle",
+      word: "Took a route",
+      note: "Took the route to plan: no criteria",
+    });
+  });
+
+  it("says when no route's facts held", () => {
+    expect(runResult(took("No route's facts held: the default, to develop"))).toMatchObject({
+      word: "Took a route",
+      note: "No route's facts held: the default, to develop",
+    });
+  });
+});
+
 describe("a step moving up its role's models", () => {
   const moved = {
     role_id: "_builtin:orchestrator",

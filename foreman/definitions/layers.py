@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 from ..domain.errors import ForemanError
 from ..domain.models import utc_now_text
 from ..store import ForemanStore
-from .roles import RoleDefinition, RoleLoadError, load_role_text, load_roles
+from .roles import RoleDefinition, RoleLoadError, branch_role_ids, load_role_text, load_roles
 from .workflows import (
     WorkflowDefinition,
     WorkflowLoadError,
@@ -99,6 +99,7 @@ def _assemble(project_id: str | None, own: Texts, default: Texts = ({}, {})) -> 
                 _source(scope, WORKFLOW, workflow_id),
                 available_role_ids=set(roles),
                 role_outcomes=outcomes,
+                branch_roles=branch_role_ids(roles),
             )
             if workflow.id != workflow_id:
                 raise WorkflowLoadError(
@@ -112,7 +113,9 @@ def _assemble(project_id: str | None, own: Texts, default: Texts = ({}, {})) -> 
     lay_roles(project_id, own_roles)
 
     outcomes = _role_outcomes(roles)
-    workflows = load_workflows(available_role_ids=set(roles), role_outcomes=outcomes)
+    workflows = load_workflows(
+        available_role_ids=set(roles), role_outcomes=outcomes, branch_roles=branch_role_ids(roles)
+    )
     lay_workflows(None, default_workflows)
     below_workflows = frozenset(workflows)
     lay_workflows(project_id, own_workflows)
@@ -295,6 +298,7 @@ def save_workflow(
             "the workflow",
             available_role_ids=set(current.roles),
             role_outcomes=_role_outcomes(current.roles),
+            branch_roles=branch_role_ids(current.roles),
         )
     except WorkflowLoadError as exc:
         raise DefinitionError(str(exc)) from exc
