@@ -6,7 +6,9 @@ import unittest
 from foreman.domain.models import Event, Run, Task
 from foreman.engine.errors import OrchestratorError
 from foreman.engine.results import AgentExecutionResult
+from foreman.engine.lock import EngineLock
 from foreman.engine.orchestrator import ForemanOrchestrator
+from foreman.engine.resident import ResidentEngine
 from foreman.runner.process import EngineShutdown
 from foreman.store import ForemanStore
 
@@ -449,6 +451,72 @@ class RecoveryAndLeaseTests(OrchestratorTestCase):
             # A reviewer keeps no session (its role says so): it reviews afresh.
             self.assertEqual(sessions, [None])
             self.assertEqual(store.get_task(task.id).step_visit_counts["review"], 2)
+
+    def test_a_restarted_worker_takes_over_from_a_crashed_one_and_resumes_its_task(self) -> None:
+        # A supervisor starts a new worker after the old one was killed hard:
+        # its engine lock is still held (until it expires), and the task it was
+        # on has a run left "running". The new worker takes the lock over and
+        # carries the task on from its step, as after any engine restart.
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(store, repo_path=repo_path)
+            task.status = "in_progress"
+            task.branch_name = "feat/task-1-implement-orchestrator-loop"
+            task.started_at = "2026-03-30T12:20:00Z"
+            task.workflow_current_step = "review"
+            task.workflow_carried_output = "Implemented the loop."
+            task.step_visit_counts = {"develop": 1, "test": 1, "review": 1}
+            store.save_task(task)
+            store.save_run(
+                Run(
+                    id="run-of-the-dead-worker",
+                    task_id=task.id,
+                    project_id=project.id,
+                    role_id="code_reviewer",
+                    workflow_step="review",
+                    agent_backend="claude_code",
+                    status="running",
+                    started_at="2026-03-30T12:20:00Z",
+                    created_at="2026-03-30T12:20:00Z",
+                )
+            )
+            dead = EngineLock(
+                store=store,
+                project_id=project.id,
+                holder_id="worker-killed-hard",
+                duration_seconds=-1.0,
+                heartbeat_seconds=0,
+            )
+            dead.acquire()  # never released: the process was SIGKILLed
+
+            def reviewer(*, task: Task, prompt: str, carried_output: str | None):
+                return AgentExecutionResult(outcome="approve", detail="APPROVE")
+
+            executor = ScriptedAgentExecutor({("code_reviewer", 1): reviewer})
+            orchestrator = ForemanOrchestrator(
+                store, roles=self.roles, workflows=self.workflows, agent_executor=executor
+            )
+            self.addCleanup(orchestrator.close)
+            lock = EngineLock(
+                store=store,
+                project_id=project.id,
+                holder_id="worker-restarted",
+                heartbeat_seconds=0,
+            )
+            engine = ResidentEngine(
+                store=store, project_id=project.id, orchestrator=orchestrator, lock=lock
+            )
+
+            result = engine.run(once=True)
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertEqual(store.get_run("run-of-the-dead-worker").status, "failed")
+            self.assertNotIn("developer", executor.call_counts)
+            self.assertEqual(executor.call_counts["code_reviewer"], 1)
+            self.assertNotEqual(store.get_task(task.id).workflow_current_step, "review")
 
     def test_a_stale_developer_run_resumes_its_session(self) -> None:
         repo_path, db_path = self.create_workspace()
