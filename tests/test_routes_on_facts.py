@@ -8,9 +8,7 @@ git branch, recorded on the task with the facts that chose it.
 
 from __future__ import annotations
 
-import tempfile
 import unittest
-from pathlib import Path
 
 from foreman.definitions.layers import save_workflow
 from foreman.definitions.roles import branch_role_ids, load_roles
@@ -20,7 +18,6 @@ from foreman.definitions.workflows import (
     load_workflow_text,
     load_workflows,
 )
-from foreman.domain.models import Project, Sprint, Task
 from foreman.engine.errors import OrchestratorError
 from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.engine.results import AgentExecutionResult
