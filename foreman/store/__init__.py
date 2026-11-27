@@ -24,7 +24,7 @@ connection and write helper in ``base``:
 
 from __future__ import annotations
 
-from .base import ENGINE_RESOURCE_TYPE, MigrationError, StoreBase, _SCHEMA_MIGRATIONS_DDL
+from .base import ENGINE_RESOURCE_TYPE, MigrationError, SchemaVersionError, StoreBase, _SCHEMA_MIGRATIONS_DDL
 from .commands import EngineCommandStore
 from .definitions import DefinitionStore
 from .events import EventStore
@@ -70,6 +70,7 @@ __all__ = [
     "ForemanStore",
     "MigrationError",
     "StoreBase",
+    "SchemaVersionError",
     "_SCHEMA_MIGRATIONS_DDL",
     "derive_task_key_prefix",
 ]

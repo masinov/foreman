@@ -194,11 +194,11 @@ def _checked_frontend_mode(frontend_mode: str, frontend_dev_url: str | None) -> 
 
 
 def _prepare_store(db_path: str) -> None:
-    """Bring the database to the current schema before the first request."""
+    """Refuse a database whose schema is not this code's; never migrate it."""
 
     init_store = ForemanStore(db_path)
     try:
-        init_store.initialize()
+        init_store.check_schema()
         # Manager replies are written by the dashboard process: one still in
         # progress now was left by a dashboard that stopped mid-reply.
         init_store.close_unfinished_meta_replies()

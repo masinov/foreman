@@ -30,6 +30,10 @@ class MigrationError(ForemanError):
     """Raised when a schema migration fails; the database is left unchanged."""
 
 
+class SchemaVersionError(ForemanError):
+    """Raised when the database's schema version is not the code's."""
+
+
 def _split_sql_statements(sql: str) -> list[str]:
     """Split a migration script into individual statements.
 
@@ -260,7 +264,6 @@ class StoreBase:
         with self._connection:
             self._connection.executescript(_SCHEMA_MIGRATIONS_DDL)
         applied = self.migrate()
-        self._repair_known_schema_drift()
         self._backfill_task_keys()
         return applied
 
@@ -273,6 +276,31 @@ class StoreBase:
         if row is None or row["v"] is None:
             return 0
         return int(row["v"])
+
+    def check_schema(self) -> None:
+        """Raise ``SchemaVersionError`` unless the schema is the code's version.
+
+        For a process that must not migrate on its own (the worker, the
+        dashboard): an older or newer database is refused with the command
+        to run, not left to fail later on a missing column.
+        """
+
+        latest = max((v for v, _, _ in MIGRATIONS), default=0)
+        try:
+            found = self.schema_version()
+        except sqlite3.OperationalError:
+            found = 0
+        if found < latest:
+            raise SchemaVersionError(
+                f"The database is at schema version {found}, older than this "
+                f"Foreman's version {latest}. Run `foreman db migrate` first."
+            )
+        if found > latest:
+            raise SchemaVersionError(
+                f"The database is at schema version {found}, newer than this "
+                f"Foreman's version {latest}. Upgrade Foreman; `foreman db "
+                "migrate` cannot take a database back."
+            )
 
     def data_version(self) -> int:
         """Return SQLite's ``PRAGMA data_version`` for this connection.
@@ -359,47 +387,3 @@ class StoreBase:
                 f"Migration {version} ({description}) failed and was rolled back: {exc}"
             ) from exc
         return True
-
-    def _repair_known_schema_drift(self) -> None:
-        """Repair additive schema drift that can occur in long-lived local DBs.
-
-        This is intentionally narrow. It handles cases where a local database
-        has migration ledger state that does not match the actual table shape,
-        which can happen when experimental branches reuse or reshuffle
-        migration versions before landing on main.
-        """
-
-        task_columns = {
-            str(row["name"])
-            for row in self._connection.execute("PRAGMA table_info(tasks)").fetchall()
-        }
-        if "completion_evidence_json" not in task_columns:
-            with self._connection:
-                self._connection.execute(
-                    "ALTER TABLE tasks ADD COLUMN completion_evidence_json TEXT NOT NULL DEFAULT ''"
-                )
-        if "executor_overrides_json" not in task_columns:
-            with self._connection:
-                self._connection.execute(
-                    "ALTER TABLE tasks ADD COLUMN executor_overrides_json TEXT NOT NULL DEFAULT '{}'"
-                )
-        if "task_key" not in task_columns:
-            with self._connection:
-                self._connection.execute(
-                    "ALTER TABLE tasks ADD COLUMN task_key TEXT NOT NULL DEFAULT ''"
-                )
-        if "worktree_path" not in task_columns:
-            with self._connection:
-                self._connection.execute(
-                    "ALTER TABLE tasks ADD COLUMN worktree_path TEXT"
-                )
-
-        project_columns = {
-            str(row["name"])
-            for row in self._connection.execute("PRAGMA table_info(projects)").fetchall()
-        }
-        if "task_key_prefix" not in project_columns:
-            with self._connection:
-                self._connection.execute(
-                    "ALTER TABLE projects ADD COLUMN task_key_prefix TEXT NOT NULL DEFAULT ''"
-                )

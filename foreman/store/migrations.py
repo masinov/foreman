@@ -1163,6 +1163,16 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         ALTER TABLE human_gate_decisions ADD COLUMN version_named INTEGER NOT NULL DEFAULT 0;
         """,
     ),
+    (
+        36,
+        "repair ledger/table drift: columns an older database lacks (was repaired at every open)",
+        """
+        -- Its work is in PYTHON_MIGRATIONS: add each column of tasks and
+        -- projects that migrations 7, 14, 16 and 18 added, when the table
+        -- lacks it although the ledger says the migration ran.
+        SELECT 1;
+        """,
+    ),
 ]
 
 
@@ -1209,8 +1219,30 @@ def _drop_tasks_complexity(connection: sqlite3.Connection) -> None:
             connection.execute(sql)
 
 
+# Columns that long-lived local databases can lack although their ledger says
+# the migration that added them ran (experimental branches reused version
+# numbers before landing). Table, column, definition.
+_DRIFTED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("tasks", "completion_evidence_json", "TEXT NOT NULL DEFAULT ''"),
+    ("tasks", "executor_overrides_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ("tasks", "task_key", "TEXT NOT NULL DEFAULT ''"),
+    ("tasks", "worktree_path", "TEXT"),
+    ("projects", "task_key_prefix", "TEXT NOT NULL DEFAULT ''"),
+)
+
+
+def _add_drifted_columns(connection: sqlite3.Connection) -> None:
+    """Add each column of ``_DRIFTED_COLUMNS`` that its table lacks."""
+
+    for table, column, definition in _DRIFTED_COLUMNS:
+        have = {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+        if column not in have:
+            connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
 # Migrations that are code, not a script, by version: the runner calls the
 # function inside the migration's transaction, with foreign keys off.
 PYTHON_MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     33: _drop_tasks_complexity,
+    36: _add_drifted_columns,
 }

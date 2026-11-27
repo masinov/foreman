@@ -1595,6 +1595,13 @@ foreman db version          # current applied schema version
 foreman db migrate          # apply any pending migrations
 ```
 
+**Upgrade steps.** Migrating is a deploy step: stop `foreman serve` and the
+dashboard, update Foreman, run `foreman db migrate`, start them again. The
+store no longer repairs the schema when it opens. `foreman serve` and
+`foreman dashboard` check the schema version when they start and refuse, with
+a message naming `foreman db migrate`, when the database is older than the
+code (run it) or newer (upgrade Foreman; a database cannot be taken back).
+
 Each migration is applied atomically: its statements and its ledger row run
 inside one `BEGIN IMMEDIATE` transaction, so a failing migration leaves the
 database at the previous version and raises `MigrationError`. Two processes
