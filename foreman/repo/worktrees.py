@@ -28,14 +28,15 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from ..domain.errors import ForemanError
 from ..domain.models import Project, Task
-from ..domain.settings import ProjectSettings, SettingsError, settings_of
+from ..domain.settings import ProjectSettings, SettingsError, settings_of, without_database_env
 from ..domain.sandbox import SandboxPolicy
 from ..store import ForemanStore
 from .git import (
@@ -60,6 +61,15 @@ INTEGRATION_WORKTREE_NAME = "_integration"
 SANDBOX_WORKTREE_PREFIX = "_sandbox-"
 #: A file in a sandbox clone's git directory; its presence says Foreman made it.
 SANDBOX_CLONE_MARKER = "foreman-sandbox-clone"
+#: The name a sandboxed step's own temporary directory starts with.
+SANDBOX_TEMP_PREFIX = "foreman-sbx-"
+
+
+def _short_temp_root() -> str:
+    """``/tmp`` when it can be used: the engine's ``TMPDIR`` may be long, or shared."""
+
+    root = Path("/tmp")
+    return str(root) if root.is_dir() and os.access(root, os.W_OK) else tempfile.gettempdir()
 
 #: Default ceiling on live task worktrees when the project does not set
 #: ``max_live_worktrees``. 0 means unlimited.
@@ -374,20 +384,22 @@ class WorktreeManager:
             )
         path = self.root / f"{SANDBOX_WORKTREE_PREFIX}{task_slug(task)}"
         if path.exists() or self._is_registered(path):
-            self.remove_path(path)
+            self._remove_clone(path)
             if path.exists():
                 raise WorktreeError(f"{path} exists and is not a Foreman sandbox. Remove it.")
         path.parent.mkdir(parents=True, exist_ok=True)
         box: Sandbox | None = None
+        temp_dir: Path | None = None
         try:
             self._clone_without_remote(path, commit)
             self._link_shared_paths(path)
+            temp_dir = Path(tempfile.mkdtemp(prefix=SANDBOX_TEMP_PREFIX, dir=_short_temp_root()))
             box = Sandbox(
                 path=path,
                 repo_path=self.repo_path,
                 branch=branch,
                 commit=commit,
-                policy=self._sandbox_policy(path),
+                policy=replace(self._sandbox_policy(path), temp_dir=temp_dir),
             )
             self._run_setup_command(path)
             yield box
@@ -399,6 +411,8 @@ class WorktreeManager:
                     box.check()
             finally:
                 self._remove_clone(path)
+                if temp_dir is not None:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
 
     def _clone_without_remote(self, path: Path, commit: str) -> None:
         """Make ``path`` a clone of the repository at ``commit``, with no remote."""
@@ -408,12 +422,18 @@ class WorktreeManager:
                 self.repo_path, "clone", "--shared", "--no-checkout", "--quiet",
                 str(self.repo_path), str(path),
             )
+            # Marked before anything else can fail, so a clone left by an
+            # engine killed here is still known for Foreman's own.
+            (path / ".git" / SANDBOX_CLONE_MARKER).write_text("sandbox\n", encoding="utf-8")
             run_git(path, "remote", "remove", "origin")
+            # The operator's identity, as the repository resolves it: the
+            # sandbox cannot read ~/.gitconfig, and a project's tests that
+            # commit need one (git refuses to commit without).
+            for key in ("user.name", "user.email"):
+                value = run_git(self.repo_path, "config", key, check=False).stdout.strip()
+                if value:
+                    run_git(path, "config", key, value)
             run_git(path, "checkout", "--quiet", "--detach", commit)
-            git_dir = self.admin_dir(path)
-            if git_dir is None:
-                raise GitError(f"{path} is not a git repository after the clone.")
-            (git_dir / SANDBOX_CLONE_MARKER).write_text("sandbox\n", encoding="utf-8")
         except GitError as exc:
             self._remove_clone(path)
             raise WorktreeError(f"Could not create sandbox at {path}: {exc}") from exc
@@ -430,7 +450,21 @@ class WorktreeManager:
             self.remove_path(path)
 
     def _is_sandbox_clone(self, path: Path) -> bool:
-        return (path / ".git" / SANDBOX_CLONE_MARKER).is_file()
+        """A clone Foreman made for a sandbox: named as one, in the root, with its own ``.git``.
+
+        Not the marker alone: it is in the clone, and the step in it can
+        delete it; a clone without it would then wedge every later review of
+        the task ("exists and is not a Foreman sandbox").
+        """
+
+        if (path / ".git" / SANDBOX_CLONE_MARKER).is_file():
+            return True
+        return (
+            path.name.startswith(SANDBOX_WORKTREE_PREFIX)
+            and self._is_inside_root(path)
+            and (path / ".git").is_dir()
+            and not (path / ".git").is_symlink()
+        )
 
     def _sandbox_policy(self, path: Path) -> SandboxPolicy:
         """What a step in the sandbox at ``path`` may read, write and reach.
@@ -710,7 +744,8 @@ class WorktreeManager:
         if marker is not None and _read_marker(marker) == fingerprint:
             return False
 
-        env = dict(os.environ)
+        # The setup command runs the branch's code: no FOREMAN_DB (FOR-101).
+        env = without_database_env(os.environ)
         env.update(
             {
                 "FOREMAN_WORKTREE_PATH": str(path),

@@ -317,6 +317,38 @@ class StaleSandboxTests(SandboxCase):
         self.assertNotIn("T-1", git(self.repo, "worktree", "list"))
         self.assertTrue((stranger / "keep").exists())
 
+    def test_a_clone_whose_marker_the_step_deleted_is_still_removed_and_replaced(self) -> None:
+        """The marker is in the clone, so the step can delete it; that must not wedge the task."""
+
+        manager = WorktreeManager(self.project())
+        clone = manager.root / f"{SANDBOX_WORKTREE_PREFIX}{self.task.task_key}"
+        manager._clone_without_remote(clone, self.head())
+        for marker in (clone / ".git").glob("foreman-sandbox-clone"):
+            marker.unlink()
+
+        self.assertEqual(manager.remove_stale_sandboxes(), (clone,))
+        manager._clone_without_remote(clone, self.head())
+        for marker in (clone / ".git").glob("foreman-sandbox-clone"):
+            marker.unlink()
+        with manager.sandbox(self.task) as box:
+            self.assertEqual(box.path, clone)
+
+    def test_a_step_has_a_short_temporary_directory_of_its_own_removed_with_it(self) -> None:
+        manager = WorktreeManager(self.project())
+        with manager.sandbox(self.task) as box:
+            temp = box.policy.temp_dir
+            self.assertIsNotNone(temp)
+            self.assertTrue(temp.is_dir())
+            # Claude Code's proxy sockets go there: a socket path has 108 bytes.
+            self.assertLess(len(str(temp / "claude-http-0123456789abcdef.sock")), 100)
+        self.assertFalse(temp.exists())
+
+    def test_a_clone_has_the_repositorys_identity_for_commits(self) -> None:
+        manager = WorktreeManager(self.project())
+        with manager.sandbox(self.task) as box:
+            self.assertEqual(git(box.path, "config", "--local", "user.email"), "t@example.com")
+            self.assertEqual(git(box.path, "config", "--local", "user.name"), "T")
+
     def test_the_orchestrator_removes_them_at_the_start_of_a_pass(self) -> None:
         from foreman.engine.orchestrator import ForemanOrchestrator
         from foreman.store import ForemanStore

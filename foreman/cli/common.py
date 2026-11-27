@@ -13,11 +13,13 @@ from ..definitions.layers import project_definitions
 from ..definitions.roles import RoleLoadError
 from ..definitions.workflows import WorkflowLoadError
 from ..domain.models import Event, Project, Sprint, Task
+from ..domain.settings import DATABASE_ENV
 from ..engine.control import (
     default_command_requester,
 )
 from ..mutations import Mutations
 from ..repo.scaffold import (
+    DEFAULT_CONTEXT_DIR,
     DEFAULT_DB_FILENAME,
 )
 from ..services.errors import InvalidRequestError, NotFoundError
@@ -33,7 +35,7 @@ EXIT_SCHEMA_REFUSED = 78
 
 
 #: A database path a parent process hands down to the commands it runs.
-DB_ENV = "FOREMAN_DB"
+DB_ENV = DATABASE_ENV
 
 DB_OPTION_NOTE = (
     f"Defaults to ${DB_ENV}, else repo-local `{DEFAULT_DB_FILENAME}` discovery; "
@@ -110,12 +112,22 @@ def discover_repo_local_db_path(start_path: Path | None = None) -> Path | None:
 
     base = start_path or Path.cwd()
     for candidate in iter_parent_paths(base):
+        if candidate.name == DEFAULT_CONTEXT_DIR:
+            # Inside Foreman's runtime directory (the worktrees live there):
+            # the checkout above it is not this directory's repository.
+            return None
         db_path = candidate / DEFAULT_DB_FILENAME
         if db_path.is_file():
             return db_path
         if (candidate / ".git").exists():
             return None
     return None
+
+
+def _inside_runtime_dir(path: Path) -> bool:
+    """Whether ``path`` is in Foreman's runtime directory, where worktrees live."""
+
+    return any(part.name == DEFAULT_CONTEXT_DIR for part in iter_parent_paths(path))
 
 
 def looks_like_repo_root(path: Path) -> bool:
@@ -154,6 +166,14 @@ def resolve_db_path(
     discovered_db = discover_repo_local_db_path()
     if discovered_db is not None:
         return discovered_db
+
+    if _inside_runtime_dir(Path.cwd()):
+        raise CliResolutionError(
+            "This is a task worktree or sandbox under Foreman's runtime directory: "
+            "Foreman's database is out of its reach on purpose, so code run here "
+            "cannot change it. Report work through the step's report; only the "
+            "operator's checkout opens the database."
+        )
 
     repo_root = discover_repo_root()
     if repo_root is not None:

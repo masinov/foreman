@@ -25,6 +25,26 @@ AGENT_ENV_NAMES: frozenset[str] = frozenset(
 #: per-user directories, and the two backends' own configuration and keys.
 AGENT_ENV_PREFIXES: tuple[str, ...] = ("LC_", "XDG_", "ANTHROPIC_", "CLAUDE_", "OPENAI_", "CODEX_")
 
+#: Variables of a Claude Code session the engine was itself started from (an
+#: operator who starts ``foreman serve`` from Claude Code's shell). They name
+#: that session and reach it: ``CLAUDE_CODE_MESSAGING_SOCKET`` and its token
+#: let a process talk to the operator's own interactive session (seen on
+#: 2026-11-27, from a sandboxed reviewer allowed unix sockets). An agent is a
+#: session of its own and never gets them, whatever the prefixes above pass.
+SESSION_ENV_NAMES: frozenset[str] = frozenset(
+    {"CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "CLAUDE_CODE_ENTRYPOINT",
+     "CLAUDE_CODE_EXECPATH", "CLAUDE_CODE_SSE_PORT"}
+)
+SESSION_ENV_PREFIXES: tuple[str, ...] = (
+    "CLAUDE_CODE_MESSAGING_", "CLAUDE_CODE_SESSION_", "CLAUDE_CODE_CHILD_",
+)
+
+
+def is_session_variable(name: str) -> bool:
+    """Whether ``name`` belongs to the Claude Code session the engine runs in."""
+
+    return name in SESSION_ENV_NAMES or name.startswith(SESSION_ENV_PREFIXES)
+
 #: Set for every agent process, both backends: a command the agent runs must
 #: never stop to ask a person, because nobody is there. Git gets a no-op
 #: editor (a bare ``git commit`` or ``git rebase --continue`` would open one),
@@ -55,7 +75,8 @@ def agent_environment(
     environment = {
         name: value
         for name, value in source.items()
-        if name in AGENT_ENV_NAMES or name.startswith(AGENT_ENV_PREFIXES)
+        if (name in AGENT_ENV_NAMES or name.startswith(AGENT_ENV_PREFIXES))
+        and not is_session_variable(name)
     }
     environment.update(NON_INTERACTIVE_ENV)
     environment.update(extra or {})

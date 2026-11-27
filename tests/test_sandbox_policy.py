@@ -18,6 +18,8 @@ from foreman.runner.sandbox import (
     closed_paths,
     credential_env_names,
     claude_settings,
+    claude_temp_dir,
+    sandboxed_process_env,
     socket_policy,
 )
 from tests.test_sandbox import role_text
@@ -93,12 +95,51 @@ class ClaudeSettingsTests(unittest.TestCase):
             settings = claude_settings(
                 self.policy(deny_roots=(home,), read_paths=(home / "box",))
             )
-            self.assertEqual(settings["sandbox"]["filesystem"]["denyRead"], [str(home)])
+            self.assertEqual(
+                settings["sandbox"]["filesystem"]["denyRead"], [str(home), str(claude_temp_dir())]
+            )
             self.assertEqual(settings["sandbox"]["filesystem"]["allowRead"], [str(home / "box")])
             # An absolute path in a rule takes two slashes; a directory takes /**.
+            temp_rule = f"Read(/{claude_temp_dir()}" + ("/**)" if claude_temp_dir().is_dir() else ")")
             self.assertEqual(
                 sorted(settings["permissions"]["deny"]),
-                sorted([f"Read(/{home}/.ssh/**)", f"Read(/{home}/.rc)"]),
+                sorted([f"Read(/{home}/.ssh/**)", f"Read(/{home}/.rc)", temp_rule]),
+            )
+
+    def test_no_hook_runs_and_the_shared_temporary_directory_is_closed(self) -> None:
+        settings = claude_settings(self.policy())
+        self.assertIs(settings["disableAllHooks"], True)
+        self.assertIn(str(claude_temp_dir()), settings["sandbox"]["filesystem"]["denyRead"])
+        own = Path("/tmp/foreman-sbx-x")
+        env = sandboxed_process_env(SandboxPolicy(temp_dir=own))
+        self.assertEqual(env, {"TMPDIR": str(own), "CLAUDE_CODE_TMPDIR": str(own)})
+        self.assertIn(str(own), claude_settings(SandboxPolicy(temp_dir=own))["sandbox"]["filesystem"]["allowRead"])
+        self.assertEqual(sandboxed_process_env(SandboxPolicy()), {})
+
+    def test_the_branch_under_review_sets_nothing(self) -> None:
+        """Its .claude/settings.json could hold a hook, which runs outside the sandbox."""
+
+        config = AgentRunConfig(
+            backend="claude_code", model="m", prompt="p", working_dir=Path("/tmp/x"),
+            session_id=None, permission_mode="bypassPermissions", sandbox=self.policy(),
+            extra_flags={"accept_open_reads": True},
+        )
+        command = ClaudeCodeRunner().build_command(config)
+        self.assertEqual(command[command.index("--setting-sources") + 1], "user")
+        self.assertNotIn("--accept-open-reads", command)
+
+    def test_a_root_nothing_inside_is_opened_in_is_closed_whole(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            home = Path(raw).resolve()
+            (home / "projects" / "other").mkdir(parents=True)
+            (home / "projects" / "mine").mkdir()
+            (home / "elsewhere").mkdir()
+            closed = closed_paths(
+                (home, home / "projects", home / "elsewhere"), (home / "projects" / "mine",)
+            )
+            # The projects directory is inside home: listed once.
+            self.assertEqual(
+                sorted(closed), sorted([home / "elsewhere", home / "projects" / "other"])
             )
 
     def test_the_command_line_carries_the_settings_and_the_shell_prefix_is_readable(self) -> None:
@@ -131,21 +172,23 @@ class ClaudeSettingsTests(unittest.TestCase):
             credential_env_names(env),
             ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_BASE_URL", "openai_api_key"),
         )
+        self.assertEqual(credential_env_names({"CODEX_HOME": "/c", "PATH": "/bin"}), ("CODEX_HOME",)
+        )
 
 
 class UnixSocketTests(unittest.TestCase):
     def test_off_by_default_nothing_is_added(self) -> None:
         settings = claude_settings(SandboxPolicy())
         self.assertNotIn("allowAllUnixSockets", settings["sandbox"]["network"])
-        self.assertEqual(settings["sandbox"]["filesystem"]["denyRead"], [])
+        self.assertEqual(settings["sandbox"]["filesystem"]["denyRead"], [str(claude_temp_dir())])
 
     def test_allowed_the_hosts_socket_directories_are_closed(self) -> None:
         policy = SandboxPolicy(allow_unix_sockets=True)
         shut = socket_policy(policy, uid=1234)
         self.assertTrue(set(map(str, shut.deny_roots)) >= {"/run", "/tmp"})
-        # What Claude Code's own sandbox needs there stays open.
-        self.assertIn(Path("/run/user/1234/cc-socks"), shut.read_paths)
-        self.assertIn(Path("/tmp/claude-1234"), shut.read_paths)
+        # Nothing is opened again: cc-socks holds the operator's own Claude Code
+        # sessions' messaging sockets, /tmp/claude-<uid> every session's files.
+        self.assertEqual(shut.read_paths, ())
         settings = claude_settings(policy)
         self.assertIs(settings["sandbox"]["network"]["allowAllUnixSockets"], True)
         self.assertIn("/run", settings["sandbox"]["filesystem"]["denyRead"])

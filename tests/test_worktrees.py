@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from engine_support import SEEDED_CRITERIA, DEV_REPORT, reviewed
 from foreman.store.migrations import MIGRATIONS
@@ -550,6 +551,17 @@ class WorktreeSetupCommandTests(unittest.TestCase):
             (path / "paths.txt").read_text(encoding="utf-8").splitlines(),
             [str(self.repo), str(path), "feat/task-1"],
         )
+
+    def test_setup_command_does_not_get_foreman_db(self) -> None:
+        """It runs the branch's code: run there, FOREMAN_DB would reach the live database."""
+
+        project = self.project(
+            worktree_setup_command='printf "%s" "${FOREMAN_DB-unset}" > db.txt'
+        )
+        with mock.patch.dict(os.environ, {"FOREMAN_DB": "/live/.foreman.db"}):
+            path = WorktreeManager(project).ensure(self.task())
+
+        self.assertEqual((path / "db.txt").read_text(encoding="utf-8"), "unset")
 
     def test_setup_marker_lives_outside_the_tree_so_it_stays_clean(self) -> None:
         """A marker inside the tree would be untracked and block the merge."""

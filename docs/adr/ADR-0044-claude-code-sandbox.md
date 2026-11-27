@@ -100,3 +100,28 @@ permission rules instead.
 - Landlock or a separate user would be stronger than a mount namespace in some
   respects; they were not chosen because Claude Code's sandbox is maintained
   and already integrated with the tools.
+
+## Amended on 2026-11-27, after the independent review of sprint 68
+
+The review found three ways out of the sandbox, now closed:
+
+- **A branch configured the step.** The clone is the working directory, so a
+  `.claude/settings.json` committed on the branch under review was loaded, and
+  its hooks run outside the sandbox, as the operator. The step now runs with
+  `--setting-sources user` and `"disableAllHooks": true`.
+- **The operator's Claude Code session was reachable.** An engine started from
+  a Claude Code shell passed that session's `CLAUDE_CODE_MESSAGING_SOCKET` and
+  token to agents, and `/run/user/<uid>/cc-socks` was opened again for unix
+  sockets. Agents are no longer given the session's variables, and nothing
+  under `/run` or the temporary directories is opened again.
+- **`/tmp/claude-<uid>` was shared.** It holds every Claude Code session's
+  files and stayed readable and writable. Each step now has a temporary
+  directory of its own (short, under `/tmp`: Claude Code's proxy sockets go
+  there and a socket path is limited to 108 bytes), and `/tmp/claude-<uid>` is
+  closed.
+
+And item 5 changed: the database copy is opt-in (`sandbox_database_copy`)
+and holds only the project's own rows, without tokens, notification
+destinations, deliveries, the manager's conversations or leases, vacuumed. A
+role that is only not given Bash keeps Codex's shell, read-only (item 6), and
+a Codex sandbox excludes the host's `/tmp` and `$TMPDIR`.

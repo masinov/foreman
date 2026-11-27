@@ -13,6 +13,7 @@ from dataclasses import replace
 from datetime import datetime
 import json
 import sqlite3
+from contextlib import closing
 import time
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ from ..domain.outcomes import ERROR
 from ..definitions.roles import COMMAND_TOOLS, RoleDefinition
 from ..runner import AgentRunConfig, PreflightError, run_with_retry
 from ..domain.sandbox import SandboxPolicy
+from ..domain.settings import without_database_env
 from ..runner.base import AgentRunner as NativeAgentRunner
 from ..runner.env import passthrough_env, resolve_env
 from ..runner.process import EngineShutdown
@@ -235,7 +237,8 @@ class AgentStepRunner:
 
         try:
             with WorktreeManager(project).sandbox(task) as box:
-                self._give_database_copy(box.path)
+                if resolve_project_settings(project).sandbox_database_copy:
+                    self._give_database_copy(box.path, project.id)
                 result = self._execute_in(
                     role=role,
                     project=project,
@@ -278,14 +281,18 @@ class AgentStepRunner:
             ),
         )
 
-    def _give_database_copy(self, sandbox_path: Path) -> None:
-        """Put a copy of Foreman's database in the sandbox, where the review scripts look.
+    def _give_database_copy(self, sandbox_path: Path, project_id: str) -> None:
+        """Put a copy of this project's records in the sandbox, where the review scripts look.
 
-        The sandbox cannot read the main checkout, where the live database
-        is, and writes nothing outside itself; the reviewer's screenshot
-        script serves the dashboard from a database, so it is given a
-        snapshot (made by SQLite's backup, never the live file) at
-        ``.review/live.db``. A step without a store has none to give.
+        Only for a project that asks (``sandbox_database_copy``): the sandbox
+        cannot read the main checkout, where the live database is, and the
+        reviewer's screenshot script serves the dashboard from a database. The
+        copy is a snapshot (SQLite's backup, never the live file) at
+        ``.review/live.db`` with only this project's rows: another project's
+        records, every API token, notification destination and delivery, and
+        the manager's conversations are taken out, and the file is vacuumed
+        so nothing deleted is left in its free pages. A step without a store
+        has none to give.
         """
 
         store = getattr(self.records, "store", None)
@@ -295,10 +302,13 @@ class AgentStepRunner:
         target = sandbox_path / REVIEW_DATABASE_COPY
         target.parent.mkdir(parents=True, exist_ok=True)
         try:
-            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as source, sqlite3.connect(
-                target
+            # ``closing``: a connection's own ``with`` commits but stays open,
+            # and an open one locks the copy for what follows.
+            with closing(sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)) as source, closing(
+                sqlite3.connect(target)
             ) as copy:
                 source.backup(copy)
+            _keep_only_project(target, project_id)
         except sqlite3.Error:
             # The review can still run; the script says it has no database.
             target.unlink(missing_ok=True)
@@ -513,10 +523,12 @@ class AgentStepRunner:
             # What the project passes through from the host, then what the
             # role sets; the runner adds both to the short list of host
             # variables every agent gets (ADR-0023).
-            env={
+            # Never FOREMAN_DB, whatever a role's [agent.env] says: the agent
+            # runs in a worktree, out of the live database's reach (FOR-101).
+            env=without_database_env({
                 **passthrough_env(resolve_project_settings(project).agent_env_passthrough),
                 **resolved_env,
-            },
+            }),
             timeout_seconds=project_timeout_seconds(
                 project,
                 role_timeout_minutes=role.completion.timeout_minutes,
@@ -525,6 +537,52 @@ class AgentStepRunner:
             session_cost_baseline_usd=session_baseline_usd,
             sandbox=sandbox,
         )
+
+
+#: Tables a review's copy of the database never carries, whatever the project:
+#: credentials, where notifications go and what they said, the manager's
+#: conversations (which can hold anything the operator typed), engine leases.
+_TABLES_EMPTIED_IN_A_COPY: tuple[str, ...] = (
+    "api_tokens",
+    "notification_destinations",
+    "notification_deliveries",
+    "meta_sessions",
+    "meta_turns",
+    "leases",
+)
+
+
+def _keep_only_project(path: Path, project_id: str) -> None:
+    """Take every other project's rows, and the tables above, out of the copy at ``path``."""
+
+    with closing(sqlite3.connect(path)) as copy:
+        copy.execute("PRAGMA foreign_keys = OFF")
+        tables = [
+            row[0]
+            for row in copy.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+            )
+        ]
+        for table in tables:
+            columns = {row[1] for row in copy.execute(f'PRAGMA table_info("{table}")')}
+            if table in _TABLES_EMPTIED_IN_A_COPY:
+                copy.execute(f'DELETE FROM "{table}"')
+            elif table == "projects":
+                copy.execute('DELETE FROM "projects" WHERE id != ?', (project_id,))
+            elif "project_id" in columns:
+                copy.execute(
+                    f'DELETE FROM "{table}" WHERE project_id IS NOT ? ', (project_id,)
+                )
+        copy.commit()
+    # Outside a transaction: deleted rows stay in free pages until a vacuum.
+    # The copy is a WAL database like its source; out of WAL first, or the
+    # vacuumed pages sit in the -wal file and the old ones in the main file.
+    copy = sqlite3.connect(path, isolation_level=None)
+    try:
+        copy.execute("PRAGMA journal_mode = DELETE")
+        copy.execute("VACUUM")
+    finally:
+        copy.close()
 
 
 def _disallowed_tools(role: RoleDefinition) -> tuple[str, ...]:

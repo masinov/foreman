@@ -487,7 +487,11 @@ class CodexRunnerTests(unittest.TestCase):
         self.assertEqual(
             requests[1]["params"]["config"],
             {
-                "sandbox_workspace_write": {"network_access": False},
+                "sandbox_workspace_write": {
+                    "network_access": False,
+                    "exclude_slash_tmp": True,
+                    "exclude_tmpdir_env_var": True,
+                },
                 "features": {"shell_tool": False, "unified_exec": False},
             },
         )
@@ -597,7 +601,46 @@ class CodexSandboxTests(unittest.TestCase):
         self.assertEqual(method, "thread/start")
         self.assertEqual(params["sandbox"], "workspace-write")
         self.assertEqual(params["approvalPolicy"], "never")
-        self.assertEqual(params["config"], {"sandbox_workspace_write": {"network_access": False}})
+        self.assertEqual(
+            params["config"],
+            {
+                "sandbox_workspace_write": {
+                    "network_access": False,
+                    "exclude_slash_tmp": True,
+                    "exclude_tmpdir_env_var": True,
+                }
+            },
+        )
+
+    def test_a_read_only_role_keeps_the_shell_codex_reads_with(self) -> None:
+        """No Bash on its list (Read, Grep, Glob): read-only and asked, but able to read."""
+
+        config = self.config(
+            sandbox=None, allowed_tools=("Read", "Grep", "Glob"), disallowed_tools=()
+        )
+        _, params = _build_thread_request(config)
+        self.assertEqual((params["approvalPolicy"], params["sandbox"]), ("untrusted", "read-only"))
+        self.assertNotIn("features", params["config"])
+        # Refused outright (run_scope = "none"): the shell is off.
+        refused = self.config(sandbox=None, disallowed_tools=("Bash", "Monitor", "PowerShell"))
+        _, params = _build_thread_request(refused)
+        self.assertEqual(params["config"]["features"], {"shell_tool": False, "unified_exec": False})
+
+    def test_a_thread_that_leaves_tmp_writable_is_not_run(self) -> None:
+        config = self.config()
+        result = {
+            "sandbox": {
+                "type": "workspaceWrite",
+                "networkAccess": False,
+                "excludeSlashTmp": False,
+                "excludeTmpdirEnvVar": True,
+            },
+            "approvalPolicy": "never",
+        }
+        with self.assertRaises(InfrastructureError):
+            check_thread_started(result, config)
+        result["sandbox"]["excludeSlashTmp"] = True
+        check_thread_started(result, config)
 
     def test_a_role_flag_cannot_loosen_a_sandboxed_step(self) -> None:
         config = self.config(

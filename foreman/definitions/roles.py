@@ -12,6 +12,7 @@ from typing import Any
 from ._toml import TOMLDecodeError, load_toml_file, load_toml_text
 from ..domain.outcomes import CANONICAL_OUTCOMES
 from ..domain.errors import ForemanError
+from ..domain.sandbox import ACCEPT_OPEN_READS_FLAG
 from ..data import ROLES_DIR
 from .records import RecordDeclaration, RecordDeclarationError, parse_record_declaration
 
@@ -38,9 +39,6 @@ _AGENT_DEFAULT_OUTCOMES: tuple[str, ...] = ("done", "blocked", "error")
 #: role that does not say gets this, which is how every role ran before.
 RUN_SCOPES: tuple[str, ...] = ("none", "sandbox", "branch")
 DEFAULT_RUN_SCOPE = "branch"
-#: The flag under ``[agent.flags]`` with which a ``sandbox`` role on Codex
-#: accepts that Codex's sandbox leaves reads of the home directory open.
-ACCEPT_OPEN_READS_FLAG = "accept_open_reads"
 
 #: What an approval needs of each criterion of a verdict (ADR-0041 section 2):
 #: ``checked``, a command it ran, a file it read, or its judgement with a
