@@ -8,7 +8,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from ..definitions.gate_steps import blocked_kind, resolve_gate_steps
+from ..definitions.gate_steps import (
+    blocked_kind,
+    capped_step_block,
+    resolve_gate_steps,
+    step_cap,
+)
 from ..domain.rests_on import RestsOnError, parse_entry
 from ..domain.models import (
     TASK_TYPES,
@@ -134,8 +139,14 @@ class TaskMutations(MutationBase):
         self._audit(task, "human.task_blocked", step="block", from_status=from_status, reason=reason)
         return self.store.get_task(task.id) or task
 
-    def unblock_task(self, task: Task) -> Task:
+    def unblock_task(self, task: Task, *, reset_visits: bool = False) -> Task:
         """Return a blocked task to the queue, starting its workflow over.
+
+        A task blocked by a step's own cap (``max_visits``) resumes at that
+        step and its visit counts are kept, except that the capped step's
+        count drops by one so the step runs once more; the next entry
+        blocks again. ``reset_visits`` is a person saying the counts start
+        over: all of them reset, and the task resumes at the step.
 
         A Block still waiting for the task's step to end is withdrawn
         instead, and the task carries on where it is.
@@ -165,11 +176,20 @@ class TaskMutations(MutationBase):
                 "or `foreman deny` instead."
             )
         reason = task.blocked_reason
+        capped = capped_step_block(self.store, project, task)
         task.status = "todo"
         task.blocked_reason = None
-        task.workflow_current_step = None
-        task.workflow_carried_output = None
-        task.step_visit_counts = {}
+        if capped is not None:
+            # Resume at the capped step; its count is kept (see above).
+            if reset_visits:
+                task.step_visit_counts = {}
+            else:
+                cap = step_cap(self.store, project, capped) or 1
+                task.step_visit_counts[capped] = cap - 1
+        else:
+            task.workflow_current_step = None
+            task.workflow_carried_output = None
+            task.step_visit_counts = {}
         # A person's decision starts the models over (ADR-0041).
         task.step_failures = {}
         task.completed_at = None

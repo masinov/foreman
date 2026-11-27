@@ -289,7 +289,7 @@ foreman task list <project-id> [--sprint SPRINT_ID] [--rests-on PATH[#HEADING]]
 foreman task show <task-id>           # task + worktree + recent runs + events
 foreman task accept <task-id>         # triage → todo
 foreman task block <task-id> --reason "..."  # only a task that has not started; a started one is stopped or closed
-foreman task unblock <task-id>
+foreman task unblock <task-id> [--reset-visits]
 foreman task done <task-id> --reason "..."   # finished outside the engine; nothing is checked
 foreman task reopen <task-id>         # done or cancelled → todo, workflow from the start
 foreman task edit <task-id> [--title T] [--type TYPE] [--priority N]
@@ -406,7 +406,11 @@ a request or backlog work into a sprint, and planning a request accepts it.
 
 `task unblock` refuses a task parked at a human gate (use `foreman approve` or
 `foreman deny` for those) and clears the engine's dead letters — see
-[Dead-letter kinds](#dead-letter-kinds).
+[Dead-letter kinds](#dead-letter-kinds). Unblocking resets the step visit
+counts and starts the workflow over, except for a task a step's own cap
+blocked ([Capping a step](#capping-a-step-max_visits)): that one resumes at the
+capped step, its counts kept, and `--reset-visits` (or `reset_visits` in the
+API) starts every count over.
 
 `--depends-on` ids are validated to exist in the same project. Only a `done`
 dependency releases the task; if a dependency is **cancelled**, the engine blocks
@@ -897,6 +901,36 @@ Each step visit increments `step_visit_counts[step]`. Exceeding
 event and a `loop_limit` supervision trigger. The `completion:conflict`
 transition explicitly **resets** the visit budget (emitting
 `workflow.step_visit_reset`) so conflict recovery doesn't starve the loop.
+
+### Capping a step: `max_visits`
+
+A step may set `max_visits = <n>` (a positive integer):
+
+```toml
+[[steps]]
+id = "review"
+role = "code_reviewer"
+max_visits = 2
+```
+
+When the task is about to enter the step for the (n+1)th time it is blocked
+instead, before the step runs: the reason names the step and its cap ("Review
+ran twice, its cap: a person decides."), a `workflow.step_cap` event is
+recorded, and the task keeps the step as its resume point. A step's own cap is
+checked first; `max_step_visits` stays the overall stop for a loop through a
+step without a cap.
+
+The block is a dead letter of the `engine` kind: clear it with
+`foreman task unblock` or Unblock on the task page. The step then runs once
+more, and the count is **not** reset: the capped step's count drops by one (to
+n−1), the other counts stay, and the next entry blocks again. Say
+`foreman task unblock <task> --reset-visits` (the API's `reset_visits`) to start
+every count over, so the step has its n visits again.
+
+Use `max_visits` when the answer to "it has gone round enough" is a person.
+When the workflow has another path at a count (send it to a different step,
+or to a person through a gate of its own), put the fact `visits:<step>>=<n>`
+on a route instead (see Routes); a cap has no path of its own.
 
 ### Branch refresh before a develop pass
 

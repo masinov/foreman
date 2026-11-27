@@ -72,3 +72,9 @@ def models_exhausted_reason(step: str, model: str, count: int) -> str:
     """Why a task blocks when its step has failed on the last of its models."""
 
     return f"{step_name(step)} failed {times(count)} on {model}, the last of its models."
+
+
+def step_cap_reason(step: str, cap: int) -> str:
+    """Why a task blocks when it is about to enter a capped step once more."""
+
+    return f"{step_name(step)} ran {times(cap)}, its cap: a person decides."

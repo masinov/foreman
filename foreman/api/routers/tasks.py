@@ -49,7 +49,10 @@ def build_router(ctx: ApiContext) -> APIRouter:
     ) -> dict[str, Any]:
         return with_api(
             lambda api: api.tasks.unblock_task(
-                task_id, note=body.note, requested_by=body.requested_by
+                task_id,
+                note=body.note,
+                reset_visits=body.reset_visits,
+                requested_by=body.requested_by,
             )
         )
 
