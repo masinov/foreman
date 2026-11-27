@@ -128,3 +128,11 @@ were then.
   built. Decided by the owner, 2026-11-27: the manager proposes a sprint's
   tasks from the spec and a person confirms (ADR-0022; roadmap phase 4);
   the spec is revised when that lands.
+- Dashboard design v7 lists four kinds of Needs you item (accept filed work,
+  approve a plan, approve a merge, unblock, plus the sprint ones). FOR-110
+  (sprint 69, ADR-0041 section 4) adds a fifth task kind, "Answer question":
+  an agent asked a person something. Its row shows the question, how many
+  options and which one is recommended, and its Answer button opens the task
+  page, whose decision is the question with its options (the design's "Task
+  shows the pending decision first"). The design files are not revised.
+  Decided by the task's own description, 2026-11-28.
