@@ -18,6 +18,9 @@ replaced wholesale.
 
 ## The roadmap from 2026-11-19 (owner)
 
+Since 2026-11-27 the order of the stages is the timeline below
+("The timeline from 2026-11-27").
+
 Agreed with the owner on 2026-11-19 after sprint 60. It replaces the
 milestones below, which are kept as history, and orders the owner's
 directions, one file each in `docs/directions/`. Each stage gets an ADR before its
@@ -163,6 +166,51 @@ build through Foreman.
 
 The proposal: `docs/proposals/2026-11-24-method-repository-parallel-work.md`
 (written 2026-11-24, corrected by the owner 2026-11-25).
+
+## The timeline from 2026-11-27 (owner)
+
+Claude laid every direction in `docs/directions/` and every stage above on
+one timeline, by priority and dependency. The owner: "My colleagues don't
+need foreman soon. We can settle whatever you need to settle first. I agree
+with your recommendations. Proceed." The stages above keep their content;
+this sets their order. Sprint numbers are a guide: an ADR and a survey of
+existing tools come before each marked phase, and stage 6 is the largest.
+
+| Phase | Sprints | What | Needs |
+|---|---|---|---|
+| 1 | 67 | **The core can be left alone:** a supervisor and no agent left by a hard kill (FOR-91), the review sandbox enforced (FOR-75), a branch moved after approval goes back to test (FOR-97), a skipped branch update recorded (FOR-77), which `AGENTS.md` an agent loads (FOR-73), migrations as a deploy step (FOR-87), the intermittent test (FOR-66), reads counted right (FOR-74) | nothing |
+| 2 | 68–70 | **Stage 3 finished** (ADR-0040 items 7–10): routes on facts, caps and a question to a person; the planner role, write scope and frozen checks; the escape log; the layout in `foreman init` | 1 |
+| 3 | 71–72, ADR | **Sprint workflows, moved up from stage 8:** steps before and after a sprint's tasks (plan, checks on the integrated `main`, a review of the whole sprint, fix tasks into the same sprint until its checks pass, the sprint's records closed); runs that belong to a sprint. Survey Temporal, Hatchet and DBOS first, which may also carry stage 6 | 2 |
+| 4 | 73–76, ADR | **Stage 2, people:** sign-in and a name on every decision, owner and member; responsible and accepted, handing over, notices, what waits on whom; one manager conversation per person per project, which proposes a sprint's tasks from the spec; requests for others' work, out-of-date changes refused, the record closed at `main` | 2 |
+| 5 | 77–78, ADR | **Stage 4, resources, environments and deployment targets:** resources with where they live, who made them, how to remove them and a reference to their secret; per-run environments; a project's deployment targets (staging, production, a model registry) with their approval policy | 4 |
+| 6 | 79–83, ADR | **Stage 6, the central server and workers:** the database out of the repository (FOR-88), a service user, many users on one server; a worker per machine that connects out; machine labels; several tasks at once and dependencies across sprints; a default retention (FOR-81); a deployment guide. First case: BricsCAD on Windows | 4, 5 |
+| 7 | 84–85, ADR | **Stage 8, releases and deployment through CI/CD:** a version cut behind a gate, the pipeline started for a target and followed, CI checks on a task's branch | 3, 5, 6 |
+| 8 | after | **Stage 7, harnesses** (Codex made real, runner profiles, ladders chosen by facts) and **stage 9, memory** | 2, 6 |
+
+- **Changed from the stage order above (owner, 2026-11-27):** sprint
+  workflows come before stage 2, because they do what Claude does by hand
+  after every sprint (the suite on the integrated `main`, an independent
+  review, fixes), which found faults in sprints 63, 65 and 66. A small
+  sprint of fixes to the core comes first.
+- **The architect** of spec §3.3 and §5.2 is not built as a role: the
+  manager proposes a sprint's tasks from the spec and a person confirms
+  (phase 4; owner, 2026-11-27). The spec is revised when it lands
+  (`docs/guide/conflicts-spec-design-code.md`).
+- **Stage 5, the views and the left bar,** runs beside phases 4 to 8: one
+  design reference for every view first, then each view when its data
+  exists (people with phase 4, resources with 5, machines with 6, releases
+  with 7; statistics any time).
+- **Tests designed, not only watched,** lands in parts: tiers as routes and
+  a tester role (phase 2), slow checks on `main` (phase 3), machine labels
+  (phase 6), the tests view (stage 5).
+- **Assay** (`docs/directions/assay-and-foreman.md`), beside phases 2 and 3:
+  Assay's S3 and S4; then a task's briefing in and bindings out at merge,
+  for one project; findings into intake after Assay's S5 and S6, with
+  FOR-82 to FOR-84 first.
+- **Recorded, not scheduled:** a cluster manager (Ray), ticketing apps,
+  replies from notifications, recurring and event loops, projects over
+  several repositories, the spec editor as its own app, a code map for
+  agents (measured first, FOR-74).
 
 ## History: milestones 0 to 23
 
