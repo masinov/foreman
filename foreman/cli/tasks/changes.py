@@ -77,6 +77,7 @@ def handle_task_add(args: argparse.Namespace) -> int:
                 description=getattr(args, "description", None),
                 acceptance_criteria=args.criteria,
                 rests_on=getattr(args, "rests_on", None),
+                labels=getattr(args, "label", None),
                 depends_on=(getattr(args, "depends_on", None) or "").split(","),
             )
         except MutationError as exc:
@@ -93,6 +94,7 @@ def handle_task_add(args: argparse.Namespace) -> int:
         f"Type: {task.task_type}",
         f"Criteria: {task.acceptance_criteria or 'n/a'}",
         *_rests_on_lines(task),
+        *label_lines(task),
         f"Depends on: {', '.join(task.depends_on_task_ids) if task.depends_on_task_ids else 'none'}",
         f"Status: {task.status}",
     )
@@ -244,6 +246,11 @@ def handle_task_edit(args: argparse.Namespace) -> int:
         changes["rests_on"] = []
     elif args.rests_on:
         changes["rests_on"] = list(args.rests_on)
+    added_labels = list(getattr(args, "label", None) or [])
+    removed_labels = list(getattr(args, "remove_label", None) or [])
+    if set(added_labels) & set(removed_labels):
+        print("Give a label to --label or --remove-label, not both.", file=sys.stderr)
+        return 1
     if args.no_dependencies and args.depends_on:
         print("Give --depends-on or --no-dependencies, not both.", file=sys.stderr)
         return 1
@@ -261,10 +268,10 @@ def handle_task_edit(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 1
     restamp = list(getattr(args, "restamp", None) or [])
-    if not changes and args.edit is None and not restamp:
+    if not changes and args.edit is None and not restamp and not (added_labels or removed_labels):
         print(
             "Nothing to change. Give --title, --type, --priority, --description, "
-            "--criteria, --rests-on or --no-rests-on, --restamp, --depends-on or --no-dependencies, "
+            "--criteria, --rests-on or --no-rests-on, --label or --remove-label, --restamp, --depends-on or --no-dependencies, "
             "or --edit description|criteria.",
             file=sys.stderr,
         )
@@ -288,7 +295,20 @@ def handle_task_edit(args: argparse.Namespace) -> int:
             "priority": task.priority,
             "depends_on_task_ids": list(task.depends_on_task_ids or []),
             "rests_on": [ref.as_dict() for ref in task.rests_on],
+            "labels": list(task.labels),
         }
+        if added_labels or removed_labels:
+            missing = [name for name in removed_labels if name not in task.labels]
+            if missing:
+                print(
+                    f"Task {task.id} does not carry the label {', '.join(missing)}. "
+                    f"It carries: {', '.join(task.labels) or 'none'}.",
+                    file=sys.stderr,
+                )
+                return 1
+            changes["labels"] = [
+                name for name in [*task.labels, *added_labels] if name not in removed_labels
+            ]
         if args.edit is not None:
             field = text_field(args.edit)
             try:
@@ -319,6 +339,7 @@ def handle_task_edit(args: argparse.Namespace) -> int:
         *(f"{label} unchanged." for label in unchanged),
         *_describe_changes(before, changed),
         *_rests_on_lines(task),
+        *label_lines(task),
         f"Priority: {task.priority}",
         "Waits for: "
         + (", ".join(task.depends_on_task_ids) if task.depends_on_task_ids else "nothing"),
@@ -332,8 +353,15 @@ _CHANGE_LABELS = {
     "description": "Description",
     "acceptance_criteria": "Acceptance criteria",
     "rests_on": "Documents",
+    "labels": "Labels",
 }
 # Priority and what a task waits for are shown in full on the lines after.
+
+
+def label_lines(task: Task) -> list[str]:
+    """``Labels:`` with the task's labels, or none."""
+
+    return [f"Labels: {', '.join(task.labels) if task.labels else 'none'}"]
 
 
 def _rests_on_lines(task: Task) -> list[str]:
@@ -361,6 +389,8 @@ def _describe_changes(before: dict[str, object], changed: dict[str, object]) -> 
             lines.append(
                 f"{label}: marked as read again" if restamped else f"{label}: {len(old)} -> {len(new)} documents"
             )
+        elif field == "labels":
+            lines.append(f"{label}: {', '.join(old) or 'none'} -> {', '.join(new) or 'none'}")
         elif field in ("description", "acceptance_criteria"):
             if not new:
                 lines.append(f"{label}: cleared")

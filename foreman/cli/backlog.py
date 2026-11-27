@@ -22,6 +22,7 @@ from .common import (
     set_handler,
     truncate_text,
 )
+from .tasks.changes import label_lines
 from .tasks.lifecycle import handle_task_accept
 
 #: Section headings, in the order the list shows them (the design's words).
@@ -113,6 +114,7 @@ def handle_backlog_add(args: argparse.Namespace) -> int:
                 description=args.description,
                 acceptance_criteria=args.criteria,
                 rests_on=args.rests_on,
+                labels=args.label,
                 priority=args.priority,
                 created_by=mutations.actor or "human",
                 accept=args.accept,
@@ -130,6 +132,7 @@ def handle_backlog_add(args: argparse.Namespace) -> int:
         f"Project: {project.id} | {project.name}",
         f"Task: {task.id} | {task.task_key} | {task.title}",
         f"Type: {task.task_type}",
+        *label_lines(task),
         f"State: {state}",
         f"Triage: {filed.triage.value} ({filed.triage.source})",
     )
@@ -297,6 +300,13 @@ def register_backlog(subparsers: argparse._SubParsersAction) -> None:
         help="A document of the repository the task rests on, optionally with a "
         "heading: `docs/specs/engine-design-v3.md#6.3`. It must exist on the default "
         "branch; Foreman records that branch's commit with it. Repeat for several.",
+    )
+    backlog_add.add_argument(
+        "--label",
+        action="append",
+        metavar="NAME",
+        help="A label the project names (its `labels` setting) for the task to carry. "
+        "Repeat for several.",
     )
     backlog_add.add_argument("--priority", type=int, default=0, help="Priority (0 first).")
     backlog_add.add_argument(

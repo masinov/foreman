@@ -67,6 +67,13 @@ def _register_add(task_commands: argparse._SubParsersAction) -> None:
         "branch; Foreman records that branch's commit with it. Repeat for several.",
     )
     task_add.add_argument(
+        "--label",
+        action="append",
+        metavar="NAME",
+        help="A label the project names (its `labels` setting) for the task to carry. "
+        "Repeat for several.",
+    )
+    task_add.add_argument(
         "--sprint",
         dest="sprint_id",
         metavar="SPRINT_ID",
@@ -305,6 +312,19 @@ def _register_edit(task_commands: argparse._SubParsersAction) -> None:
         "--no-rests-on",
         action="store_true",
         help="Name no documents: clear the task's list.",
+    )
+    task_edit.add_argument(
+        "--label",
+        action="append",
+        metavar="NAME",
+        help="Give the task a label the project names (its `labels` setting). Repeat for several; "
+        "the task keeps the labels it has.",
+    )
+    task_edit.add_argument(
+        "--remove-label",
+        action="append",
+        metavar="NAME",
+        help="Take a label off the task, whether or not the project still names it. Repeat for several.",
     )
     task_edit.add_argument(
         "--restamp",

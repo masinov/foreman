@@ -278,7 +278,7 @@ reopened.
 ```bash
 foreman task add <project-id> --title TITLE --criteria CRITERIA \
     [--type TYPE] [--description DESC] [--sprint SPRINT_ID] \
-    [--depends-on id1,id2] [--rests-on PATH[#HEADING] ...]
+    [--depends-on id1,id2] [--rests-on PATH[#HEADING] ...] [--label NAME ...]
 
 foreman task override <task-id> \
     [--step STEP=MODEL ...] [--ladder-start MODEL] \
@@ -297,6 +297,7 @@ foreman task edit <task-id> [--title T] [--type TYPE] [--priority N]
                             [--criteria TEXT | --criteria-file PATH|-]
                             [--edit description|criteria]
                             [--rests-on PATH[#HEADING] ...] [--no-rests-on]
+                            [--label NAME ...] [--remove-label NAME ...]
                             [--restamp PATH[#HEADING] ...]
                             [--depends-on ID ...] [--no-dependencies]
                                       # what it waits for can change only before it starts
@@ -331,6 +332,18 @@ with a space before the heading's `#`: `--rests-on "docs/a#b.md #Heading"`, or
 `"docs/a#b.md #"` for the whole file. A directory or a symbolic link is refused. The task page's Overview lists them with their commits and opens
 each as it was then, and every agent step is given them as pointers: path,
 heading and commit, not the text (ADR-0041 section 6).
+
+**Labels.** A task carries labels, the names a project gives in its `labels`
+setting (`foreman config <project-id> --set labels='{"ui": "changes what a person sees"}'`).
+`--label NAME` (repeat for several) gives them on `task add` and `backlog add`;
+on `task edit` it adds one to what the task has, and `--remove-label NAME` takes
+one off (also one the project no longer names). A label the project does not name
+is refused, and the refusal lists the names it does. Removing a label from the
+setting edits no task: it keeps the label, and the task page shows it as
+"(unknown)" in the muted `Labels:` line under its title. The dashboard API
+returns `labels` and `unknown_labels` on a task and takes `labels` (the whole
+list) when a task is created, filed or edited. Routes read them as the fact
+`label:<name>` (ADR-0041 section 1).
 
 **When a document it rests on changes.** A merge that changes a document that a
 task in triage, todo, in progress or blocked rests on (in a sprint or in the
@@ -375,7 +388,8 @@ way: filed, accepted, planned.
 foreman backlog list <project-id> [--status filed|accepted|declined] \
     [--query TEXT] [--limit N] [--offset N] [--json]
 foreman backlog add <project-id> --title TITLE [--type TYPE] [--criteria C] \
-    [--description D] [--rests-on PATH[#HEADING] ...] [--priority N] [--accept]
+    [--description D] [--rests-on PATH[#HEADING] ...] [--label NAME ...] \
+    [--priority N] [--accept]
 foreman backlog accept <task-id>      # filed → accepted (same as task accept)
 foreman backlog decline <task-id> [--reason TEXT]
 foreman backlog plan <project-id> <task-id>... --sprint SPRINT_ID
@@ -1395,6 +1409,8 @@ offending value, rather than running on silent defaults.
 | `write_checkpoint_notes` | `false` | when a sprint is finished, commit a note of its goal, tasks and follow-ups to `docs/checkpoints/<tag>.md` on the default branch before the sprint is tagged (ADR-0036). The tag is made either way |
 | `generate_changelog` | `false` | when a sprint is finished, fold the `changes/<task key>.md` files into a section of `CHANGELOG.md` (newest sprint first, above what the file held before) and remove them, in the checkpoint's commit (ADR-0040). Off: the file and `changes/` are left as they are. `foreman changelog <project> [--sprint <id>]` does the same by hand |
 | `generate_copies` | `false` | Foreman writes `docs/STATUS.md` and `docs/sprints/current.md` from its database when a sprint starts and when it finishes (in the checkpoint's commit), and a finished sprint's archive copy `docs/sprints/archive/sprint-<n>-<slug>.md` (ADR-0040); a sprint's finish and the command also write `docs/sprints/backlog.md`. An archive file written by hand is never replaced. No task edits them. `foreman copies <project> [--sprint <id>]` writes them by hand |
+| `labels` | `{}` | the labels a task may carry: `{"<name>": "<one-line meaning>"}`. A name is lowercase words joined by `-` or `_` (`ui`, `needs-docs`). Set by `foreman config <project-id> --set labels='{"ui": "changes what a person sees"}'`; a bad name or an empty or many-line meaning is refused. Not host-level. Removing one edits no task (see Tasks › Labels) |
+| `path_groups` | `{}` | named groups of path patterns, for the routes' facts `changed:<group>` (any changed path is in the group) and `changed_only:<group>` (every changed path is in the listed groups): `{"<name>": ["<pattern>", ...]}`, such as `{"frontend": ["frontend/**"], "docs": ["docs/**", "*.md"]}`. A pattern is gitignore-style and relative to the repository: no `/` in it (`*.md`) matches at any depth, one with a `/` is anchored at the root (`docs/*.md`), `**` crosses directories, a directory matches everything under it. No leading `/` or `~`, no `..`, no `!`. A path in no group counts for none, so it defeats `changed_only:`. Not host-level |
 | `adr_dir` | `docs/adr` | the folder whose decisions are numbered when a task merges (ADR-0040): a branch writes `<adr_dir>/new-<slug>.md`; the merge commit renames it to `ADR-NNNN-<slug>.md` (next free number), sets the number in its title line, rewrites references to it and regenerates the folder's `README.md` index from each ADR's title and status (the hand-written part above the list is kept). A merge that would leave two ADRs with one number is refused, naming the files. Empty, or no such folder: left alone |
 | `merge_push_remote` | `""` | name of the git remote the default branch is pushed to after each merge (for example `origin`). Empty: merges stay on this machine. A push that fails is recorded (`engine.push_failed`) and the merge stands |
 | `worktree_setup_timeout_seconds` | `1800` | wall-clock cap for `worktree_setup_command`; `0` disables the timeout |

@@ -153,6 +153,9 @@ def _row_to_task(row: sqlite3.Row) -> Task:
             if "rests_on_json" in row.keys()
             else []
         ),
+        labels=(
+            _load_json_list(row["labels_json"]) if "labels_json" in row.keys() else []
+        ),
         blocked_reason=row["blocked_reason"],
         created_by=row["created_by"],
         depends_on_task_ids=_load_json_list(row["depends_on_task_ids"]),

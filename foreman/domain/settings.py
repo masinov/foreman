@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .labels import LabelError, parse_labels, parse_path_groups
 from .models import TASK_TYPES, Project
 from .policy import (
     POLICY_DECISIONS,
@@ -183,6 +184,12 @@ class ProjectSettings:
     # the dashboard from one. Only the project's own rows, without
     # credentials or destinations. Host-level.
     sandbox_database_copy: bool = False
+    # The labels a task may carry, each with a one-line meaning, and the
+    # path groups (names of lists of repository-relative, gitignore-style
+    # patterns) a change is sorted into. The facts ``label:``, ``changed:``
+    # and ``changed_only:`` of a route read them (ADR-0041).
+    labels: dict[str, str] = field(default_factory=dict)
+    path_groups: dict[str, tuple[str, ...]] = field(default_factory=dict)
     # The policy matrix (see foreman/policy.py). Each decision names a
     # project default; "auto" lets the engine decide on its own and records
     # the decision, "human" routes it to a person. `policy_rules` refines the
@@ -265,6 +272,8 @@ class ProjectSettings:
             sandbox_database_copy=_validate_bool(
                 raw.get("sandbox_database_copy"), key="sandbox_database_copy"
             ),
+            labels=_validate_labels(raw.get("labels")),
+            path_groups=_validate_path_groups(raw.get("path_groups")),
             merge_approval=_validate_policy_default(raw, "merge_approval"),
             plan_approval=_validate_policy_default(raw, "plan_approval"),
             triage=_validate_policy_default(raw, "triage"),
@@ -281,6 +290,20 @@ class ProjectSettings:
                 raw.get("review_diff_max_chars"), default=16000
             ),
         )
+
+
+def _validate_labels(value: Any) -> dict[str, str]:
+    try:
+        return parse_labels(value)
+    except LabelError as exc:
+        raise SettingsError(f"labels: {exc}") from exc
+
+
+def _validate_path_groups(value: Any) -> dict[str, tuple[str, ...]]:
+    try:
+        return parse_path_groups(value)
+    except LabelError as exc:
+        raise SettingsError(f"path_groups: {exc}") from exc
 
 
 def _string_list(value: Any, *, key: str) -> list[str]:

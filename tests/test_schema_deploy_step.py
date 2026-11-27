@@ -18,6 +18,8 @@ from foreman.store.base import _SCHEMA_MIGRATIONS_DDL, _split_sql_statements
 from foreman.store.migrations import MIGRATIONS
 
 LATEST = max(m[0] for m in MIGRATIONS)
+#: The migration that adds the drifted columns back (``_add_drifted_columns``).
+DRIFT_VERSION = 36
 DRIFT = [
     ("tasks", "completion_evidence_json"),
     ("tasks", "executor_overrides_json"),
@@ -49,13 +51,13 @@ class DriftMigrationTests(unittest.TestCase):
                 db = Path(tmp) / "f.db"
                 with ForemanStore(db) as store:
                     store._connection.executescript(_SCHEMA_MIGRATIONS_DDL)
-                    store.migrate(_without_column(column)[: LATEST - 1])
-                    self.assertEqual(store.schema_version(), LATEST - 1)
+                    store.migrate(_without_column(column)[: DRIFT_VERSION - 1])
+                    self.assertEqual(store.schema_version(), DRIFT_VERSION - 1)
                     self.assertNotIn(column, _columns(store, table))
                 with ForemanStore(db) as store:
                     # Opening repairs nothing.
                     self.assertNotIn(column, _columns(store, table))
-                    self.assertEqual(store.migrate(), [LATEST])
+                    self.assertEqual(store.migrate(), list(range(DRIFT_VERSION, LATEST + 1)))
                     self.assertIn(column, _columns(store, table))
 
     def test_store_has_no_repair_at_open(self) -> None:

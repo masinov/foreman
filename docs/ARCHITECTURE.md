@@ -625,6 +625,15 @@ whoever writes. A backlog task is `triage` (filed), `todo` (accepted) or
   `POST /tasks/{id}/decline`, `POST /tasks/{id}/unplan`.
 - `foreman/cli/backlog.py`: `foreman backlog list|add|accept|decline|plan|unplan`.
 
+### Labels and path groups (ADR-0041 section 1)
+
+- `domain/labels.py` — the `labels` and `path_groups` project settings'
+  validation (names, relative gitignore-style patterns), the pattern matcher,
+  and `groups_of_paths` / `changed_in` / `changed_only_in`, which answer the
+  facts `changed:<group>` and `changed_only:<group>` for the routes. A task's
+  labels are `tasks.labels_json` (migration 37); `MutationBase._check_labels`
+  refuses a new label the project does not name, and keeps one a task has.
+
 ### Project settings and workflow reads (sprint 58)
 
 The project settings page reads and writes through four routes.

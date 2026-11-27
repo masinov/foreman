@@ -48,12 +48,14 @@ class RefusedAtAnotherVersionTests(unittest.TestCase):
     def _database(self, tmp: str, kind: str) -> Path:
         path = Path(tmp) / "f.db"
         with ForemanStore(path) as store:
-            store.upgrade()
             if kind == "older":
-                store._connection.execute(
-                    "DELETE FROM schema_migrations WHERE version = ?", (LATEST,)
-                )
+                # A database made by the release before: its last migration
+                # was never run (deleting its ledger row would leave its
+                # changes in the tables, and run it twice).
+                store._connection.executescript(_SCHEMA_MIGRATIONS_DDL)
+                store.migrate(sorted(MIGRATIONS)[: LATEST - 1])
             else:
+                store.upgrade()
                 store._connection.execute(
                     "INSERT INTO schema_migrations (version, description, applied_at)"
                     " VALUES (?, 'future', 'now')",

@@ -24,6 +24,14 @@
   overflow-wrap: anywhere;
 }
 
+/* The task's labels: one muted line under its facts, no chips. */
+.task__labels {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--color-text-quiet);
+  font-size: var(--font-size-mono);
+}
+
 .task__actions {
   display: flex;
   flex-wrap: wrap;
