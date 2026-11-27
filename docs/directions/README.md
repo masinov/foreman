@@ -55,6 +55,7 @@ The repository and the agents' view of it:
 - [How a project's repository is organised](how-a-repository-is-organised.md) (ADR-0040)
 - [A code map for agents](code-map-for-agents.md)
 - [Statuses stay strings](statuses-stay-strings.md)
+- [A memory Foreman keeps, and loads into each step](a-memory-foreman-keeps-and-loads.md) (2026-11-27)
 
 Other projects:
 
