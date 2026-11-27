@@ -14,7 +14,7 @@ from typing import Any
 
 from ..domain.models import Run, Task
 from ..domain.outcomes import ASK
-from ..domain.question import (
+from ..definitions.question import (
     ANSWER_BACKEND,
     ANSWER_KIND,
     ANSWER_ROLE,

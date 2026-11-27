@@ -8,7 +8,7 @@ from dataclasses import replace
 
 from foreman.definitions.roles import load_roles, load_role_text, render_prompt
 from foreman.definitions.gate_steps import blocked_kind, resolve_gate_steps
-from foreman.domain.question import (
+from foreman.definitions.question import (
     QUESTION_BLOCKED_REASON,
     check_question,
     read_question,

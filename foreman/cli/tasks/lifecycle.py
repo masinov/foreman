@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ...domain.question import answer_words
+from ...definitions.question import answer_words
 from ...mutations import MutationError
 from ...store import ForemanStore
 from ..common import (

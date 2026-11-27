@@ -14,7 +14,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 from ..domain.models import Project, Task
-from ..domain.question import QUESTION_BLOCKED_REASON
+from ..definitions.question import QUESTION_BLOCKED_REASON
 from ..store import ForemanStore
 from .layers import project_definitions
 from .workflows import WorkflowDefinition

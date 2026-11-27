@@ -16,7 +16,7 @@ from ...domain.guidance import (
     prompt_with_guidance_as_context,
 )
 from ...domain.models import Project, Run, Task
-from ...domain.question import ANSWER_ROLE, answer_message
+from ...definitions.question import ANSWER_ROLE, answer_message
 from ...domain.outcomes import (
     ASK,
     ERROR,

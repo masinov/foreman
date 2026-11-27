@@ -19,8 +19,8 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from ..definitions.records import RECORD_FENCE, record_blocks
-from .outcomes import ASK
+from .records import RECORD_FENCE, record_blocks
+from ..domain.outcomes import ASK
 
 #: The kind a question's record carries in ``Run.record``.
 QUESTION_KIND = "question"

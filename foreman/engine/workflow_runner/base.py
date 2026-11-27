@@ -14,7 +14,7 @@ from ...domain.outcomes import (
     ASK,
     ERROR,
 )
-from ...domain.question import ASKED_EVENT, QUESTION_BLOCKED_REASON, question_of
+from ...definitions.question import ASKED_EVENT, QUESTION_BLOCKED_REASON, question_of
 from ...history.records import RunRecords
 from ...repo.context import ProjectContextProjection, relative_project_path
 from ...repo.git import (

@@ -11,7 +11,7 @@ from typing import Any
 
 from ._toml import TOMLDecodeError, load_toml_file, load_toml_text
 from ..domain.outcomes import ASK, CANONICAL_OUTCOMES
-from ..domain.question import question_instructions
+from ..definitions.question import question_instructions
 from ..domain.errors import ForemanError
 from ..domain.sandbox import ACCEPT_OPEN_READS_FLAG
 from ..data import ROLES_DIR

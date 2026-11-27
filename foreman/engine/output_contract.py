@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..domain.outcomes import APPROVE, ASK, DONE, ERROR
-from ..domain.question import QUESTION_KIND, QUESTION_PROBLEM_PREFIX, question_instructions, read_question
+from ..definitions.question import QUESTION_KIND, QUESTION_PROBLEM_PREFIX, question_instructions, read_question
 from ..definitions.records import RECORD_PROBLEM_PREFIX, read_record, split_record_block
 from ..definitions.roles import effective_approve_needs, RoleDefinition
 from .results import AgentExecutionResult

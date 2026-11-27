@@ -636,7 +636,7 @@ whoever writes. A backlog task is `triage` (filed), `todo` (accepted) or
 
 ### A question to a person (ADR-0041 section 4)
 
-- `domain/question.py` — the question record (`outcome: "ask"`, question,
+- `definitions/question.py` — the question record (`outcome: "ask"`, question,
   options, recommendation): what an agent is told, checking what it returned,
   and the words an answer goes back in. `read_completion` reads it first for a
   role that declares `ask`; a malformed one is an error with a retry.

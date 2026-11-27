@@ -12,7 +12,7 @@ import httpx
 
 from foreman.api.app import create_dashboard_app
 from foreman.domain.models import Project, Run, Sprint, Task
-from foreman.domain.question import QUESTION_BLOCKED_REASON
+from foreman.definitions.question import QUESTION_BLOCKED_REASON
 from foreman.store import ForemanStore
 
 from test_cli import cli_argv, cli_env
