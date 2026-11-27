@@ -11,8 +11,10 @@ from ...definitions.workflows import WorkflowDefinition
 from ...domain.errors import EngineCommandInterrupt
 from ...domain.models import CompletionEvidence, Project, Run, Task
 from ...domain.outcomes import (
+    ASK,
     ERROR,
 )
+from ...definitions.question import ASKED_EVENT, QUESTION_BLOCKED_REASON, question_of
 from ...history.records import RunRecords
 from ...repo.context import ProjectContextProjection, relative_project_path
 from ...repo.git import (
@@ -115,6 +117,46 @@ class WorkflowRunnerBase:
             },
         )
         self.leases.release(task, project)
+
+    def _wait_for_answer(
+        self,
+        project: Project,
+        task: Task,
+        run: Run,
+        *,
+        step: str,
+        carried_output: str | None,
+    ) -> Task:
+        """Park a task at the step that asked a person a question, holding the queue.
+
+        It waits the way it waits at a human gate (ADR-0039): ``blocked``,
+        at ``step``, with its lease let go. The visit that asked did no work
+        the step is charged for: the question is not a visit, so the count
+        is given back and the step, run again with the answer, takes it up.
+        """
+
+        counts = dict(task.step_visit_counts)
+        if counts.get(step, 0) > 0:
+            counts[step] -= 1
+        task.step_visit_counts = counts
+        task.status = "blocked"
+        task.blocked_reason = QUESTION_BLOCKED_REASON
+        task.workflow_current_step = step
+        task.workflow_carried_output = carried_output
+        self.tasks.save(task)
+        question = question_of(run.record) or {}
+        self.records.emit_event(run, ASKED_EVENT, {"step": step, "role_id": run.role_id, **question})
+        self.records.emit_event(
+            run,
+            "workflow.paused",
+            {
+                "step": step,
+                "reason": "question",
+                "notify": self.records.notification_policy(project, task),
+            },
+        )
+        self.leases.release(task, project)
+        return self.store.get_task(task.id) or task
 
     def run_from_step(
         self,
@@ -417,6 +459,13 @@ class WorkflowRunnerBase:
             self._record_step_completed(
                 run, project, current_task, step_def, current_step, outcome, settings
             )
+
+            if outcome == ASK:
+                # The step asked a person: the task waits, and the step runs
+                # again with the answer (ADR-0041 section 4).
+                return self._wait_for_answer(
+                    project, current_task, run, step=current_step, carried_output=carried_output
+                )
 
             # After every step: the task's own work must not be on the default
             # branch before the merge step puts it there. The default branch

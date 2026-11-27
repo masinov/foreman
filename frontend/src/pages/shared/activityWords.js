@@ -16,6 +16,7 @@ const MARK_DONE = "_builtin:mark_done";
 const TESTS = "_builtin:run_tests";
 const MERGE = "_builtin:merge";
 const ORCHESTRATOR = "_builtin:orchestrator";
+const ANSWER = "_builtin:answer";
 const PEOPLE = new Set(["human", "dashboard", "cli"]);
 const ENGINE_BACKENDS = new Set(["builtin", "orchestrator", "engine"]);
 
@@ -42,6 +43,11 @@ export function runBy(run, task = null) {
   const role = roleOf(run);
   if (role === HUMAN_GATE) return backend === "human" ? "a user" : FOREMAN;
   if (backend === "api") return task?.source?.system ? `${task.source.system}, through the API` : "the API";
+  // An answer to an agent's question names who gave it, where it was recorded.
+  if (role === ANSWER) {
+    const name = run.record?.fields?.answered_by;
+    return name ? userName(name) : "a user";
+  }
   if (PEOPLE.has(backend) || role === "human") {
     const name = task?.created_by;
     if (run.outcome === "file" && name && name !== "human") return name;
@@ -71,9 +77,9 @@ export function whoWord(who) {
   return humanize(who);
 }
 
-const GOOD = new Set(["done", "pass", "passed", "approve", "approved", "merged", "committed", "success", "succeeded", "completed", "complete", "accepted"]);
+const GOOD = new Set(["done", "pass", "passed", "approve", "approved", "merged", "committed", "success", "succeeded", "completed", "complete", "accepted", "answered"]);
 const BAD = new Set(["fail", "failed", "failure", "error", "errored", "reject", "rejected", "timeout", "timed_out", "cancelled", "cancel", "killed", "stopped"]);
-const BACK = new Set(["steer", "deny", "denied", "changes_requested", "request_changes", "conflict", "blocked", "paused"]);
+const BACK = new Set(["steer", "deny", "denied", "changes_requested", "request_changes", "conflict", "blocked", "paused", "ask"]);
 
 /** The colour an outcome is shown in: `passed`, `failed`, `attention` or `idle`. Its word says it too. */
 export function outcomeTone(outcome) {
@@ -100,6 +106,8 @@ const OUTCOME_WORDS = {
   conflict: "Merge conflict",
   updated: "Brought up to date",
   paused: "Asked a user",
+  ask: "Asked a question",
+  answered: "Answered",
   file: "Filed",
   created: "Filed",
   cancel: "Cancelled",
@@ -161,6 +169,8 @@ export function runNote(run) {
   const detail = String(run.outcome_detail || "").trim();
   const outcome = String(run.outcome || "").toLowerCase();
   const role = roleOf(run);
+  // The question an agent asked, and the answer it was given, are the point of their rows.
+  if (outcome === "ask" || role === ANSWER) return detail;
   if (role === HUMAN_GATE) {
     if (outcome === "approve" && backendOf(run) !== "human") return "By the project setting";
     if (SENT_BACK.has(outcome)) return detail;

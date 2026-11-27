@@ -227,7 +227,7 @@ class ProjectPass(OrchestratorBase):
         for task in self.store.list_tasks(sprint_id=sprint.id, status="blocked"):
             # A user's pause releases the queue (ADR-0043): the decision is
             # still recorded, and the task carries on when it is resumed.
-            if blocked_kind(task, gates) == "gate" and task_hold(task) is None:
+            if blocked_kind(task, gates) in ("gate", "question") and task_hold(task) is None:
                 return task
         return None
 

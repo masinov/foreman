@@ -89,6 +89,21 @@ describe("how a run ended", () => {
     expect(runResult(denied)).toEqual({ tone: "attention", word: "Sent back", note: "Use the helper." });
   });
 
+  it("says a question was asked, with the question, and that it was answered, with the answer and who gave it", () => {
+    const asked = run({ role_id: "developer", outcome: "ask", outcome_detail: "Which store holds it?" });
+    expect(runResult(asked)).toEqual({ tone: "attention", word: "Asked a question", note: "Which store holds it?" });
+    const answer = run({
+      role_id: "_builtin:answer",
+      agent_backend: "human",
+      outcome: "answered",
+      outcome_detail: 'option 2 ("A file")',
+      record: { kind: "answer", fields: { answered_by: "mario" } },
+    });
+    expect(runResult(answer)).toEqual({ tone: "passed", word: "Answered", note: 'option 2 ("A file")' });
+    expect(runBy(answer)).toBe("mario");
+    expect(runBy({ ...answer, record: { fields: { answered_by: "cli" } } })).toBe("a user");
+  });
+
   it("names a success by what the step does", () => {
     const success = (role_id) => runResult(run({ role_id, agent_backend: "builtin", outcome: "success" })).word;
     expect(success("_builtin:run_tests")).toBe("Passed");

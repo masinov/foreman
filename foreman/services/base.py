@@ -24,6 +24,7 @@ from ..domain.models import (
 )
 from ..mutations import Mutations
 from ..mutations.gates import current_gate_version
+from ..mutations.questions import pending_question
 from ..store import ForemanStore
 from .errors import NotFoundError
 
@@ -104,6 +105,7 @@ class Service:
         )
         return {
             "blocked_gate": counts["gate"],
+            "blocked_question": counts["question"],
             "blocked_engine": counts["engine"],
         }
 
@@ -138,6 +140,25 @@ class Service:
             plan_steps=gates.gate_sources.get(task.workflow_current_step or ""),
         )
         return version.to_dict() if version.kind else None
+
+    def _pending_question(self, task: Task) -> dict[str, Any] | None:
+        """The question the task waits on, as its page shows it, or None.
+
+        The question, its options, the recommendation, the step and the
+        agent that asked it, and since when.
+        """
+
+        found = pending_question(task, self.store.list_runs(task_id=task.id))
+        if found is None:
+            return None
+        run, question = found
+        return {
+            **question,
+            "run_id": run.id,
+            "step": run.workflow_step,
+            "role_id": run.role_id,
+            "asked_at": run.completed_at or run.created_at,
+        }
 
     @staticmethod
     def _at_human_gate(task: Task, gates: WorkflowGateSteps) -> bool:

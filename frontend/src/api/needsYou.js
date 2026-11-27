@@ -10,6 +10,8 @@ export const NEEDS_YOU_KINDS = {
   answerRequests: "answer_requests",
   approvePlan: "approve_plan",
   approveMerge: "approve_merge",
+  // An agent asked a question; answered on the task page, where its options are.
+  answerQuestion: "answer_question",
   unblock: "unblock",
   // Not a task: a proposed sprint order, settled by accepting or rejecting it.
   settleOrder: "settle_order",

@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 
-from ..schemas import DocumentRestamp, GuidanceNote, RequestedBy, TaskApproval, TaskBlock, TaskDenial, TaskUnblock, body_as
+from ..schemas import DocumentRestamp, GuidanceNote, RequestedBy, TaskAnswer, TaskApproval, TaskBlock, TaskDenial, TaskUnblock, body_as
 from ...services.task_reads import TaskReads
 from ...services.task_models import FileDiff, RunOutput, TaskDocument, TaskDocumentChange, TaskChanges, TaskChecks, TaskRuns
 from ..context import (
@@ -84,6 +84,18 @@ def build_router(ctx: ApiContext) -> APIRouter:
         task_id: str, body: TaskApproval = Depends(body_as(TaskApproval))
     ) -> dict[str, Any]:
         return with_api(lambda api: api.tasks.approve_task(task_id, version=body.version))
+
+    @router.post("/tasks/{task_id}/answer")
+    def answer_task(
+        task_id: str, body: TaskAnswer = Depends(body_as(TaskAnswer))
+    ) -> dict[str, Any]:
+        """Answer the question an agent asked, by option, in words, or both."""
+
+        return with_api(
+            lambda api: api.tasks.answer_question(
+                task_id, option=body.option, text=body.text, requested_by=body.requested_by
+            )
+        )
 
     @router.post("/tasks/{task_id}/deny")
     def deny_task(

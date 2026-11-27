@@ -430,6 +430,72 @@ describe("the decision", () => {
     expect(postCalls(fetchImpl, "unblock")[1].body).toEqual({ note: "Run the slow suite." });
   });
 
+  describe("a question an agent asked", () => {
+    const asked = () =>
+      taskDetail({
+        awaiting_human_gate: false,
+        gate_policy: null,
+        blocked_kind: "question",
+        blocked_reason: "Waiting for an answer to a question",
+        workflow_current_step: "develop",
+        question: {
+          question: "Which store holds it?",
+          options: ["SQLite", "A file"],
+          recommendation: { option: 1, why: "It is the source of truth." },
+          run_id: "run-1",
+          step: "develop",
+          role_id: "developer",
+          asked_at: "2026-11-02T14:02:00Z",
+        },
+        runs: [run("run-1", "develop", { outcome: "ask" })],
+      });
+
+    it("is the decision first: the question, its options, the recommendation marked, and a field for words", async () => {
+      await renderTask(BASE, taskRoutes({ task: asked() }));
+      const region = await screen.findByRole("region", { name: "Which store holds it?" });
+      expect(region).toHaveTextContent("Developer asked this at Develop.");
+      const options = within(region).getAllByRole("radio");
+      expect(options.map((option) => option.closest("label").textContent)).toEqual(["1. SQLite Recommended", "2. A file"]);
+      expect(region).toHaveTextContent("Recommended: option 1. It is the source of truth.");
+      expect(within(region).getByLabelText("Or answer in your own words")).toBeInTheDocument();
+      // Nothing to send until an option is chosen or words are written.
+      expect(within(region).getByRole("button", { name: "Answer" })).toBeDisabled();
+    });
+
+    it("answers with an option", async () => {
+      const task = asked();
+      const routes = taskRoutes({ task });
+      routes[post("answer")] = { status: "answered", message: "Answered FOR-14. Foreman goes on with Develop." };
+      const { fetchImpl } = await renderTask(BASE, routes);
+      const region = await screen.findByRole("region", { name: "Which store holds it?" });
+      fireEvent.click(within(region).getAllByRole("radio")[1]);
+      fireEvent.click(within(region).getByRole("button", { name: "Answer" }));
+      expect(await screen.findByText("Answered FOR-14. Foreman goes on with Develop.")).toBeInTheDocument();
+      expect(postCalls(fetchImpl, "answer")[0].body).toEqual({ option: 2, text: null });
+    });
+
+    it("answers in the person's own words, alone or beside an option", async () => {
+      const routes = taskRoutes({ task: asked() });
+      routes[post("answer")] = { status: "answered", message: "Answered FOR-14." };
+      const { fetchImpl } = await renderTask(BASE, routes);
+      const region = await screen.findByRole("region", { name: "Which store holds it?" });
+      fireEvent.change(within(region).getByLabelText("Or answer in your own words"), { target: { value: " Use a file, in /var. " } });
+      fireEvent.click(within(region).getByRole("button", { name: "Answer" }));
+      await screen.findByText("Answered FOR-14.");
+      expect(postCalls(fetchImpl, "answer")[0].body).toEqual({ option: null, text: "Use a file, in /var." });
+    });
+
+    it("says why when the answer is refused", async () => {
+      const routes = taskRoutes({ task: asked() });
+      routes[post("answer")] = reply(400, { error: "The question has 2 options: answer with a number from 1 to 2." });
+      await renderTask(BASE, routes);
+      const region = await screen.findByRole("region", { name: "Which store holds it?" });
+      fireEvent.click(within(region).getAllByRole("radio")[0]);
+      fireEvent.click(within(region).getByRole("button", { name: "Answer" }));
+      expect(await within(region).findByRole("alert")).toHaveTextContent("answer with a number from 1 to 2");
+    });
+  });
+
   it.each([
     ["running", { status: "in_progress", workflow_current_step: "develop" }],
     ["queued", { status: "todo", workflow_current_step: null }],

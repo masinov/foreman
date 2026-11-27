@@ -634,6 +634,23 @@ whoever writes. A backlog task is `triage` (filed), `todo` (accepted) or
   labels are `tasks.labels_json` (migration 37); `MutationBase._check_labels`
   refuses a new label the project does not name, and keeps one a task has.
 
+### A question to a person (ADR-0041 section 4)
+
+- `definitions/question.py` — the question record (`outcome: "ask"`, question,
+  options, recommendation): what an agent is told, checking what it returned,
+  and the words an answer goes back in. `read_completion` reads it first for a
+  role that declares `ask`; a malformed one is an error with a retry.
+- The step's outcome `ask` is handled in the step loop, not routed:
+  `WorkflowRunnerBase._wait_for_answer` blocks the task at the step with the
+  reason `QUESTION_BLOCKED_REASON` (kind `question` in `blocked_kind`), gives the
+  visit back and releases the lease; the sprint's queue treats it like a gate.
+- `mutations/questions.py` records the answer as a run (`_builtin:answer`,
+  backend `human`) with who and when, and leaves the task at the step.
+  `AgentSteps._prompt_with_answer` sends it as the next message of a resumed
+  session, or as a section of the prompt when there is none.
+  Surfaces: `POST /api/tasks/{id}/answer`, `foreman task answer`, the task page's
+  `QuestionDecision`, Needs you's `answer_question`.
+
 ### Project settings and workflow reads (sprint 58)
 
 The project settings page reads and writes through four routes.

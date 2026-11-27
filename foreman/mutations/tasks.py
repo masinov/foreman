@@ -175,6 +175,11 @@ class TaskMutations(MutationBase):
                 f"Task {task.id} is paused at a workflow gate; use `foreman approve` "
                 "or `foreman deny` instead."
             )
+        if blocked_kind(task, gates) == "question":
+            raise MutationError(
+                f"Task {task.id} waits for an answer to a question; use "
+                "`foreman task answer` instead."
+            )
         reason = task.blocked_reason
         capped = capped_step_block(self.store, project, task)
         task.status = "todo"

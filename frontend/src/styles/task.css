@@ -641,3 +641,42 @@
   font-family: var(--font-mono);
   font-size: var(--font-size-body);
 }
+
+/* The question an agent asked: its options, the recommendation marked, and
+   a field for an answer in words. */
+.decision--question {
+  align-items: flex-start;
+}
+
+.question__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+  padding: 0;
+  border: 0;
+}
+
+.question__option {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.question__words {
+  overflow-wrap: anywhere;
+}
+
+.question__recommended {
+  color: var(--color-gold);
+  font-weight: var(--font-weight-strong);
+}
+
+.question__why {
+  margin-bottom: var(--space-2);
+}
+
+.question__actions {
+  margin-top: var(--space-2);
+}
