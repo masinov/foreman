@@ -7,6 +7,40 @@ memory changes rather than versioned product releases.
 
 <!-- foreman:changelog - sprints below, newest first; earlier history follows -->
 
+## Sprint 68: the database and the reviewer kept apart (2026-11-27)
+
+### docs-direction-project-memory: A memory Foreman keeps, recorded as a direction
+
+- `docs/directions/a-memory-foreman-keeps-and-loads.md` records the owner's direction (2026-11-27): a memory that Foreman keeps per project, workspace and role, and loads into the steps it is for, apart from a person's own memory. Roadmap stage 9.
+
+### fix-sprint-67-review: Fixes from the independent review of sprint 67
+
+- A review step that moved the task's branch and then pushed now has the branch put back; before, the push was reported and the branch stayed moved.
+- `run_scope = "none"` refuses every Claude Code tool that runs a command (Bash, Monitor, PowerShell), not only Bash. The MANUAL now says what the review sandbox does not stop: an agent that sets out to push can still do so with your credentials, and on Codex the scope is not enforced.
+- The manager's sessions, and the model check, are started with Claude Code's auto-memory off, as agents are. The MANUAL no longer says the setting keeps an agent from writing those files.
+- A branch that changes while its task waits at the merge gate is tested and reviewed again and comes back to the gate, instead of being blocked for an unblock.
+- A worker killed hard also ends the tools its agents started in sessions of their own (Claude Code runs each Bash command that way), and its guard processes are reaped.
+- The systemd units are given the installer's `PATH`, so `claude` is found, and restart thirty seconds apart, so a worker killed hard gets back in once the dead one's lease runs out instead of systemd giving up.
+- `scripts/review_screenshots.py` migrates its copy of the database, so a branch that adds a migration can be looked at.
+- A skipped update over uncommitted work tells the developer once, and to commit that work rather than discard it.
+- Reads before the first edit: a here-string (`<<<`) is not taken for a heredoc, and `open()` counts as a write only with a real write mode.
+- The test that leaves an asyncio loop running is failed by name and the loop cleared, so the tests after it on the worker are not failed too.
+
+### FOR-100: The reviewer runs in Claude Code's sandbox, in its own clone
+
+- A sandboxed step (the code reviewer) runs with Claude Code's sandbox on: it writes only in its working copy, reaches no host but the project's `sandbox_allowed_hosts` (`localhost` works), cannot read your home directory or your other projects, and does not see `ANTHROPIC_*`/`OPENAI_*` keys. A machine without `bwrap` and `socat` fails the step with the reason.
+- The working copy is a clone of the commit under review, with no remote; a ref or config changed in it never reaches your repository. The task's branch is still checked and put back. The git push guard in the environment is gone.
+- New host-level project settings: `sandbox_allowed_hosts`, `sandbox_read_paths`, `sandbox_allow_unix_sockets` (a browser needs it; `/run` and the temporary directories are then closed). A snapshot of the database is put at `.review/live.db` for `scripts/review_screenshots.py`.
+- Codex: a sandboxed step runs in Codex's `workspace-write` sandbox without network; a role that runs no command asks about each one and Foreman declines. A `sandbox` role on Codex is refused at load unless it sets `accept_open_reads = true` under `[agent.flags]`.
+- The developer step is still not sandboxed. See the MANUAL's "The review sandbox" and the ADR `docs/adr/ADR-0044-claude-code-sandbox.md`.
+- The test suite removes the git environment variables (`GIT_CONFIG_PARAMETERS`, `GIT_DIR`, ...) it is started with, so a run inside a push-guarded sandbox cannot be read as a push.
+
+### FOR-101: Only `foreman db migrate` migrates the database
+
+- Every command that opens the database (`foreman run`, `backlog list`, `task show`, the worker and the dashboard) creates a new one at the latest version but refuses an existing one at another version, changing nothing in the file. Older: run `foreman db migrate`; newer: upgrade Foreman.
+- A command finds its database in the repository it runs in, never in a parent: the search stops at the first `.git`. A task worktree or sandbox finds none unless given `--db` or `FOREMAN_DB`.
+- `foreman serve` and `foreman dashboard` exit with status 78 when they refuse the schema; the systemd units do not restart them (`RestartPreventExitStatus=78`), and the worker writes the reason to `.foreman/serve.log`.
+
 ## Sprint 67: the core can be left alone (2026-11-27)
 
 ### docs-direction-assay-any-client: Assay serves any client; Foreman is its first

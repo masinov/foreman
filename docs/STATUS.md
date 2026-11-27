@@ -6,11 +6,7 @@ Project: Foreman. Default branch: main. Schema version: 36.
 
 ## Active sprint
 
-Sprint 68: the database and the reviewer kept apart (started 2026-11-27): 2 todo.
-
-Only a deploy migrates the database, and code in a worktree cannot reach the live one (FOR-101); the reviewer runs in Claude Code's sandbox, in its own clone, kept from the operator's credentials, other projects and the network (FOR-100). Found by the independent review of sprint 67; the owner asked for them before the rest of phase 2 (docs/ROADMAP.md).
-
-The tasks are in `docs/sprints/current.md`.
+None is active.
 
 ## Held or blocked
 
@@ -18,11 +14,11 @@ Nothing is held or blocked.
 
 ## Last finished sprints
 
+- Sprint 68: the database and the reviewer kept apart, finished 2026-11-27: 2 of 2 tasks done.
 - Sprint 67: the core can be left alone, finished 2026-11-27: 8 of 8 tasks done, tag `checkpoint-20261127-sprint-67-the-core-can-be-left-alone`.
 - Sprint 66: the evidence behind a review, finished 2026-11-26: 6 of 6 tasks done, tag `checkpoint-20261126-sprint-66-the-evidence-behind-a-review`.
 - Sprint 65: the method, second part, finished 2026-11-26: 6 of 6 tasks done, tag `checkpoint-20261126-sprint-65-the-method-second-part`.
 - Sprint 64: trial of the new reviewer, finished 2026-11-25: 1 of 1 tasks done, tag `checkpoint-20261125-sprint-64-trial-of-the-new-reviewer`.
-- Sprint 63: the method, first part, finished 2026-11-25: 5 of 5 tasks done, tag `checkpoint-20261125-sprint-63-the-method-first-part`.
 
 ## Where the rest is
 

@@ -6,7 +6,7 @@ The work filed in Foreman's backlog and not yet in a sprint, by priority (a lowe
 
 The owner's directions and the design decisions taken with the owner are not tasks. They are one file each in [`docs/directions/`](../directions/README.md).
 
-Filed 1, accepted 14.
+Filed 1, accepted 18.
 
 ## Filed, not accepted (1)
 
@@ -14,7 +14,7 @@ Filed 1, accepted 14.
 |-----|------|------|----------|----------|-------|
 | FOR-43 | Proposal card: the 'Then' row for a send-back and a summary line for earlier proposals | feature | 0 | agent:developer | 2026-11-12 |
 
-## Accepted, not planned (14)
+## Accepted, not planned (18)
 
 | Key | Task | Type | Priority | Filed by | Filed |
 |-----|------|------|----------|----------|-------|
@@ -32,3 +32,7 @@ Filed 1, accepted 14.
 | FOR-90 | Motion for live data | feature | 0 | masis | 2026-11-26 |
 | FOR-98 | A project's own copy of a role says when the shipped role changed under it | feature | 0 | masis | 2026-11-27 |
 | FOR-99 | A merge waiver never applies after the task is unblocked | fix | 0 | masis | 2026-11-27 |
+| FOR-102 | The merge step judges what it merges, not the branch's head | fix | 0 | masis | 2026-11-27 |
+| FOR-103 | A dead worker's engine lease is taken over at once on the same machine | fix | 0 | masis | 2026-11-27 |
+| FOR-104 | Reads before the first edit: a heredoc piped into Python, and &> and >\| writes | fix | 0 | masis | 2026-11-27 |
+| FOR-105 | The developer step runs as the operator, unsandboxed | feature | 0 | masis | 2026-11-27 |
