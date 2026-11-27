@@ -7,6 +7,88 @@ memory changes rather than versioned product releases.
 
 <!-- foreman:changelog - sprints below, newest first; earlier history follows -->
 
+## Sprint 67: the core can be left alone (2026-11-27)
+
+### docs-direction-assay-any-client: Assay serves any client; Foreman is its first
+
+- `docs/directions/assay-and-foreman.md` records the owner's decision of 2026-11-27: nothing in Assay names Foreman or bends to it. Foreman reads Assay's public API, and anything more it needs is built on Foreman's side.
+- Assay's S4 is shaped from its own specification (briefing with a snapshot id, bindings with the client's revision and that snapshot, findings any client reads).
+
+### docs-roadmap-timeline-2026-11-27: The roadmap's order is one timeline
+
+- `docs/ROADMAP.md` lays every stage and owner direction on one timeline by priority and dependency (owner, 2026-11-27): fixes to the core, the rest of the method, sprint workflows, people, resources and deployment targets, the central server, releases.
+- The spec's architect role is recorded as not built; the manager proposes a sprint's tasks instead (`docs/guide/conflicts-spec-design-code.md`).
+
+### fix-sprint-66-gatever: Every approval names the version it was given on, and the merge lands only that
+
+- Every Approve on the dashboard names a version: Needs you, the sprint's list and board send the commit the row shows; the task page sends the version the person is looking at ("Approving abc1234"), kept while the page reloads, taken from the diff when Changes is opened, and says when the branch moved or the plan changed since, with "Look at ..." to take the new one.
+- The merge step refuses a branch that moved after its approval: the task goes back to the gate, blocked with "The branch moved after it was approved".
+- A plan's version is the run that wrote it as well as its text, so a redone plan is a new version; the run is the last agent run of the step before the gate.
+- The manager's approval proposals record the version when proposed; a confirmation after the branch or plan changed is refused.
+- A malformed version (too short, not hexadecimal, or at a gate with nothing to name) is a 400 with the reason. An approval that named no version says what it was recorded against: "Approved FOR-51 (recorded at abc1234)". The Activity row no longer repeats the commit of its commit column.
+- Engine automatic approvals carry the version on their `workflow.gate_auto_approved` record. See `docs/guide/gate-decisions.md`.
+
+### fix-sprint-66-restson: The documents a task rests on: the gaps a review found, closed
+
+- `foreman task list <project> --rests-on PATH` lists the backlog's tasks too (filed, in triage, accepted, declined), under a `Backlog:` line.
+- A merge that changes a document tells tasks in triage as well, and writes one Activity line per changed file however many headings of it the task names.
+- A changed document can be marked as read: "Mark as read at <commit>" beside it on the task page, or `foreman task edit <task> --restamp PATH[#HEADING]`, stamps that entry with the default branch's commit now and ends the notice. Changing only the heading keeps the commit, and the notice.
+- Each entry opens at its own commit, also when one file is named under two headings (`GET /api/v1/tasks/<id>/documents?path=&heading=`).
+- A manager's proposal stamps its documents when it is made, so a merge before it is confirmed is reported to the task. The proposal card lists the documents of a filed or edited task.
+- Refused with the reason: a symbolic link, a project whose repository is not on the machine, a path or heading with a line break. A new sprint whose first tasks name a missing document is not made at all. A path with a `#` is written `path #heading` (or `path #`).
+
+### fix-sprint-66-review: A review's checks are really checked (sprint 66, after an independent review)
+
+- A cited command counts only when it ran as a whole command, program and arguments word for word (option flags, a `cd`, a pipe, a redirection and a shell wrapper do not matter). `echo pytest x`, `grep 'pytest x'` or one test file no longer count as running `pytest x` or the suite.
+- A replay that resumes the review's session is checked against the whole session's commands; it was not checked at all.
+- The reviewer's prompt states its own role's rule. A role that cannot run commands cannot ask for `ran`. A reviewer role written before criteria had a basis is taken on its word instead of never approving.
+- A verdict must list each of the task's criteria once, by its text; a bullet that wraps is one criterion.
+- `{previous_output}` is the developer's report for reviewers only; other roles keep the last run's words.
+
+### FOR-66: A test that leaves an asyncio loop running is named, not blamed on a later one
+
+- The intermittent `asyncio.run() cannot be called from a running event loop` failures in `tests/test_meta_agent.py` came from the pytest-playwright plugin, whose sync API keeps a loop running on the worker's main thread (fixed by turning it off by default, 5cb1e2a).
+- `tests/conftest.py` now fails the test that leaves a loop running, by name, so a leak can no longer land on an unrelated test.
+
+### FOR-73: Agents no longer get the operator's Claude Code memory
+
+- Claude Code agents start with auto-memory off (`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`), so a person's private notes for the repository do not reach them.
+- An agent still gets its worktree's own `CLAUDE.md` and `AGENTS.md`; the MANUAL says what an agent is given.
+
+### FOR-74: Reads before the first edit are counted right
+
+- A Codex command is counted once, not as both the command and its tool use.
+- A `>` inside quotes is no longer a write, and a newline separates commands.
+- A Python script that opens a file for writing, `git apply`, `mv`, `cp` and `rm` count as changes.
+
+### FOR-75: The review sandbox is enforced
+
+- A role with `run_scope = "none"` is refused Bash, whatever its tool list says.
+- A push from a sandbox cannot reach a remote: a push to an address goes nowhere, and a push to a configured remote is refused and fails the step, so it is on the task's record.
+- A sandbox left by an engine killed hard is removed when an engine starts for the project again.
+- The MANUAL says what a reviewer can read in a sandbox: the paths the project links, and never a server's admin login.
+
+### FOR-77: A skipped branch update is recorded
+
+- When a task's working copy has uncommitted changes, the update from the default branch is still skipped, but the skip is now recorded as an `engine.branch_sync` event (mode `refresh_skipped_dirty`) and the developer is told to save the work and merge the base.
+
+### FOR-87: Migrations are a deploy step: the store no longer repairs the schema when it opens
+
+- `foreman db migrate` is the only thing that changes the schema; migration 36 replaces the repair the store ran at every open.
+- `foreman serve` and `foreman dashboard` refuse to start when the database's schema version is older or newer than the code's, with a message naming `foreman db migrate`.
+- The MANUAL's database section gives the upgrade steps.
+
+### FOR-91: A worker killed hard leaves no agent behind, and a supervisor restarts it
+
+- A worker killed with SIGKILL (or by the out-of-memory killer) no longer leaves an agent's tools running: a guard per agent group kills the whole group when the worker is gone.
+- Systemd user units for the worker (`foreman-worker@<project>`) and the dashboard ship in `deploy/systemd/`, start at boot and restart after a crash; the MANUAL (6.2) gives the install commands. Installing is the operator's step.
+- Tests: a hard-killed worker leaves no agent or tool of its agent; a restarted worker takes over from a crashed one and resumes its task.
+
+### FOR-97: A branch that moved after its merge was approved goes back to test
+
+- A branch that moves after its merge approval is tested and reviewed again, then comes back to the gate; the person no longer has to unblock it twice.
+- The merge lands the approved commit itself, not whatever the branch holds when git runs.
+
 ## Sprint 66: the evidence behind a review (2026-11-26)
 
 ### docs-direction-assay-and-foreman: Assay and Foreman: a direction

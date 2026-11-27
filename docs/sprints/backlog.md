@@ -6,23 +6,18 @@ The work filed in Foreman's backlog and not yet in a sprint, by priority (a lowe
 
 The owner's directions and the design decisions taken with the owner are not tasks. They are one file each in [`docs/directions/`](../directions/README.md).
 
-Filed 2, accepted 18.
+Filed 1, accepted 14.
 
-## Filed, not accepted (2)
+## Filed, not accepted (1)
 
 | Key | Task | Type | Priority | Filed by | Filed |
 |-----|------|------|----------|----------|-------|
 | FOR-43 | Proposal card: the 'Then' row for a send-back and a summary line for earlier proposals | feature | 0 | agent:developer | 2026-11-12 |
-| FOR-66 | Tests leak a running asyncio loop onto a parallel worker, failing test_meta_agent intermittently | fix | 0 | agent:developer | 2026-11-25 |
 
-## Accepted, not planned (18)
+## Accepted, not planned (14)
 
 | Key | Task | Type | Priority | Filed by | Filed |
 |-----|------|------|----------|----------|-------|
-| FOR-73 | Settle whether AGENTS.md reaches the agent once in a task's worktree | spike | 0 | masis | 2026-11-26 |
-| FOR-74 | Reads before the first edit are miscounted in places | fix | 0 | masis | 2026-11-26 |
-| FOR-75 | The review sandbox: run_scope none is not enforced, and pushes are only deterred | fix | 0 | masis | 2026-11-26 |
-| FOR-77 | A branch is not brought up to date when its working copy is dirty | fix | 0 | masis | 2026-11-26 |
 | FOR-78 | Decide whether "This machine" settings stay read-only on the page | spike | 0 | masis | 2026-11-26 |
 | FOR-79 | A task moves from one sprint to another directly | feature | 0 | masis | 2026-11-26 |
 | FOR-80 | Codex records its cost as 0 | fix | 0 | masis | 2026-11-26 |
@@ -32,8 +27,8 @@ Filed 2, accepted 18.
 | FOR-84 | Trust per access token | feature | 0 | masis | 2026-11-26 |
 | FOR-85 | Browser tests for the current dashboard | chore | 0 | masis | 2026-11-26 |
 | FOR-86 | Types in the frontend | chore | 0 | masis | 2026-11-26 |
-| FOR-87 | Migrations are a deploy step, not a repair at every open | refactor | 0 | masis | 2026-11-26 |
 | FOR-88 | The database lives outside the repository's folder | chore | 0 | masis | 2026-11-26 |
 | FOR-89 | The sprint stream wakes on a write instead of polling | refactor | 0 | masis | 2026-11-26 |
 | FOR-90 | Motion for live data | feature | 0 | masis | 2026-11-26 |
-| FOR-91 | A worker killed hard leaves no agent behind, and a supervisor restarts it | feature | 0 | masis | 2026-11-26 |
+| FOR-98 | A project's own copy of a role says when the shipped role changed under it | feature | 0 | masis | 2026-11-27 |
+| FOR-99 | A merge waiver never applies after the task is unblocked | fix | 0 | masis | 2026-11-27 |

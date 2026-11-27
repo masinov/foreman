@@ -6,11 +6,7 @@ Project: Foreman. Default branch: main. Schema version: 35.
 
 ## Active sprint
 
-Sprint 67: the core can be left alone (started 2026-11-27): 8 todo.
-
-The engine runs unattended safely: a supervisor restarts the worker and a hard kill leaves no agent; the review sandbox is enforced; a branch moved after approval is tested and reviewed again; skipped branch updates are recorded; agents no longer get the operator's memory; schema changes are a deploy step; the suite is stable; reads are counted right. Roadmap phase 1 (docs/ROADMAP.md, timeline from 2026-11-27).
-
-The tasks are in `docs/sprints/current.md`.
+None is active.
 
 ## Held or blocked
 
@@ -18,11 +14,11 @@ Nothing is held or blocked.
 
 ## Last finished sprints
 
+- Sprint 67: the core can be left alone, finished 2026-11-27: 8 of 8 tasks done.
 - Sprint 66: the evidence behind a review, finished 2026-11-26: 6 of 6 tasks done, tag `checkpoint-20261126-sprint-66-the-evidence-behind-a-review`.
 - Sprint 65: the method, second part, finished 2026-11-26: 6 of 6 tasks done, tag `checkpoint-20261126-sprint-65-the-method-second-part`.
 - Sprint 64: trial of the new reviewer, finished 2026-11-25: 1 of 1 tasks done, tag `checkpoint-20261125-sprint-64-trial-of-the-new-reviewer`.
 - Sprint 63: the method, first part, finished 2026-11-25: 5 of 5 tasks done, tag `checkpoint-20261125-sprint-63-the-method-first-part`.
-- Sprint 62: finish what's there, finished 2026-11-24: 10 of 10 tasks done, tag `checkpoint-20261124-sprint-62-finish-what-s-there`.
 
 ## Where the rest is
 
