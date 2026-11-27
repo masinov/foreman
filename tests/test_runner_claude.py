@@ -251,6 +251,21 @@ class ClaudeCodeRunnerTests(unittest.TestCase):
         self.assertGreaterEqual(int(env["BASH_DEFAULT_TIMEOUT_MS"]), 600_000)
         self.assertGreaterEqual(int(env["BASH_MAX_TIMEOUT_MS"]), int(env["BASH_DEFAULT_TIMEOUT_MS"]))
 
+    def test_the_agent_is_started_with_auto_memory_off(self) -> None:
+        temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(temp_dir.cleanup)
+        config = self.create_config(Path(temp_dir.name))
+        process = _FakeProcess(
+            lines=[json.dumps({"type": "result", "is_error": False, "session_id": "s", "result": "TASK_COMPLETE"}) + "\n"]
+        )
+        popen = _PopenRecorder(process)
+        runner = ClaudeCodeRunner(popen_factory=popen, clock=lambda: 0.0, which=lambda _: "/usr/bin/claude")
+
+        list(runner.run(config))
+
+        self.assertEqual(popen.calls[0][1]["env"]["CLAUDE_CODE_DISABLE_AUTO_MEMORY"], "1")
+        self.assertNotIn("--bare", popen.calls[0][0][0])
+
     def test_the_agent_gets_no_editor_pager_or_prompt_unless_the_role_sets_one(self) -> None:
         temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(temp_dir.cleanup)

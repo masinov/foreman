@@ -187,6 +187,17 @@ A single step executes like this:
 Built-in (non-agent) steps are prefixed `_builtin:` — `_builtin:run_tests`,
 `_builtin:merge`, `_builtin:mark_done`, `_builtin:human_gate`.
 
+### What an agent is given (the runner)
+
+A Claude Code agent starts in the task's worktree. It is given that
+worktree's own `CLAUDE.md` and `AGENTS.md`, once each (the main checkout's
+copies are not loaded), and the prompt Foreman builds. It is **not** given the
+operator's Claude Code memory: the runner starts every Claude Code agent with
+`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, so the notes under
+`~/.claude/projects/<repository path>/memory/` are neither read by the agent
+nor open to its writes. (`--bare` is not used: it also stops `CLAUDE.md`
+loading.) A role's `[agent.env]` can set the variable back to `0`.
+
 ---
 
 ## 5. Data model
@@ -582,6 +593,43 @@ Exit codes: `0` on a clean stop (including SIGTERM), `1` when the lock is
 refused, when it is lost to another engine, or on a project-level error.
 
 ---
+
+
+### 6.2 Keeping the worker and the dashboard running (systemd)
+
+`deploy/systemd/` holds two systemd **user** units: `foreman-worker@.service`
+(one instance per project, `foreman serve <project>`) and
+`foreman-dashboard.service`. Both start at boot and start again after any
+exit, a crash or a SIGKILL included, ten seconds later; after ten starts in ten
+minutes systemd gives up, and the dashboard says "no worker" with Restart.
+`foreman serve` exits 0 when ended with `foreman engine shutdown`, so the unit
+starts it again: ending a worker holds nothing (ADR-0043). A worker started
+again takes over the project's engine lock when the dead one's lease has
+expired and carries on the task it was on, as after any engine restart.
+
+Installing them is your step; Foreman does not do it. From the checkout, with
+`foreman` in `./venv/bin`:
+
+```bash
+mkdir -p ~/.config/systemd/user
+for f in deploy/systemd/*.service; do
+  sed "s|@REPO@|$PWD|g; s|@FOREMAN@|$PWD/venv/bin/foreman|g" "$f" \
+    > ~/.config/systemd/user/$(basename "$f")
+done
+systemctl --user daemon-reload
+systemctl --user enable --now foreman-dashboard.service foreman-worker@foreman.service
+loginctl enable-linger "$USER"     # start at boot, before you log in
+systemctl --user status foreman-worker@foreman.service
+journalctl --user -u foreman-worker@foreman.service -f
+```
+
+Replace `foreman` in `foreman-worker@foreman.service` with the project id. Run
+`foreman db migrate` before starting after an update (section 20). To remove:
+`systemctl --user disable --now <unit>` and delete the file.
+
+A killed worker leaves no agent behind: each agent's process group has a small
+guard process that kills the group (the agent and every tool it started) when
+the worker's end of a pipe closes.
 
 ## 7. Roles
 
@@ -1584,6 +1632,13 @@ foreman db version          # current applied schema version
 foreman db migrate          # apply any pending migrations
 ```
 
+**Upgrade steps.** Migrating is a deploy step: stop `foreman serve` and the
+dashboard, update Foreman, run `foreman db migrate`, start them again. The
+store no longer repairs the schema when it opens. `foreman serve` and
+`foreman dashboard` check the schema version when they start and refuse, with
+a message naming `foreman db migrate`, when the database is older than the
+code (run it) or newer (upgrade Foreman; a database cannot be taken back).
+
 Each migration is applied atomically: its statements and its ledger row run
 inside one `BEGIN IMMEDIATE` transaction, so a failing migration leaves the
 database at the previous version and raises `MigrationError`. Two processes
@@ -1932,6 +1987,27 @@ changes your interpreter and every other task's. Use it for tooling that is
 expensive to build and genuinely read-only; prefer `worktree_setup_command`
 for anything a task might modify. This repository uses the setup command above
 and leaves `worktree_link_paths` empty.
+
+#### What a reviewer can read in its sandbox
+
+The code reviewer (`run_scope = "sandbox"`) runs in a throwaway copy of the
+commit under review. The copy holds the committed files and **the paths the
+project lists in `worktree_link_paths`**, and nothing else of yours. The
+reviewer can read those paths, because a project's tests can need them (Assay's
+tests read its `.env`, the application's own login).
+
+A server's admin login (Assay's `.env.admin`) or any other secret is **never
+linked**: do not list one in `worktree_link_paths`. The reviewer has Bash, so
+whatever is linked, it can read.
+
+The sandbox is enforced, not only asked for:
+
+- `run_scope = "none"` removes Bash from the agent whatever its tool list says.
+- A push to an address given on the command line cannot reach anything. A push
+  to a configured remote goes to an empty repository of the sandbox's own and
+  fails the step with "tried to push", so the attempt is on the task's record.
+- A sandbox a killed engine left behind is removed when an engine starts for
+  the project again.
 
 ### Bounding disk use
 

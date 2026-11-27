@@ -34,6 +34,17 @@ class TaskWorktrees:
             self.managers[project.id] = manager
         return manager
 
+    def remove_stale_sandboxes(self, project: Project) -> None:
+        """Remove the review sandboxes an engine killed hard left behind.
+
+        Runs at an engine's startup, under the project's lock, when no step of
+        the project can be running one.
+        """
+
+        manager = self.manager(project)
+        if manager.is_git_repository():
+            manager.remove_stale_sandboxes()
+
     def ensure(self, project: Project, task: Task) -> Path | None:
         """Return the task's own checkout, creating it on the first develop visit.
 

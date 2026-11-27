@@ -178,6 +178,58 @@ class ManagedProcessTests(unittest.TestCase):
             proc.kill()
             proc.stdout.close()
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "process groups and /proc are Linux-only")
+    def test_a_worker_killed_hard_leaves_no_agent_or_tool_of_its_agent_running(self) -> None:
+        """ADR-0043: the worker is SIGKILLed; nothing it started may keep running.
+
+        The agent starts a tool of its own (a grandchild of the worker). The
+        parent-death signal reaches only the agent, so the group guard must
+        reach the tool.
+        """
+
+        agent = (
+            "import subprocess, time\n"
+            "tool = subprocess.Popen(['sleep', '60'])\n"
+            "print(tool.pid, flush=True)\n"
+            "time.sleep(60)\n"
+        )
+        worker = (
+            "import subprocess, sys, time\n"
+            "from foreman.runner.process import ManagedProcess, popen_kwargs\n"
+            f"proc = subprocess.Popen([sys.executable, '-c', {agent!r}], **popen_kwargs(cwd='.'))\n"
+            "managed = ManagedProcess(proc, name='agent')\n"
+            "print(proc.pid, flush=True)\n"
+            "print(managed.readline(timeout=10).strip(), flush=True)\n"
+            "time.sleep(60)\n"
+        )
+        proc = subprocess.Popen(
+            [sys.executable, "-c", worker],
+            stdout=subprocess.PIPE,
+            text=True,
+            cwd=str(Path(__file__).resolve().parent.parent),
+        )
+        pids: list[int] = []
+        try:
+            agent_pid = int(proc.stdout.readline().strip())
+            tool_pid = int(proc.stdout.readline().strip())
+            pids = [agent_pid, tool_pid]
+            self.assertTrue(all(_pid_is_alive(pid) for pid in pids))
+            proc.kill()
+            proc.wait(timeout=5)
+            for pid in pids:
+                self.assertTrue(
+                    _wait_until(lambda pid=pid: not _pid_is_alive(pid), timeout=8.0),
+                    f"process {pid} still running after the worker was killed",
+                )
+        finally:
+            proc.kill()
+            proc.stdout.close()
+            for pid in pids:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
+
     def test_a_child_started_off_the_main_thread_is_not_bound_to_that_thread(self) -> None:
         """The parent-death signal follows the starting thread, so only main may set it."""
 

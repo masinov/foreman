@@ -68,6 +68,53 @@ class ClassifyCommandTests(unittest.TestCase):
                 self.assertIsNone(classify_command(line))
 
 
+class MiscountedCasesTests(unittest.TestCase):
+    def test_a_greater_than_inside_quotes_is_not_a_write(self) -> None:
+        for line in [
+            "grep -rn '->' foreman",
+            'rg "a > b" docs',
+            "grep -n \"x >> y\" foreman/a.py",
+        ]:
+            with self.subTest(line=line):
+                self.assertEqual(classify_command(line), "read")
+        self.assertEqual(classify_command("echo 'a' > 'out > file.txt'"), "change")
+
+    def test_newlines_separate_commands(self) -> None:
+        self.assertEqual(classify_command("cat a.txt\nls docs"), "read")
+        self.assertEqual(classify_command("cat a.txt\nsed -i s/a/b/ a.txt"), "change")
+        self.assertEqual(classify_command("cat a.txt\nmkdir x"), None)
+        self.assertEqual(classify_command("cat <<'EOF'\nrm -rf x\nEOF"), "read")
+
+    def test_scripts_and_file_commands_are_changes(self) -> None:
+        for line in [
+            "python3 - <<'EOF'\nfrom pathlib import Path\nwith open('a.py', 'w') as f:\n    f.write('x')\nEOF",
+            "./venv/bin/python - <<'EOF'\nPath('a').write_text('x')\nEOF",
+            "python3 -c \"open('a','w').write('x')\"",
+            "git apply fix.patch",
+            "git apply - <<'EOF'\ndiff\nEOF",
+            "mv a.py b.py",
+            "cp a.py b.py",
+            "rm -f a.py",
+            "git status\nrm a.py",
+        ]:
+            with self.subTest(line=line):
+                self.assertEqual(classify_command(line), "change")
+
+    def test_a_python_script_that_only_reads_is_not_a_change(self) -> None:
+        self.assertIsNone(classify_command("python3 - <<'EOF'\nprint(open('a.py').read())\nEOF"))
+        self.assertEqual(classify_command("git apply --check fix.patch"), "read")
+
+    def test_a_codex_command_is_counted_once(self) -> None:
+        events = [
+            command("rg -n foo ."),
+            tool("commandExecution", input={"command": "rg -n foo .", "type": "commandExecution"}),
+            command("cat a.py"),
+            tool("commandExecution", input={"command": "cat a.py"}),
+            command("git apply x.patch"),
+        ]
+        self.assertEqual(reads_before_first_change(events).payload(), {"reads": 2, "edited": True})
+
+
 class ReadsBeforeFirstChangeTests(unittest.TestCase):
     def test_claude_code_tool_events(self) -> None:
         events = [

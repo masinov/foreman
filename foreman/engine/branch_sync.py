@@ -179,7 +179,33 @@ def refresh_task_branch(
     if behind <= 0:
         return carried_output, None
     if not is_worktree_clean(work_dir):
-        return carried_output, None
+        # A cut-off develop pass left uncommitted work. Merging over it is not
+        # safe, so the update waits; say so in the record and tell the
+        # developer to save the work and bring the branch up to date.
+        guidance = append_feedback_note(
+            carried_output,
+            (
+                f"Branch {branch!r} is {behind} commit(s) behind "
+                f"{project.default_branch!r}, but its working tree has uncommitted "
+                "changes (an earlier pass was cut off), so Foreman did not update it. "
+                "Commit or discard that work, then merge "
+                f"{project.default_branch!r} into the branch and resolve any conflict."
+            ),
+        )
+        return (
+            guidance,
+            (
+                "engine.branch_sync",
+                {
+                    "step": step,
+                    "branch": branch,
+                    "target": project.default_branch,
+                    "mode": "refresh_skipped_dirty",
+                    "commits_behind": behind,
+                    "detail": "Update skipped: the working tree has uncommitted changes.",
+                },
+            ),
+        )
 
     sync_result = sync_branch_with_base(work_dir, branch, project.default_branch)
     payload = {

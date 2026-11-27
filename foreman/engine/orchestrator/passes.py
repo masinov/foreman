@@ -98,6 +98,7 @@ class ProjectPass(OrchestratorBase):
         if maintenance:
             self.retention.prune_old_history(project, settings=settings)
             self.recovery.recover_orphaned_tasks(project.id)
+            self.task_worktrees.remove_stale_sandboxes(project)
 
         executed_task_ids: list[str] = []
         blocked_task_ids: list[str] = []
