@@ -24,6 +24,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 
 WIDTHS = ((1440, 900), (390, 844))
@@ -45,7 +46,18 @@ def browser_proxy() -> dict[str, str] | None:
     )
     if not server:
         return None
-    return {"server": server, "bypass": "127.0.0.1,localhost"}
+    # The browser takes a proxy's login apart from its address; Claude Code's
+    # sandbox proxy has one in its URL (``http://user:password@127.0.0.1:3128``).
+    parts = urllib.parse.urlsplit(server)
+    proxy = {"server": server, "bypass": "127.0.0.1,localhost"}
+    if parts.username:
+        netloc = parts.hostname or ""
+        if parts.port:
+            netloc = f"{netloc}:{parts.port}"
+        proxy["server"] = urllib.parse.urlunsplit((parts.scheme, netloc, "", "", ""))
+        proxy["username"] = urllib.parse.unquote(parts.username)
+        proxy["password"] = urllib.parse.unquote(parts.password or "")
+    return proxy
 
 
 def free_port() -> int:

@@ -27,6 +27,20 @@ class BrowserProxyTests(unittest.TestCase):
                 {"server": "http://localhost:3128", "bypass": "127.0.0.1,localhost"},
             )
 
+    def test_a_login_in_the_proxys_address_is_given_apart(self) -> None:
+        env = {k: v for k, v in os.environ.items() if k not in PROXY_NAMES}
+        env["HTTPS_PROXY"] = "http://srt.abc:s%3Acret@127.0.0.1:3128"
+        with mock.patch.dict(os.environ, env, clear=True):
+            self.assertEqual(
+                review_screenshots.browser_proxy(),
+                {
+                    "server": "http://127.0.0.1:3128",
+                    "bypass": "127.0.0.1,localhost",
+                    "username": "srt.abc",
+                    "password": "s:cret",
+                },
+            )
+
     def test_without_a_proxy_the_browser_goes_direct(self) -> None:
         env = {k: v for k, v in os.environ.items() if k not in PROXY_NAMES}
         with mock.patch.dict(os.environ, env, clear=True):
