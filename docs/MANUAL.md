@@ -1933,6 +1933,27 @@ expensive to build and genuinely read-only; prefer `worktree_setup_command`
 for anything a task might modify. This repository uses the setup command above
 and leaves `worktree_link_paths` empty.
 
+#### What a reviewer can read in its sandbox
+
+The code reviewer (`run_scope = "sandbox"`) runs in a throwaway copy of the
+commit under review. The copy holds the committed files and **the paths the
+project lists in `worktree_link_paths`**, and nothing else of yours. The
+reviewer can read those paths, because a project's tests can need them (Assay's
+tests read its `.env`, the application's own login).
+
+A server's admin login (Assay's `.env.admin`) or any other secret is **never
+linked**: do not list one in `worktree_link_paths`. The reviewer has Bash, so
+whatever is linked, it can read.
+
+The sandbox is enforced, not only asked for:
+
+- `run_scope = "none"` removes Bash from the agent whatever its tool list says.
+- A push to an address given on the command line cannot reach anything. A push
+  to a configured remote goes to an empty repository of the sandbox's own and
+  fails the step with "tried to push", so the attempt is on the task's record.
+- A sandbox a killed engine left behind is removed when an engine starts for
+  the project again.
+
 ### Bounding disk use
 
 One live task means one full checkout, plus whatever `worktree_setup_command`
