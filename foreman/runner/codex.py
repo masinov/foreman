@@ -466,7 +466,19 @@ class _JsonRpcClient:
 
 
 def commands_refused(config: AgentRunConfig) -> bool:
-    """Whether the role may run no command (``run_scope = "none"``, or no tools)."""
+    """Whether the role may run no command at all (``run_scope = "none"``, or no tools).
+
+    Such a role has the shell switched off. A role that is merely not given
+    Bash (a reviewer limited to Read, Grep and Glob) keeps it: Codex has no
+    file-reading tool and reads through the shell, so it runs read-only and
+    asks about everything else (``commands_limited``).
+    """
+
+    return config.no_tools or "Bash" in config.disallowed_tools
+
+
+def commands_limited(config: AgentRunConfig) -> bool:
+    """Whether the role may not run commands of its own choosing (no Bash on its list)."""
 
     return not _tool_permitted(config, "Bash")
 
@@ -481,7 +493,7 @@ def _approval_and_sandbox(config: AgentRunConfig) -> tuple[str, str]:
     Neither can be loosened by a role's flags.
     """
 
-    if commands_refused(config):
+    if commands_limited(config):
         return "untrusted", "read-only"
     if config.sandbox is not None:
         return "never", "workspace-write"
@@ -494,9 +506,17 @@ def _approval_and_sandbox(config: AgentRunConfig) -> tuple[str, str]:
 def _thread_config(config: AgentRunConfig) -> dict[str, Any] | None:
     """Codex configuration overrides for a thread; the network is off where Foreman limits it."""
 
-    if config.sandbox is None and not commands_refused(config):
+    if config.sandbox is None and not commands_limited(config):
         return None
-    overrides: dict[str, Any] = {"sandbox_workspace_write": {"network_access": False}}
+    # No network, and no writes to the host's /tmp or $TMPDIR (shared with
+    # every other process of the user) besides the working copy.
+    overrides: dict[str, Any] = {
+        "sandbox_workspace_write": {
+            "network_access": False,
+            "exclude_slash_tmp": True,
+            "exclude_tmpdir_env_var": True,
+        }
+    }
     if commands_refused(config):
         # No command tool at all, besides the approval policy that declines.
         overrides["features"] = {"shell_tool": False, "unified_exec": False}
@@ -510,16 +530,20 @@ def check_thread_started(thread_result: dict[str, Any], config: AgentRunConfig) 
     step limited to a sandbox must never run under another one.
     """
 
-    if config.sandbox is None and not commands_refused(config):
+    if config.sandbox is None and not commands_limited(config):
         return
     approval, mode = _approval_and_sandbox(config)
     applied = thread_result.get("sandbox")
     kind = applied.get("type") if isinstance(applied, dict) else None
     wanted_kind = {"read-only": "readOnly", "workspace-write": "workspaceWrite"}[mode]
     network = applied.get("networkAccess") if isinstance(applied, dict) else None
+    tmp_open = isinstance(applied, dict) and kind == "workspaceWrite" and (
+        applied.get("excludeSlashTmp") is False or applied.get("excludeTmpdirEnvVar") is False
+    )
     if (
         kind != wanted_kind
         or network not in (False, "restricted")
+        or tmp_open
         or thread_result.get("approvalPolicy") != approval
     ):
         raise InfrastructureError(
@@ -610,7 +634,7 @@ def _approval_response(
         allowed = (
             config.permission_mode == "bypassPermissions"
             and not sandboxed
-            and not commands_refused(config)
+            and not commands_limited(config)
         )
         permissions = params.get("permissions")
         if not isinstance(permissions, dict):

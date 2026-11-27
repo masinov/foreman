@@ -35,7 +35,21 @@ from .base import PreflightError
 SANDBOX_PROGRAMS: tuple[str, ...] = ("bwrap", "socat")
 
 #: Environment variables a sandboxed command never sees: the backends' own keys.
-CREDENTIAL_ENV_PREFIXES: tuple[str, ...] = ("ANTHROPIC_", "OPENAI_", "CLAUDE_CODE_OAUTH")
+CREDENTIAL_ENV_PREFIXES: tuple[str, ...] = (
+    "ANTHROPIC_", "OPENAI_", "CODEX_", "CLAUDE_CODE_OAUTH",
+)
+
+
+def claude_temp_dir(uid: int | None = None) -> Path:
+    """Claude Code's per-user temporary directory, shared by every session of the user.
+
+    It holds every other session's temporary files and scratch work, the
+    operator's own included. A sandboxed step is given a temporary directory
+    inside its clone instead (``TMPDIR`` and ``CLAUDE_CODE_TMPDIR``), and this
+    one is closed to it.
+    """
+
+    return Path(f"/tmp/claude-{os.getuid() if uid is None else uid}")
 
 
 def credential_env_names(env: Mapping[str, str]) -> tuple[str, ...]:
@@ -104,6 +118,13 @@ def closed_paths(
 
     allowed = [_resolved(path) for path in read_paths]
     closed: list[Path] = []
+    roots = [_resolved(root) for root in deny_roots]
+    # A root inside another is covered by it: listed once, not twice.
+    roots = [
+        root for index, root in enumerate(roots)
+        if root not in roots[:index]
+        and not any(other != root and _inside(root, other) for other in roots)
+    ]
 
     def walk(directory: Path) -> None:
         try:
@@ -119,10 +140,13 @@ def closed_paths(
             else:
                 closed.append(child)
 
-    for root in deny_roots:
-        resolved = _resolved(root)
-        if _is_real_directory(resolved):
-            walk(resolved)
+    for root in roots:
+        if not any(_inside(allow, root) for allow in allowed):
+            # Nothing inside it is opened: one rule closes it whole, and
+            # what is created in it later is closed too.
+            closed.append(root)
+        elif _is_real_directory(root):
+            walk(root)
     return tuple(closed)
 
 
@@ -141,21 +165,16 @@ def socket_policy(policy: SandboxPolicy, *, uid: int | None = None) -> SandboxPo
     the only wall: a session bus or a container engine is an escape (checked
     on 2026-11-27: the user's session bus was reachable). So ``/run`` and the
     temporary directories are closed to it, except what Claude Code's own
-    sandbox needs there (its proxy sockets, its per-user temporary directory).
+    sandbox needs, which is in the step's own temporary directory
+    (``SandboxPolicy.temp_dir``). Nothing under them is opened again: ``/run/user/<uid>/cc-socks``
+    holds the messaging sockets of the operator's own Claude Code sessions
+    (checked on 2026-11-27), and ``/tmp/claude-<uid>`` every session's files.
     A socket file cannot be hidden by itself, a directory can.
     """
 
-    uid = os.getuid() if uid is None else uid
+    del uid  # kept for callers; nothing per user is opened any more
     roots = tuple(Path(name) for name in SOCKET_DIRECTORIES if Path(name).is_dir())
-    return replace(
-        policy,
-        deny_roots=(*policy.deny_roots, *roots),
-        read_paths=(
-            *policy.read_paths,
-            Path(f"/run/user/{uid}/cc-socks"),
-            Path(f"/tmp/claude-{uid}"),
-        ),
-    )
+    return replace(policy, deny_roots=(*policy.deny_roots, *roots))
 
 
 def _read_rule(path: Path) -> str:
@@ -176,6 +195,11 @@ def claude_settings(policy: SandboxPolicy) -> dict[str, Any]:
 
     if policy.allow_unix_sockets:
         policy = socket_policy(policy)
+    # The shared per-user temporary directory of Claude Code is always closed;
+    # the step has one of its own (``SandboxPolicy.temp_dir``).
+    policy = replace(policy, deny_roots=(*policy.deny_roots, claude_temp_dir()))
+    if policy.temp_dir is not None:
+        policy = replace(policy, read_paths=(*policy.read_paths, policy.temp_dir))
     deny_roots = [str(root) for root in policy.deny_roots]
     allow_read = [str(path) for path in policy.read_paths]
     sandbox: dict[str, Any] = {
@@ -194,7 +218,25 @@ def claude_settings(policy: SandboxPolicy) -> dict[str, Any]:
     rules = [
         _read_rule(path) for path in closed_paths(policy.deny_roots, policy.read_paths)
     ]
-    return {"sandbox": sandbox, "permissions": {"deny": rules}}
+    # No hook runs, the operator's or a branch's: a hook is a command Claude
+    # Code runs itself, outside the sandbox, as the operator (a branch under
+    # review could commit one in .claude/settings.json; seen on 2026-11-27).
+    # The runner also loads no project settings (``--setting-sources user``).
+    return {"disableAllHooks": True, "sandbox": sandbox, "permissions": {"deny": rules}}
+
+
+def sandboxed_process_env(policy: SandboxPolicy) -> dict[str, str]:
+    """The environment that gives a sandboxed step its own temporary directory.
+
+    Claude Code puts its sandbox's temporary directory, its proxy's sockets
+    and the commands' ``TMPDIR`` under ``TMPDIR``/``CLAUDE_CODE_TMPDIR``
+    (``/tmp`` by default, so the shared ``/tmp/claude-<uid>``). Pointed at the
+    step's own directory, its temporary files go with the sandbox.
+    """
+
+    if policy.temp_dir is None:
+        return {}
+    return {"TMPDIR": str(policy.temp_dir), "CLAUDE_CODE_TMPDIR": str(policy.temp_dir)}
 
 
 def host_environment_names(env: Mapping[str, str] | None = None) -> tuple[str, ...]:

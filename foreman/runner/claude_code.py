@@ -15,6 +15,7 @@ import subprocess
 import time
 from typing import Any
 
+from ..domain.sandbox import ACCEPT_OPEN_READS_FLAG
 from .base import (
     AgentEvent,
     AgentRunConfig,
@@ -25,7 +26,12 @@ from .base import (
     QuotaExhaustedError,
 )
 from .env import agent_environment
-from .sandbox import check_machine, claude_settings, credential_env_names
+from .sandbox import (
+    check_machine,
+    claude_settings,
+    credential_env_names,
+    sandboxed_process_env,
+)
 from .process import DEFAULT_TICK_SECONDS, ManagedProcess, popen_kwargs
 from .signals import extract_signal_events
 
@@ -170,7 +176,13 @@ class ClaudeCodeRunner(AgentRunner):
             command.extend(
                 ["--settings", json.dumps(self.sandbox_settings(config, credential_names))]
             )
+            # The clone is the working directory: its .claude/settings.json
+            # is the branch under review's, and may not set anything (hooks,
+            # a status line, an apiKeyHelper all run outside the sandbox).
+            command.extend(["--setting-sources", "user"])
         flags = dict(config.extra_flags)
+        # Foreman's own flag (Codex only), never one of the CLI's.
+        flags.pop(ACCEPT_OPEN_READS_FLAG, None)
         if flags.pop("strict_mcp_config", True) is not False:
             # Only the MCP servers a role names with ``mcp_config``; never the
             # ones the engine's user has connected for themselves. Seen on
@@ -212,6 +224,8 @@ class ClaudeCodeRunner(AgentRunner):
             check_machine(self._which)
         env = {**HEADLESS_STEP_ENV, **config.env}
         _check_shell_prefix(env["CLAUDE_CODE_SHELL_PREFIX"])
+        if config.sandbox is not None:
+            env.update(sandboxed_process_env(config.sandbox))
         process_env = agent_environment(env)
         command = self.build_command(
             config,

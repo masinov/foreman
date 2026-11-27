@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ HOST_LEVEL_SETTINGS: frozenset[str] = frozenset(
         "sandbox_allowed_hosts",
         "sandbox_read_paths",
         "sandbox_allow_unix_sockets",
+        "sandbox_database_copy",
     }
 )
 
@@ -61,6 +63,23 @@ def changed_host_level_settings(
 
 class SettingsError(ValueError):
     """Raised when project settings fail validation."""
+
+
+#: The variable that names the database a ``foreman`` command opens when no
+#: ``--db`` is given. Code an agent wrote never gets it, whether it is the
+#: agent, its tests or the setup command: run in a worktree it would reach the
+#: live database (FOR-101). A project cannot pass it through either.
+DATABASE_ENV = "FOREMAN_DB"
+
+#: Names that may not be linked into a worktree: the database (and its journal
+#: files), Foreman's runtime directory and the repository itself.
+_UNLINKABLE_PREFIXES: tuple[str, ...] = (".foreman.db", ".foreman", ".git")
+
+
+def without_database_env(environ: Mapping[str, str]) -> dict[str, str]:
+    """``environ`` without ``FOREMAN_DB``, for a process that runs an agent's code."""
+
+    return {name: value for name, value in environ.items() if name != DATABASE_ENV}
 
 
 def settings_of(project: Project) -> ProjectSettings:
@@ -159,6 +178,11 @@ class ProjectSettings:
     # needs them (the screenshots script); the host's own sockets are closed
     # to the step when this is on. Host-level.
     sandbox_allow_unix_sockets: bool = False
+    # Whether a sandboxed step is given a copy of this project's records in
+    # Foreman's database (``.review/live.db``), for a review script that serves
+    # the dashboard from one. Only the project's own rows, without
+    # credentials or destinations. Host-level.
+    sandbox_database_copy: bool = False
     # The policy matrix (see foreman/policy.py). Each decision names a
     # project default; "auto" lets the engine decide on its own and records
     # the decision, "human" routes it to a person. `policy_rules` refines the
@@ -237,6 +261,9 @@ class ProjectSettings:
             sandbox_read_paths=_validate_read_paths(raw.get("sandbox_read_paths")),
             sandbox_allow_unix_sockets=_validate_bool(
                 raw.get("sandbox_allow_unix_sockets"), key="sandbox_allow_unix_sockets"
+            ),
+            sandbox_database_copy=_validate_bool(
+                raw.get("sandbox_database_copy"), key="sandbox_database_copy"
             ),
             merge_approval=_validate_policy_default(raw, "merge_approval"),
             plan_approval=_validate_policy_default(raw, "plan_approval"),
@@ -323,6 +350,11 @@ def _validate_env_names(value: Any) -> tuple[str, ...]:
             raise SettingsError(
                 f"agent_env_passthrough: {entry!r} is not an environment variable name."
             )
+        if name == DATABASE_ENV:
+            raise SettingsError(
+                f"agent_env_passthrough: {DATABASE_ENV} is never passed to an agent: "
+                "code run in a worktree must not reach the live database."
+            )
         if name not in names:
             names.append(name)
     return tuple(names)
@@ -393,6 +425,12 @@ def _validate_worktree_link_paths(value: Any) -> tuple[str, ...]:
             raise SettingsError(
                 f"worktree_link_paths entry {name!r} must be a relative path inside "
                 "the repository."
+            )
+        if candidate.parts and candidate.parts[0].startswith(_UNLINKABLE_PREFIXES):
+            raise SettingsError(
+                f"worktree_link_paths entry {name!r} may not be linked: Foreman's "
+                "database, its runtime directory and the repository's .git stay out "
+                "of a worktree's reach."
             )
         names.append(name)
     return tuple(names)

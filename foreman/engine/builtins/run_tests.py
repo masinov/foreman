@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ...domain.models import Project
-from ...domain.settings import settings_of
+from ...domain.settings import settings_of, without_database_env
 from ...runner.process import ManagedProcess
 from .base import BuiltinEventRecord, BuiltinExecutorBase, BuiltinResult, _safe_head_sha
 from .test_report import REPORT_DIR_ENV, read_reports
@@ -127,7 +127,7 @@ class RunTestsStep(BuiltinExecutorBase):
             errors="replace",
             bufsize=1,
             start_new_session=True,
-            env={**os.environ, REPORT_DIR_ENV: str(report_dir)},
+            env={**without_database_env(os.environ), REPORT_DIR_ENV: str(report_dir)},
         )
         assert proc.stdout is not None
         assert proc.stderr is not None

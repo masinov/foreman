@@ -54,6 +54,7 @@ const MACHINE_ROWS = {
   sandbox_allowed_hosts: { label: "Hosts a review sandbox may reach", empty: "None" },
   sandbox_read_paths: { label: "Extra paths a review sandbox may read", empty: "None" },
   sandbox_allow_unix_sockets: { label: "A review sandbox may use unix sockets (a browser)", empty: "No" },
+  sandbox_database_copy: { label: "A review sandbox gets a copy of this project's records", empty: "No" },
 };
 
 /**

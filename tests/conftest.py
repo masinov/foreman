@@ -42,6 +42,23 @@ def scrub_git_environment(environ: "os._Environ[str] | dict[str, str]") -> None:
 
 scrub_git_environment(os.environ)
 
+# The database a ``foreman`` command opens when given none. Exported where the
+# suite runs (an operator's shell, a worker started with it), every test that
+# resolves a database by discovery would open it instead (FOR-101 review). A
+# test that needs it sets it itself.
+os.environ.pop("FOREMAN_DB", None)
+
+# An identity for the commits the tests make in their throwaway repositories,
+# so they do not rest on the operator's ~/.gitconfig: a review sandbox cannot
+# read it, and four tests failed there for want of one (sprint 68 review).
+for _name, _value in (
+    ("GIT_AUTHOR_NAME", "Foreman Tests"),
+    ("GIT_AUTHOR_EMAIL", "tests@foreman.invalid"),
+    ("GIT_COMMITTER_NAME", "Foreman Tests"),
+    ("GIT_COMMITTER_EMAIL", "tests@foreman.invalid"),
+):
+    os.environ.setdefault(_name, _value)
+
 # Browser tests run only with the plugin on (``-o addopts=""``), and it keeps a
 # loop running by design; they are run on their own (docs/TESTING.md).
 _BROWSER_TESTS = "test_e2e.py"

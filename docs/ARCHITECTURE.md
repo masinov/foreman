@@ -338,8 +338,14 @@ The current runtime supports:
   `Sandbox.check` still compares `refs/heads/<branch>` with the head it had
   when the sandbox opened and **puts it back** if it moved; the step fails
   (`failure_type` `sandbox`). It also runs when the step is killed.
-  `AgentStepRunner._give_database_copy` puts a SQLite backup of the database at
-  `.review/live.db`.
+  For a project with `sandbox_database_copy`, `AgentStepRunner._give_database_copy`
+  puts a SQLite backup of the database at `.review/live.db`, with only that
+  project's rows and without tokens, notification destinations or the
+  manager's conversations, vacuumed. The step runs with `--setting-sources
+  user` and `disableAllHooks` (the branch's `.claude/settings.json` sets
+  nothing), a short temporary directory of its own (`SandboxPolicy.temp_dir`),
+  and without the variables of the Claude Code session the engine runs in
+  (`runner/env.py`, `is_session_variable`).
 - Codex: `runner/codex.py` starts a sandboxed step in `workspace-write` without
   network and approval `never`, a step with no command tool in `read-only` with
   approval `untrusted` and the shell tools off, declines every approval
