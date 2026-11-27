@@ -16,7 +16,6 @@ from foreman.cli.common import DB_ENV, discover_repo_local_db_path, resolve_db_p
 from foreman.runner.env import agent_environment
 from foreman.store import ForemanStore
 from foreman.store.base import _SCHEMA_MIGRATIONS_DDL
-from foreman.store.base import _SCHEMA_MIGRATIONS_DDL
 from foreman.store.migrations import MIGRATIONS
 
 LATEST = max(m[0] for m in MIGRATIONS)
