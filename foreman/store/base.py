@@ -255,17 +255,55 @@ class StoreBase:
         self._connection.close()
 
     def initialize(self) -> list[int]:
-        """Create or upgrade the schema to the latest migration version.
+        """Open the database for use; create it if it is new, never migrate it.
 
-        Returns the list of migration version numbers applied in this call.
-        An already up-to-date database returns an empty list.
+        A new, empty database is created at the latest schema version and the
+        migrations applied are returned. An existing database at any other
+        version is refused with ``SchemaVersionError`` and left unchanged:
+        migrating is a deploy step that only ``foreman db migrate`` does
+        (``upgrade``). A database at the latest version returns an empty list.
         """
 
+        if self._is_new_database():
+            return self.upgrade()
+        self.check_schema()
+        self._backfill_task_keys()
+        return []
+
+    def upgrade(self) -> list[int]:
+        """Apply the pending migrations: what ``foreman db migrate`` does.
+
+        The only path that changes the schema of an existing database. A
+        database newer than this code is refused, as ``check_schema`` says.
+        """
+
+        self._refuse_newer_schema()
         with self._connection:
             self._connection.executescript(_SCHEMA_MIGRATIONS_DDL)
         applied = self.migrate()
         self._backfill_task_keys()
         return applied
+
+    def _is_new_database(self) -> bool:
+        """True for a file with no tables of any kind, or only an empty ledger."""
+
+        rows = self._connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        names = {row["name"] for row in rows}
+        if not names:
+            return True
+        return names == {"schema_migrations"} and self.schema_version() == 0
+
+    def _refuse_newer_schema(self) -> None:
+        latest = max((v for v, _, _ in MIGRATIONS), default=0)
+        try:
+            found = self.schema_version()
+        except sqlite3.OperationalError:
+            return
+        if found > latest:
+            self.check_schema()
 
     def schema_version(self) -> int:
         """Return the highest migration version applied to this database, or 0."""

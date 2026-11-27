@@ -26,6 +26,10 @@ from ..store import ForemanStore
 #: Exit code of ``foreman run`` when the pass stopped because the agent backend's
 #: usage quota ran out (BSD ``EX_TEMPFAIL``): nothing is broken, try again later.
 EXIT_QUOTA_EXHAUSTED = 75
+#: Exit status of a worker or dashboard that refused the database's schema
+#: (sysexits EX_CONFIG). The systemd units name it in
+#: ``RestartPreventExitStatus=``: restarting cannot fix a schema.
+EXIT_SCHEMA_REFUSED = 78
 
 
 #: A database path a parent process hands down to the commands it runs.
@@ -96,11 +100,21 @@ def iter_parent_paths(start_path: Path) -> tuple[Path, ...]:
 
 
 def discover_repo_local_db_path(start_path: Path | None = None) -> Path | None:
+    """The database of the repository the command runs in, never a parent's.
+
+    The walk up stops at the first directory that is a repository root (a
+    ``.git`` file or directory): a task worktree or sandbox under
+    ``.foreman/worktrees/`` is its own root, so code run there cannot reach the
+    main checkout's live database by walking up.
+    """
+
     base = start_path or Path.cwd()
     for candidate in iter_parent_paths(base):
         db_path = candidate / DEFAULT_DB_FILENAME
         if db_path.is_file():
             return db_path
+        if (candidate / ".git").exists():
+            return None
     return None
 
 

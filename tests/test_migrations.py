@@ -26,7 +26,7 @@ from foreman.store import ForemanStore, _SCHEMA_MIGRATIONS_DDL
 
 def _make_store(db_path: str | Path = ":memory:") -> ForemanStore:
     store = ForemanStore(db_path)
-    store.initialize()
+    store.upgrade()
     return store
 
 
@@ -101,9 +101,9 @@ class IdempotencyTests(unittest.TestCase):
 
     def test_initialize_twice_is_idempotent(self) -> None:
         with ForemanStore(":memory:") as store:
-            store.initialize()
+            store.upgrade()
             version_after_first = store.schema_version()
-            store.initialize()
+            store.upgrade()
             version_after_second = store.schema_version()
             self.assertEqual(version_after_first, version_after_second)
 
@@ -114,8 +114,8 @@ class IdempotencyTests(unittest.TestCase):
 
     def test_schema_migrations_rows_not_duplicated_on_second_initialize(self) -> None:
         with ForemanStore(":memory:") as store:
-            store.initialize()
-            store.initialize()
+            store.upgrade()
+            store.upgrade()
             row = store._connection.execute(
                 "SELECT COUNT(*) AS n FROM schema_migrations"
             ).fetchone()
@@ -125,10 +125,10 @@ class IdempotencyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "foreman.db"
             with ForemanStore(db_path) as store:
-                store.initialize()
+                store.upgrade()
                 v1 = store.schema_version()
             with ForemanStore(db_path) as store:
-                store.initialize()
+                store.upgrade()
                 v2 = store.schema_version()
             self.assertEqual(v1, v2)
 
@@ -280,7 +280,7 @@ class DropTaskComplexityTests(unittest.TestCase):
             self._database_before(db_path)
 
             with ForemanStore(db_path) as store:
-                store.initialize()
+                store.upgrade()
                 connection = store._connection
                 columns = [row[1] for row in connection.execute("PRAGMA table_info(tasks)")]
                 self.assertNotIn("complexity", columns)
@@ -314,7 +314,7 @@ class DropTaskComplexityTests(unittest.TestCase):
                     )
             # Opening it again changes nothing.
             with ForemanStore(db_path) as store:
-                self.assertEqual(store.initialize(), [])
+                self.assertEqual(store.upgrade(), [])
 
 
 class SchemaRepairTests(unittest.TestCase):
@@ -354,7 +354,7 @@ class SchemaRepairTests(unittest.TestCase):
                 conn.close()
 
             with ForemanStore(db_path) as store:
-                store.initialize()
+                store.upgrade()
                 after = {
                     row["name"]
                     for row in store._connection.execute("PRAGMA table_info(tasks)").fetchall()
@@ -406,7 +406,7 @@ class MetaAgentPersistenceMigrationTests(unittest.TestCase):
                 conn.close()
 
             with ForemanStore(db_path) as store:
-                store.initialize()
+                store.upgrade()
                 self.assertEqual(store.schema_version(), len(MIGRATIONS))
                 tables = {
                     row["name"]
@@ -426,7 +426,7 @@ class VocabularyGuardTests(unittest.TestCase):
         self.addCleanup(self._temp.cleanup)
         self.store = ForemanStore(Path(self._temp.name) / "foreman.db")
         self.addCleanup(self.store.close)
-        self.store.initialize()
+        self.store.upgrade()
         self.store.save_project(
             Project(id="p1", name="P", repo_path=self._temp.name, workflow_id="development")
         )
@@ -577,7 +577,7 @@ class BacklogMigrationTests(unittest.TestCase):
 
         self.store = ForemanStore(self.db_path)
         self.addCleanup(self.store.close)
-        self.applied = self.store.initialize()
+        self.applied = self.store.upgrade()
 
     def sprint_of(self, task_id: str) -> Sprint:
         task = self.store.get_task(task_id)
@@ -694,7 +694,7 @@ class SessionCostMigrationTests(unittest.TestCase):
         store.close()
         self.store = ForemanStore(self.db_path)
         self.addCleanup(self.store.close)
-        self.store.initialize()
+        self.store.upgrade()
 
     def _run(self, run_id: str) -> tuple[float, float | None]:
         row = self.store._connection.execute(
@@ -748,7 +748,7 @@ class ProposalMigrationTests(unittest.TestCase):
     def test_an_existing_database_gains_the_table_and_keeps_its_rows(self) -> None:
         self.assertEqual(self.store.schema_version(), 21)
         # Later migrations apply after this one; it is the first to run.
-        applied = self.store.initialize()
+        applied = self.store.upgrade()
         self.assertEqual(applied[0], 22)
         self.assertEqual(applied, [v for v, _, _ in MIGRATIONS if v >= 22])
         self.assertIsNotNone(self.store.get_project("p1"))
@@ -764,10 +764,10 @@ class ProposalMigrationTests(unittest.TestCase):
                 "decided_by", "decided_at", "outcome_json",
             },
         )
-        self.assertEqual(self.store.initialize(), [])
+        self.assertEqual(self.store.upgrade(), [])
 
     def test_a_proposal_round_trips_and_its_state_is_guarded(self) -> None:
-        self.store.initialize()
+        self.store.upgrade()
         proposal = Proposal(
             id="prop-1",
             project_id="p1",

@@ -604,8 +604,12 @@ refused, when it is lost to another engine, or on a project-level error.
 `foreman-dashboard.service`. Both start at boot and start again after any
 exit, a crash or a SIGKILL included, thirty seconds later; after ten starts in
 ten minutes systemd gives up, and the dashboard says "no worker" with Restart.
-A fault that does not pass, such as a database that needs `foreman db migrate`,
-ends there: `journalctl` shows the message.
+A fault that does not pass ends there: `journalctl` shows the message.
+A database whose schema is not this Foreman's (older: run `foreman db
+migrate`; newer: upgrade Foreman) is not retried at all: `foreman serve` and
+`foreman dashboard` exit with status 78 and the units name it in
+`RestartPreventExitStatus=78`, so systemd leaves them stopped. The worker also
+writes the reason to its log, `.foreman/serve.log`.
 `foreman serve` exits 0 when ended with `foreman engine shutdown`, so the unit
 starts it again: ending a worker holds nothing (ADR-0043). A worker started
 again takes over the project's engine lock when the dead one's lease has
@@ -1646,17 +1650,24 @@ foreman db migrate          # apply any pending migrations
 
 **Upgrade steps.** Migrating is a deploy step: stop `foreman serve` and the
 dashboard, update Foreman, run `foreman db migrate`, start them again. The
-store no longer repairs the schema when it opens. `foreman serve` and
-`foreman dashboard` check the schema version when they start and refuse, with
-a message naming `foreman db migrate`, when the database is older than the
-code (run it) or newer (upgrade Foreman; a database cannot be taken back).
+store no longer repairs the schema when it opens. **Only `foreman db migrate`
+migrates.** Every other command (`foreman run`, `foreman backlog list`, `foreman
+task show`, and the worker and dashboard) creates a new database at the latest
+version but refuses an existing one at another version, and changes nothing in
+the file, with a message naming what to do: run `foreman db migrate` when it is
+older than the code, upgrade Foreman when it is newer (a database cannot be
+taken back). `foreman serve` and `foreman dashboard` then exit with status 78,
+which the systemd units do not restart (section 6.2).
+
+A command finds its database in the repository it runs in, never in a parent
+of it: the search stops at the first directory with a `.git`. A task worktree
+or sandbox under `.foreman/worktrees/` finds none unless given `--db` or
+`FOREMAN_DB`, and agent steps get neither.
 
 Each migration is applied atomically: its statements and its ledger row run
 inside one `BEGIN IMMEDIATE` transaction, so a failing migration leaves the
 database at the previous version and raises `MigrationError`. Two processes
 that initialize the same database at once cannot double-apply a version.
-`ForemanStore.initialize()` additionally performs a narrow additive
-schema-repair for long-lived local databases; it is scheduled for removal.
 
 File-backed databases open in WAL mode with `synchronous=NORMAL` and a 30 s
 busy timeout so the engine, the dashboard, and the CLI can share one file.

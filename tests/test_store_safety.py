@@ -131,7 +131,7 @@ class ConnectionSafetyTests(unittest.TestCase):
     def test_file_store_uses_wal_and_a_real_busy_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             with ForemanStore(Path(tmp) / "safety.db") as store:
-                store.initialize()
+                store.upgrade()
                 journal = store._connection.execute("PRAGMA journal_mode").fetchone()[0]
                 busy = store._connection.execute("PRAGMA busy_timeout").fetchone()[0]
                 synchronous = store._connection.execute("PRAGMA synchronous").fetchone()[0]
@@ -141,7 +141,7 @@ class ConnectionSafetyTests(unittest.TestCase):
 
     def test_memory_store_skips_wal(self) -> None:
         with ForemanStore(":memory:") as store:
-            store.initialize()
+            store.upgrade()
             journal = store._connection.execute("PRAGMA journal_mode").fetchone()[0]
         self.assertEqual(str(journal).lower(), "memory")
 
@@ -149,7 +149,7 @@ class ConnectionSafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "safety.db"
             with ForemanStore(db_path) as seed:
-                seed.initialize()
+                seed.upgrade()
                 _, _, task = _seed(seed)
                 run = _old_run(seed, task)
 
@@ -186,7 +186,7 @@ class ConnectionSafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "safety.db"
             with ForemanStore(db_path) as seed:
-                seed.initialize()
+                seed.upgrade()
                 project, sprint, task = _seed(seed)
 
             writer = ForemanStore(db_path, busy_timeout_seconds=0.05, write_retries=8)
@@ -225,7 +225,7 @@ class ConnectionSafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "safety.db"
             with ForemanStore(db_path) as seed:
-                seed.initialize()
+                seed.upgrade()
                 _, _, task = _seed(seed)
                 run = _old_run(seed, task)
 
@@ -258,7 +258,7 @@ class TaskKeySequenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "keys.db"
             with ForemanStore(db_path) as seed:
-                seed.initialize()
+                seed.upgrade()
                 _seed(seed, task_id="task-seed")
 
             writer_count = 8
@@ -303,7 +303,7 @@ class TaskKeySequenceTests(unittest.TestCase):
 
     def test_explicit_keys_are_skipped_by_the_sequence(self) -> None:
         with ForemanStore(":memory:") as store:
-            store.initialize()
+            store.upgrade()
             _seed(store, task_id="task-seed")  # SP-1
             explicit = Task(
                 id="task-explicit",
@@ -326,7 +326,7 @@ class TaskKeySequenceTests(unittest.TestCase):
 
     def test_duplicate_keys_are_rejected_by_the_schema(self) -> None:
         with ForemanStore(":memory:") as store:
-            store.initialize()
+            store.upgrade()
             _seed(store, task_id="task-seed")
             duplicate = Task(
                 id="task-dup",
@@ -341,7 +341,7 @@ class TaskKeySequenceTests(unittest.TestCase):
 
     def test_updates_never_reassign_keys(self) -> None:
         with ForemanStore(":memory:") as store:
-            store.initialize()
+            store.upgrade()
             _, _, task = _seed(store)
             key = task.task_key
             task.title = "Renamed"
@@ -358,7 +358,7 @@ class DependentDeleteTests(unittest.TestCase):
 
     def test_delete_task_removes_everything_that_references_it(self) -> None:
         with ForemanStore(":memory:") as store:
-            store.initialize()
+            store.upgrade()
             _, _, task = _seed(store)
             run = _old_run(store, task)
             _decision(store, task, run)
@@ -397,7 +397,7 @@ class DependentDeleteTests(unittest.TestCase):
 
     def test_delete_sprint_removes_decision_gates_and_task_dependents(self) -> None:
         with ForemanStore(":memory:") as store:
-            store.initialize()
+            store.upgrade()
             _, sprint, task = _seed(store)
             run = _old_run(store, task)
             _decision(store, task, run)
@@ -418,7 +418,7 @@ class DependentDeleteTests(unittest.TestCase):
 
     def test_prune_old_runs_keeps_gate_decisions_and_unlinks_the_run(self) -> None:
         with ForemanStore(":memory:") as store:
-            store.initialize()
+            store.upgrade()
             _, _, task = _seed(store)
             run = _old_run(store, task)
             _decision(store, task, run)
@@ -453,7 +453,7 @@ class MigrationSafetyTests(unittest.TestCase):
 
     def test_failed_migration_is_rolled_back_atomically(self) -> None:
         with ForemanStore(":memory:") as store:
-            store.initialize()
+            store.upgrade()
             latest = max(m[0] for m in MIGRATIONS)
             bad = (
                 latest + 1,
@@ -474,7 +474,7 @@ class MigrationSafetyTests(unittest.TestCase):
 
     def test_migrate_is_a_no_op_when_up_to_date(self) -> None:
         with ForemanStore(":memory:") as store:
-            store.initialize()
+            store.upgrade()
             self.assertEqual(store.migrate(), [])
 
     def test_legacy_v13_database_upgrades_with_decisions_and_unique_keys(self) -> None:
@@ -523,7 +523,7 @@ class MigrationSafetyTests(unittest.TestCase):
             legacy.close()
 
             with ForemanStore(db_path) as store:
-                applied = store.initialize()
+                applied = store.upgrade()
                 # Every migration after the legacy version, whatever the
                 # latest one happens to be — this test is about the v14
                 # rebuild surviving real data, not about the version count.
@@ -598,7 +598,7 @@ class SettingsValidationTests(unittest.TestCase):
 
     def test_orchestrator_refuses_to_run_a_misconfigured_project(self) -> None:
         with ForemanStore(":memory:") as store:
-            store.initialize()
+            store.upgrade()
             project, _, _ = _seed(store, settings={"max_step_visits": "many"})
             orchestrator = ForemanOrchestrator(store)
             with self.assertRaises(OrchestratorError) as raised:
@@ -607,7 +607,7 @@ class SettingsValidationTests(unittest.TestCase):
 
     def test_prune_old_history_reads_validated_retention(self) -> None:
         with ForemanStore(":memory:") as store:
-            store.initialize()
+            store.upgrade()
             project, _, task = _seed(store, settings={"run_retention_days": 1})
             _old_run(store, task)
             orchestrator = ForemanOrchestrator(store)
@@ -617,7 +617,7 @@ class SettingsValidationTests(unittest.TestCase):
 
     def test_dashboard_rejects_invalid_settings_and_keeps_the_old_ones(self) -> None:
         with ForemanStore(":memory:") as store:
-            store.initialize()
+            store.upgrade()
             project, _, _ = _seed(store, settings={"max_step_visits": 4})
             service = Services(store)
             with self.assertRaises(InvalidRequestError):

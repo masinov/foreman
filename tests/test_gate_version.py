@@ -44,7 +44,7 @@ class GateVersionTests(unittest.TestCase):
         git(self.repo, "branch", "feat/x")
         self.db = root / "foreman.db"
         self.store = ForemanStore(self.db)
-        self.store.initialize()
+        self.store.upgrade()
         self.addCleanup(self.store.close)
 
     def seed(self, *, plan: bool) -> Task:
@@ -316,7 +316,7 @@ class GateVersionTests(unittest.TestCase):
             )
 
         old._connection.execute("PRAGMA foreign_keys = ON")
-        old.initialize()
+        old.upgrade()
 
         self.assertGreaterEqual(old.schema_version(), 35)
         decision = old.get_human_gate_decision("t", "merge_approval")
