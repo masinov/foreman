@@ -11,8 +11,36 @@ by name, instead of a bystander.
 from __future__ import annotations
 
 import asyncio
+import os
 
 import pytest
+
+#: Variables that change what git does. A suite started inside something that
+#: sets them (a review sandbox with a push guard in ``GIT_CONFIG_PARAMETERS``)
+#: would have its throwaway repositories pick them up: a test's own push hit
+#: the guard's hook and was read as the reviewer's push. Removed before any
+#: test, in every worker, so the tests see only the git they make themselves.
+GIT_ENVIRONMENT_EXACT = frozenset(
+    {
+        "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_CONFIG", "GIT_CONFIG_GLOBAL",
+        "GIT_CONFIG_SYSTEM", "GIT_CONFIG_NOSYSTEM", "GIT_DIR", "GIT_WORK_TREE",
+        "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        "GIT_CEILING_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE", "GIT_PREFIX",
+        "GIT_DISCOVERY_ACROSS_FILESYSTEM", "GIT_EXEC_PATH", "GIT_TEMPLATE_DIR",
+        "GIT_SSH", "GIT_SSH_COMMAND", "GIT_ASKPASS", "GIT_REPLACE_REF_BASE",
+        "GIT_NO_REPLACE_OBJECTS", "GIT_SHALLOW_FILE", "GIT_QUARANTINE_PATH",
+    }
+)
+GIT_ENVIRONMENT_PREFIXES = ("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")
+
+
+def scrub_git_environment(environ: "os._Environ[str] | dict[str, str]") -> None:
+    for name in list(environ):
+        if name in GIT_ENVIRONMENT_EXACT or name.startswith(GIT_ENVIRONMENT_PREFIXES):
+            del environ[name]
+
+
+scrub_git_environment(os.environ)
 
 # Browser tests run only with the plugin on (``-o addopts=""``), and it keeps a
 # loop running by design; they are run on their own (docs/TESTING.md).
