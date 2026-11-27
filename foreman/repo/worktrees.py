@@ -459,6 +459,7 @@ class WorktreeManager:
             allowed_hosts=settings.sandbox_allowed_hosts,
             deny_roots=tuple(dict.fromkeys(roots)),
             read_paths=tuple(dict.fromkeys(readable)),
+            allow_unix_sockets=settings.sandbox_allow_unix_sockets,
         )
 
     def remove_stale_sandboxes(self) -> tuple[Path, ...]:

@@ -53,6 +53,7 @@ const MACHINE_ROWS = {
   agent_env_passthrough: { label: "Extra variables agents are given", empty: "None" },
   sandbox_allowed_hosts: { label: "Hosts a review sandbox may reach", empty: "None" },
   sandbox_read_paths: { label: "Extra paths a review sandbox may read", empty: "None" },
+  sandbox_allow_unix_sockets: { label: "A review sandbox may use unix sockets (a browser)", empty: "No" },
 };
 
 /**

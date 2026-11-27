@@ -24,6 +24,11 @@ class SandboxPolicy:
     #: What stays readable inside the closed directories: the step's own
     #: working copy, the repository objects it reads, its toolchain.
     read_paths: tuple[Path, ...] = ()
+    #: Whether commands may create unix sockets, which a browser needs for its
+    #: own profile lock. Off by default: it lets a command connect to any
+    #: socket it can see, so the sockets of the host are closed to it (see
+    #: ``runner.sandbox.host_sockets``).
+    allow_unix_sockets: bool = False
 
 
 @dataclass(slots=True)

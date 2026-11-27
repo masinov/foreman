@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import os
 import shutil
+from dataclasses import replace
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -115,6 +116,38 @@ def closed_paths(
     return tuple(closed)
 
 
+#: Where the host keeps sockets that reach more than a program: the session bus
+#: and the init system (``/run``), the container engine, a user's ssh agent and
+#: X server (``/tmp``).
+SOCKET_DIRECTORIES: tuple[str, ...] = ("/run", "/tmp", "/var/tmp")
+
+
+def socket_policy(policy: SandboxPolicy, *, uid: int | None = None) -> SandboxPolicy:
+    """``policy`` with the host's socket directories closed, for a step that may create sockets.
+
+    Creating unix sockets is blocked in the sandbox unless the project allows
+    it (``sandbox_allow_unix_sockets``, for a browser's profile lock). Allowed,
+    a command can connect to any socket it can see, and file permissions are
+    the only wall: a session bus or a container engine is an escape (checked
+    on 2026-11-27: the user's session bus was reachable). So ``/run`` and the
+    temporary directories are closed to it, except what Claude Code's own
+    sandbox needs there (its proxy sockets, its per-user temporary directory).
+    A socket file cannot be hidden by itself, a directory can.
+    """
+
+    uid = os.getuid() if uid is None else uid
+    roots = tuple(Path(name) for name in SOCKET_DIRECTORIES if Path(name).is_dir())
+    return replace(
+        policy,
+        deny_roots=(*policy.deny_roots, *roots),
+        read_paths=(
+            *policy.read_paths,
+            Path(f"/run/user/{uid}/cc-socks"),
+            Path(f"/tmp/claude-{uid}"),
+        ),
+    )
+
+
 def _read_rule(path: Path) -> str:
     # An absolute path in a rule takes two slashes; one is relative to the project.
     suffix = "/**" if path.is_dir() and not path.is_symlink() else ""
@@ -131,6 +164,8 @@ def claude_settings(policy: SandboxPolicy) -> dict[str, Any]:
     (which the sandbox does not cover) by permission rules.
     """
 
+    if policy.allow_unix_sockets:
+        policy = socket_policy(policy)
     deny_roots = [str(root) for root in policy.deny_roots]
     allow_read = [str(path) for path in policy.read_paths]
     sandbox: dict[str, Any] = {
@@ -144,6 +179,8 @@ def claude_settings(policy: SandboxPolicy) -> dict[str, Any]:
             "strictAllowlist": True,
         },
     }
+    if policy.allow_unix_sockets:
+        sandbox["network"]["allowAllUnixSockets"] = True
     rules = [
         _read_rule(path) for path in closed_paths(policy.deny_roots, policy.read_paths)
     ]

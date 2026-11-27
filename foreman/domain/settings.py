@@ -30,6 +30,7 @@ HOST_LEVEL_SETTINGS: frozenset[str] = frozenset(
         "agent_env_passthrough",
         "sandbox_allowed_hosts",
         "sandbox_read_paths",
+        "sandbox_allow_unix_sockets",
     }
 )
 
@@ -154,6 +155,10 @@ class ProjectSettings:
     # lie under the operator's home directory or beside the repository,
     # which are closed to it: a toolchain, a package cache. Host-level.
     sandbox_read_paths: tuple[str, ...] = ()
+    # Whether a sandboxed step's commands may create unix sockets. A browser
+    # needs them (the screenshots script); the host's own sockets are closed
+    # to the step when this is on. Host-level.
+    sandbox_allow_unix_sockets: bool = False
     # The policy matrix (see foreman/policy.py). Each decision names a
     # project default; "auto" lets the engine decide on its own and records
     # the decision, "human" routes it to a person. `policy_rules` refines the
@@ -230,6 +235,9 @@ class ProjectSettings:
             agent_env_passthrough=_validate_env_names(raw.get("agent_env_passthrough")),
             sandbox_allowed_hosts=_validate_hosts(raw.get("sandbox_allowed_hosts")),
             sandbox_read_paths=_validate_read_paths(raw.get("sandbox_read_paths")),
+            sandbox_allow_unix_sockets=_validate_bool(
+                raw.get("sandbox_allow_unix_sockets"), key="sandbox_allow_unix_sockets"
+            ),
             merge_approval=_validate_policy_default(raw, "merge_approval"),
             plan_approval=_validate_policy_default(raw, "plan_approval"),
             triage=_validate_policy_default(raw, "triage"),
