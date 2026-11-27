@@ -130,6 +130,8 @@ instructions or retrieved for the task at hand; per-role memory;
 company-level knowledge across projects. A first step can come with stage 3:
 repeated review findings proposed as additions to the project's
 instructions.
+The owner's direction of 2026-11-27 and Claude's notes for its ADR:
+`docs/directions/a-memory-foreman-keeps-and-loads.md`.
 
 ### Later, recorded but not scheduled
 
