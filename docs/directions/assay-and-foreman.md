@@ -18,6 +18,30 @@ On the proposal below:
 > "Your opinion is sound, I do like it. We can start this IF we have nothing
 > more pressing next."
 
+On shaping Assay's S4 with Foreman as its first consumer (2026-11-27):
+
+> "Be careful not to distort/deform assay. It is true that we probably will
+> use it mainly to feed Foreman, but it may feed other systems too."
+
+## Assay serves any client (owner, 2026-11-27)
+
+- **Nothing in Assay names Foreman or bends to it.** Foreman is a client like
+  any other: its own agent party, its own token, Assay's public API.
+- **Assay's S4 builds what its specification already says:** Commit, Bind,
+  Propagate and the agent briefing. Foreman's needs are met by three
+  properties the specification already has:
+  - the briefing is read for a scope of work and carries a snapshot id that
+    can be read again later, unchanged;
+  - a binding takes the artifact revision from the client's change log and
+    the snapshot the author was given;
+  - findings are opened per dependent, and any client reads the findings on
+    its own artifacts.
+- **Anything more Foreman needs is built on Foreman's side** (an adapter that
+  reads Assay's API), or proposed to Assay as a change to its specification on
+  its own merits.
+- Recorded in Assay's `docs/ROADMAP.md` as owner decision Q6, with the S4
+  entry.
+
 ## Claude's proposal (2026-11-26, with Fable's second opinion)
 
 Assay is `../assay`, an evidence base built through Foreman (its spec:
@@ -56,7 +80,8 @@ HTTP API.** It is not merged into Foreman:
     lines may become criteria; a proposal or a decision with review pending
     never does.
   - **Findings and unbuilt commitments** arrive through Foreman's intake
-    (ADR-0013). Each carries `source.system = assay` and the finding's id as
+    (ADR-0013): Foreman reads them from Assay's API and files them; Assay
+    does not know Foreman's intake. Each carries `source.system = assay` and the finding's id as
     its reference. They are requests that never start on their own
     (ADR-0028).
 - **Foreman to Assay:**
@@ -100,7 +125,8 @@ basis per criterion, and only a check that ran should count as support.
 1. **Now:** this file, and no code. Assay's S4 is shaped with Foreman as its
    first consumer: a briefing readable by scope with a stable snapshot id, and
    bindings that accept a commit and that id. This changes Assay's roadmap,
-   which is the owner's to decide.
+   which is the owner's to decide. Decided 2026-11-27, for any client (the
+   section above).
 2. **Foreman next:** the reviewer's verdict records its basis per criterion
    (with FOR-76), and the three ideas above.
 3. **After Assay's S4:** briefing in and bindings out at merge, for one
