@@ -6,7 +6,11 @@ Project: Foreman. Default branch: main. Schema version: 36.
 
 ## Active sprint
 
-None is active.
+Sprint 69: routes on facts, a cap per step, a question to a person (started 2026-11-27): 4 todo.
+
+ADR-0040 build item 7, from ADR-0041 sections 1, 3 and 4: tasks carry labels and projects name path groups; a route may depend on facts (label, no criteria, changed paths, visits) and a routing step needs no agent; a step can be capped; any agent may ask a person a question and the answer goes back into its step. Roadmap phase 2 (docs/ROADMAP.md).
+
+The tasks are in `docs/sprints/current.md`.
 
 ## Held or blocked
 
@@ -14,7 +18,7 @@ Nothing is held or blocked.
 
 ## Last finished sprints
 
-- Sprint 68: the database and the reviewer kept apart, finished 2026-11-27: 2 of 2 tasks done.
+- Sprint 68: the database and the reviewer kept apart, finished 2026-11-27: 2 of 2 tasks done, tag `checkpoint-20261127-sprint-68-the-database-and-the-reviewer-kept-apa`.
 - Sprint 67: the core can be left alone, finished 2026-11-27: 8 of 8 tasks done, tag `checkpoint-20261127-sprint-67-the-core-can-be-left-alone`.
 - Sprint 66: the evidence behind a review, finished 2026-11-26: 6 of 6 tasks done, tag `checkpoint-20261126-sprint-66-the-evidence-behind-a-review`.
 - Sprint 65: the method, second part, finished 2026-11-26: 6 of 6 tasks done, tag `checkpoint-20261126-sprint-65-the-method-second-part`.
