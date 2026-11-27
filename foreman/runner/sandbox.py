@@ -75,6 +75,15 @@ def _resolved(path: Path) -> Path:
         return path.absolute()
 
 
+def _is_real_directory(path: Path) -> bool:
+    """A directory that is not a link; an entry that cannot be examined is not one."""
+
+    try:
+        return path.is_dir() and not path.is_symlink()
+    except OSError:
+        return False
+
+
 def _inside(path: Path, parent: Path) -> bool:
     return path == parent or parent in path.parents
 
@@ -104,14 +113,14 @@ def closed_paths(
             if any(_inside(child, allow) for allow in allowed):
                 continue
             holds_allowed = any(_inside(allow, child) for allow in allowed)
-            if holds_allowed and child.is_dir() and not child.is_symlink():
+            if holds_allowed and _is_real_directory(child):
                 walk(child)
             else:
                 closed.append(child)
 
     for root in deny_roots:
         resolved = _resolved(root)
-        if resolved.is_dir():
+        if _is_real_directory(resolved):
             walk(resolved)
     return tuple(closed)
 
@@ -150,7 +159,7 @@ def socket_policy(policy: SandboxPolicy, *, uid: int | None = None) -> SandboxPo
 
 def _read_rule(path: Path) -> str:
     # An absolute path in a rule takes two slashes; one is relative to the project.
-    suffix = "/**" if path.is_dir() and not path.is_symlink() else ""
+    suffix = "/**" if _is_real_directory(path) else ""
     return f"Read(/{path}{suffix})"
 
 

@@ -18,6 +18,7 @@ from foreman.runner.sandbox import (
     closed_paths,
     credential_env_names,
     claude_settings,
+    socket_policy,
 )
 from tests.test_sandbox import role_text
 
@@ -132,6 +133,24 @@ class ClaudeSettingsTests(unittest.TestCase):
         )
 
 
+class UnixSocketTests(unittest.TestCase):
+    def test_off_by_default_nothing_is_added(self) -> None:
+        settings = claude_settings(SandboxPolicy())
+        self.assertNotIn("allowAllUnixSockets", settings["sandbox"]["network"])
+        self.assertEqual(settings["sandbox"]["filesystem"]["denyRead"], [])
+
+    def test_allowed_the_hosts_socket_directories_are_closed(self) -> None:
+        policy = SandboxPolicy(allow_unix_sockets=True)
+        shut = socket_policy(policy, uid=1234)
+        self.assertTrue(set(map(str, shut.deny_roots)) >= {"/run", "/tmp"})
+        # What Claude Code's own sandbox needs there stays open.
+        self.assertIn(Path("/run/user/1234/cc-socks"), shut.read_paths)
+        self.assertIn(Path("/tmp/claude-1234"), shut.read_paths)
+        settings = claude_settings(policy)
+        self.assertIs(settings["sandbox"]["network"]["allowAllUnixSockets"], True)
+        self.assertIn("/run", settings["sandbox"]["filesystem"]["denyRead"])
+
+
 class MachineTests(unittest.TestCase):
     def test_a_machine_without_bubblewrap_or_socat_is_refused_with_the_reason(self) -> None:
         for missing, text in (
@@ -165,7 +184,11 @@ class ProjectSettingsTests(unittest.TestCase):
         project = Project(id="p", name="P", repo_path="/r", workflow_id="w", default_branch="main")
         settings = settings_of(project)
         self.assertEqual((settings.sandbox_allowed_hosts, settings.sandbox_read_paths), ((), ()))
-        self.assertLessEqual({"sandbox_allowed_hosts", "sandbox_read_paths"}, HOST_LEVEL_SETTINGS)
+        self.assertIs(settings.sandbox_allow_unix_sockets, False)
+        self.assertLessEqual(
+            {"sandbox_allowed_hosts", "sandbox_read_paths", "sandbox_allow_unix_sockets"},
+            HOST_LEVEL_SETTINGS,
+        )
 
     def settings(self, **raw):
         return settings_of(Project(id="p", name="P", repo_path="/r", workflow_id="w",
