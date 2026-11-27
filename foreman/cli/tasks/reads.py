@@ -97,6 +97,15 @@ def handle_task_show(args: argparse.Namespace) -> int:
         lines.append(f"Blocked kind: {kind} ({BLOCKED_KIND_HINTS[kind]})")
     if task["blocked_reason"]:
         lines.append(f"Blocked reason: {task['blocked_reason']}")
+    asked = task.get("question")
+    if asked:
+        lines.append(f"Question (asked at {asked['step']}): {asked['question']}")
+        recommended = asked["recommendation"]["option"]
+        for number, option in enumerate(asked["options"], start=1):
+            mark = "  <- recommended" if number == recommended else ""
+            lines.append(f"  {number}. {option}{mark}")
+        lines.append(f"Recommended because: {asked['recommendation']['why']}")
+        lines.append("Answer with: foreman task answer <task> --option <n> | --text <words>")
 
     if active_run is not None:
         lines.append(

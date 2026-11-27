@@ -144,11 +144,20 @@ Beside its status, each criterion says how you checked it:
 Leave `ran` or `read` empty when there is none; a role that cannot run
 commands leaves `ran` empty. {approve_needs_rule}
 {record_format}
+
+### When to ask
+If you cannot judge the change without a person's answer (the acceptance
+criteria contradict each other or the code, or the verdict turns on a decision
+only the owner can take), you may ask a question instead of returning a
+verdict. Do not approve or deny a guess. Asking is not failing: the review
+waits, and goes on with the answer. Do not ask what the repository or a
+command can tell you.
+{ask_format}
 """
 
 [completion]
 marker = ""
-outcomes = ['approve', 'deny', 'steer']
+outcomes = ['approve', 'deny', 'steer', 'ask']
 timeout_minutes = 10
 max_cost_usd = 5.0
 

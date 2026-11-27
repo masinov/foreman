@@ -14,6 +14,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 from ..domain.models import Project, Task
+from ..domain.question import QUESTION_BLOCKED_REASON
 from ..store import ForemanStore
 from .layers import project_definitions
 from .workflows import WorkflowDefinition
@@ -30,7 +31,9 @@ HUMAN_GATE_BLOCKED_REASON = "Awaiting human approval"
 #: dead-letter state (loop limit, unhandled outcome, cost or time gate, branch
 #: violation, failure isolation, a user's Block) and is resolved with
 #: ``foreman task unblock`` or by editing the task.
-BLOCKED_KINDS: tuple[str, ...] = ("gate", "engine")
+#: ``question`` is an agent's question to a person (ADR-0041 section 4): the
+#: task waits for an answer, resolved with ``foreman task answer``.
+BLOCKED_KINDS: tuple[str, ...] = ("gate", "question", "engine")
 
 
 # ── Dead-letter classification ────────────────────────────────────────────────
@@ -127,6 +130,8 @@ def blocked_kind(task: Task, gates: WorkflowGateSteps) -> str | None:
 
     if task.status != "blocked":
         return None
+    if (task.blocked_reason or "") == QUESTION_BLOCKED_REASON:
+        return "question"
     step = task.workflow_current_step
     if step and gates.step_ids is not None and step in gates.step_ids:
         return "gate" if step in gates.gate_step_ids else "engine"

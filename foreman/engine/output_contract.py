@@ -12,7 +12,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from ..domain.outcomes import APPROVE, DONE, ERROR
+from ..domain.outcomes import APPROVE, ASK, DONE, ERROR
+from ..domain.question import QUESTION_KIND, QUESTION_PROBLEM_PREFIX, question_instructions, read_question
 from ..definitions.records import RECORD_PROBLEM_PREFIX, read_record, split_record_block
 from ..definitions.roles import effective_approve_needs, RoleDefinition
 from .results import AgentExecutionResult
@@ -172,6 +173,18 @@ def read_completion(
 
     declaration = role.completion.record
 
+    if ASK in role.completion.outcomes:
+        # A question is not a result: it needs neither the marker nor a
+        # decision, and a malformed one is an error like any other record.
+        asked = read_question(text)
+        if asked is not None:
+            fields, problem = asked
+            if fields is None:
+                return CompletionReading(ERROR, f"{QUESTION_PROBLEM_PREFIX}: {problem}")
+            return CompletionReading(
+                ASK, fields["question"], {"kind": QUESTION_KIND, "fields": fields}
+            )
+
     if output_config.extract_decision:
         # The decision is read outside the record block, so a line of JSON
         # can never count as a verdict.
@@ -247,6 +260,9 @@ def contract_retry_reason(
 
     if result.status != "completed" or result.outcome != "error":
         return None
+
+    if result.detail.startswith(QUESTION_PROBLEM_PREFIX):
+        return "question_format"
 
     if role.completion.record is not None:
         if result.detail.startswith(VERDICT_PROBLEM_PREFIX):
@@ -380,6 +396,13 @@ def with_retry_instruction(
                 if role.completion.output.extract_decision
                 else ""
             )
+        )
+    elif reason == "question_format":
+        correction = (
+            "Your question did not follow the required form.\n"
+            "Do not do more work.\n"
+            + question_instructions(marker)
+            + "\nIf you do not need to ask, return your result instead."
         )
     elif reason == "verdict_agreement":
         correction = (

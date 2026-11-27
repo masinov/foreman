@@ -149,7 +149,7 @@ class RefusalTests(_Workspace):
 
     def test_a_role_change_that_breaks_a_workflow_names_the_workflow(self) -> None:
         text = shipped_role("code_reviewer").replace(
-            "outcomes = ['approve', 'deny', 'steer']", "outcomes = ['approve', 'deny']"
+            "outcomes = ['approve', 'deny', 'steer', 'ask']", "outcomes = ['approve', 'deny', 'ask']"
         )
         self.assertNotEqual(text, shipped_role("code_reviewer"))
 
@@ -703,7 +703,7 @@ class WorkspaceDefaultTests(ApiTests):
         # p1 keeps a workflow that routes the reviewer's "steer".
         save_workflow(self.store, "p1", workflow_called("careful"), changed_by="bob")
         no_steer = shipped_role("code_reviewer").replace(
-            "outcomes = ['approve', 'deny', 'steer']", "outcomes = ['approve', 'deny']"
+            "outcomes = ['approve', 'deny', 'steer', 'ask']", "outcomes = ['approve', 'deny', 'ask']"
         )
         with self.refused("steer"):
             save_role(self.store, None, no_steer, changed_by="alice")

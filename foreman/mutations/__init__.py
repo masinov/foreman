@@ -15,7 +15,8 @@ Surfaces translate ``MutationError`` into their own error type and decide
 how to present the result. Nothing here prints or knows about HTTP.
 
 The rules are kept in a part per area, like the store's: ``projects``,
-``tasks``, ``gates`` (a gate decision, a merge waiver), ``backlog``,
+``tasks``, ``gates`` (a gate decision, a merge waiver), ``questions`` (an
+answer to an agent's question), ``backlog``,
 ``sprints``, ``decision_gates`` and ``holds`` (Pause, Stop, Resume, Block;
 ADR-0043), over ``base`` (who acts, the audit
 event). No surface writes a project, sprint or task row itself; a test
@@ -31,6 +32,7 @@ from .decision_gates import DecisionGateMutations
 from .gates import GateMutations
 from .holds import HoldMutations
 from .projects import ProjectMutations
+from .questions import QuestionMutations
 from .sprints import SprintMutations
 from .tasks import TaskMutations
 
@@ -41,6 +43,7 @@ class Mutations(
     ProjectMutations,
     TaskMutations,
     GateMutations,
+    QuestionMutations,
     BacklogMutations,
     SprintMutations,
     DecisionGateMutations,

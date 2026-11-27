@@ -239,7 +239,8 @@ class ReportService(Service):
                 self.store.list_tasks(project_id=project.id, status="blocked"), gates
             )
             for kind, value in counts.items():
-                blocked[kind] += value
+                # A question waits for a person, as a gate does.
+                blocked["engine" if kind == "engine" else "gate"] += value
         return {
             "database": self.store.db_path,
             "projects": self.store.count_projects(),
@@ -288,6 +289,7 @@ class ReportService(Service):
                 "assigned_role": task.assigned_role,
                 "blocked_reason": task.blocked_reason,
                 "blocked_kind": kind,
+                "question": self._pending_question(task),
                 "workflow_current_step": task.workflow_current_step,
                 "executor_overrides": task.executor_overrides,
                 "step_visit_counts": dict(task.step_visit_counts),

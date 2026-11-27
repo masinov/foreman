@@ -437,12 +437,15 @@ def role_text_from_fields(base_text: str, role_id: str, fields: Mapping[str, Any
 
     output = _table(completion, "output")
     ends = fields.get("ends")
+    # May the role ask a person? The form does not edit it, so what the role
+    # already says stays.
+    asks = "ask" in [str(word) for word in (completion.get("outcomes") or [])]
     if ends == "decides":
         decisions = _names(fields.get("decisions", []), "decisions", DECISIONS)
         if not decisions:
             raise DefinitionError("A role that decides needs at least one decision it may give.")
         completion["marker"] = ""
-        completion["outcomes"] = decisions
+        completion["outcomes"] = [*decisions, "ask"] if asks else decisions
         output["extract_decision"] = True
         record_kind = (completion.get("record") or {}).get("kind")
         if record_kind == REVIEW_VERDICT and fields.get("approve_needs") is not None:
@@ -452,7 +455,10 @@ def role_text_from_fields(base_text: str, role_id: str, fields: Mapping[str, Any
             output["approve_needs"] = needs
     elif ends == "done":
         completion["marker"] = str(completion.get("marker") or "") or DEFAULT_MARKER
-        completion.pop("outcomes", None)
+        if asks:
+            completion["outcomes"] = ["done", "blocked", "error", "ask"]
+        else:
+            completion.pop("outcomes", None)
         output["extract_decision"] = False
         output.pop("approve_needs_reading", None)
         output.pop("approve_needs", None)

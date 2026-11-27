@@ -163,7 +163,7 @@ class RoleContractTests(unittest.TestCase):
         self.assertEqual(roles["security_reviewer"].completion.outcomes, ("approve", "deny"))
         self.assertEqual(roles["code_reviewer"].signals, ("progress", "blocker"))
         self.assertEqual(roles["developer"].signals, ("task_created", "progress", "blocker"))
-        self.assertEqual(roles["developer"].completion.outcomes, ("done", "blocked", "error"))
+        self.assertEqual(roles["developer"].completion.outcomes, ("done", "blocked", "error", "ask"))
 
     def test_unknown_outcome_or_signal_in_role_file_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

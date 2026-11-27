@@ -124,6 +124,13 @@ class TaskApproval(_Body):
     version: str | None = None
 
 
+class TaskAnswer(_Body):
+    #: The number (from 1) of the option chosen, and/or the person's own words.
+    option: int | None = None
+    text: str | None = None
+    requested_by: str | None = None
+
+
 class TaskDenial(_Body):
     note: str | None = None
 
