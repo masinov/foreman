@@ -234,30 +234,57 @@ class WorkflowRunnerBase:
                     f"Workflow {workflow.id!r} is missing step {current_step!r}."
                 )
 
-            # A merge lands only the commit its gate approved: a branch that
-            # moved since goes back to the gate, for a person to decide again.
+            # A merge lands only the commit its gate approved. A branch that
+            # moved since has commits nobody tested or reviewed: it goes back
+            # to the step a branch brought up to date goes to (test), then
+            # review and the gate, for a person to decide on the new head.
             moved = self._moved_since_approval(project, workflow, current_task, step_def)
             if moved is not None:
                 gate_step, approved, now_at = moved
                 detail = (
                     f"The branch moved after it was approved: approved at {approved[:7]}, "
-                    f"it is now at {now_at[:7]}. Review the new version and decide again."
+                    f"it is now at {now_at[:7]}. It goes back to be tested and reviewed."
                 )
+                payload = {
+                    "branch": current_task.branch_name,
+                    "target": project.default_branch,
+                    "reason": "moved_after_approval",
+                    "approved_sha": approved,
+                    "head_sha": now_at,
+                    "gate_step": gate_step,
+                }
+                retest = next(
+                    (
+                        t.to_step
+                        for t in workflow.transitions
+                        if t.from_step == current_step and t.trigger == "completion:updated"
+                    ),
+                    None,
+                )
+                if retest is not None and workflow.get_step(retest) is not None:
+                    run = self.records.create_system_run(
+                        current_task,
+                        workflow_step=current_step,
+                        outcome="updated",
+                        detail=detail,
+                    )
+                    self.records.emit_event(
+                        run, "engine.merge_blocked", {**payload, "retest_step": retest}
+                    )
+                    current_task.workflow_current_step = retest
+                    current_task.workflow_carried_output = None
+                    self.tasks.save(current_task)
+                    current_step = retest
+                    carried_output = None
+                    continue
                 current_task.workflow_current_step = gate_step
                 current_task.workflow_carried_output = None
                 self._block_at_step(
                     current_task,
                     current_step,
-                    detail=detail,
+                    detail=detail + " Review the new version and decide again.",
                     event_type="engine.merge_blocked",
-                    payload={
-                        "branch": current_task.branch_name,
-                        "target": project.default_branch,
-                        "reason": "moved_after_approval",
-                        "approved_sha": approved,
-                        "head_sha": now_at,
-                        "gate_step": gate_step,
-                    },
+                    payload=payload,
                 )
                 break
             default_branch = project.default_branch
@@ -353,6 +380,7 @@ class WorkflowRunnerBase:
                     step=current_step,
                     visit_count=visit_count,
                     carried_output=carried_output,
+                    workflow=workflow,
                 )
             else:
                 executed = self._run_agent_step(
