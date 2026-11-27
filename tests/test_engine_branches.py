@@ -407,6 +407,42 @@ class BranchAndMergeTests(OrchestratorTestCase):
             self.assertIsNone(again)
             self.assertIsNone(again_event)
 
+    def test_develop_visit_records_a_skipped_refresh_when_the_tree_is_dirty(self) -> None:
+        repo_path, db_path = self.create_workspace()
+        self.initialize_repo(repo_path)
+        self.write_text(repo_path / "docs" / "base.md", "baseline\n")
+        self.commit_all(repo_path, "docs: add base docs")
+
+        with ForemanStore(db_path) as store:
+            store.initialize()
+            project, _, task = self.seed_project(
+                store,
+                repo_path=repo_path,
+                branch_name="feat/task-1",
+            )
+            self.git(repo_path, "checkout", "-b", task.branch_name)
+            self.write_text(repo_path / "feature.txt", "task work\n")
+            self.commit_all(repo_path, "feat: task work")
+            self.git(repo_path, "checkout", "main")
+            self.write_text(repo_path / "notes.txt", "main moved\n")
+            self.commit_all(repo_path, "docs: main moves forward")
+            self.git(repo_path, "checkout", task.branch_name)
+            self.write_text(repo_path / "feature.txt", "cut-off edit\n")
+
+            carried_output, sync_event = prepare_task_branch_for_step(
+                project=project,
+                task=task,
+                step="develop",
+                carried_output=None,
+            )
+
+            assert sync_event is not None
+            self.assertEqual(sync_event[0], "engine.branch_sync")
+            self.assertEqual(sync_event[1]["mode"], "refresh_skipped_dirty")
+            self.assertEqual(sync_event[1]["commits_behind"], 1)
+            self.assertIn("uncommitted", carried_output or "")
+            self.assertFalse((repo_path / "notes.txt").exists())
+
     def test_develop_visit_resumes_on_a_branch_with_an_unconcluded_merge(self) -> None:
         from foreman.repo.git import checkout_branch, merge_in_progress
 
