@@ -34,7 +34,6 @@ _READ_COMMANDS = frozenset({"cat", "rg", "grep", "ls", "find", "head", "tail", "
 _READ_GIT = frozenset({"log", "show", "diff", "status", "grep"})
 #: Commands that read and write nothing of the repository; they do not make a line a non-read.
 _NEUTRAL = frozenset({"cd", "pushd", "popd", "set", "export", "true"})
-_SEPARATORS = {"&&", "||", ";", "|", "&"}
 # A redirect into a file; ``2>&1``, ``>&2`` and ``/dev/null`` are not one.
 _REDIRECT = re.compile(r"(?:^|[^<>&\d])\d?>>?(?!&)\s*(?!/dev/null\b)[^\s&|;>]")
 # ``<<<`` is a here-string, not a heredoc: no lines follow it.
@@ -144,22 +143,44 @@ def _strip_heredocs(command: str) -> tuple[str, bool]:
     return "\n".join(out), writes
 
 
-def _segments(command: str) -> list[list[str]]:
-    """The simple commands of a command line, each as words (separators split them)."""
+_OPERATORS = re.compile(r"&&|\|\||;;|[;&|()]")
 
+
+def _segments(command: str) -> list[list[str]]:
+    """The simple commands of a command line, each as words.
+
+    A line is split where the shell starts another command: at ``&&``, ``||``,
+    ``;``, ``&``, ``|``, at a subshell's ``(`` and ``)``, and at a group's
+    ``{`` and ``}`` (which only count when they stand as words, so ``{a,b}``
+    is not one). So ``(a || b) | tail`` is ``a``, ``b`` and ``tail``.
+
+    A ``$( )`` command substitution is split the same way: the shell runs what
+    is inside it, so ``echo $(pytest x)`` is the commands ``echo`` and
+    ``pytest x`` (the ``$`` is dropped). Quoted text is one word, so
+    ``'(pytest x)'`` and ``echo "(pytest x)"`` run nothing; a substitution
+    inside double quotes is likewise not looked into.
+    """
+
+    # An escaped parenthesis (``find \\( -name a \\)``) is a word's own character.
+    command = command.replace("\\(", "\ue000").replace("\\)", "\ue001")
     try:
-        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|")
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
         lexer.whitespace_split = True
         words = list(lexer)
     except ValueError:
         words = command.split()
     out: list[list[str]] = [[]]
-    for word in words:
-        if word and set(word) <= set(";&|"):
-            if word in _SEPARATORS or word == ";;":
+    for index, word in enumerate(words):
+        if word and set(word) <= set(";&|()"):
+            for _ in _OPERATORS.findall(word):
                 out.append([])
-                continue
-        out[-1].append(word)
+            continue
+        if word in {"{", "}"}:
+            out.append([])
+            continue
+        if word == "$" and words[index + 1 : index + 2] == ["("]:
+            continue
+        out[-1].append(word.replace("\ue000", "(").replace("\ue001", ")"))
     return [segment for segment in out if segment]
 
 
