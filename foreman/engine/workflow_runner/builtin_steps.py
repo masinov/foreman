@@ -113,6 +113,7 @@ class BuiltinSteps(WorkflowRunnerBase):
         step: str,
         visit_count: int,
         carried_output: str | None,
+        workflow: WorkflowDefinition | None = None,
     ) -> tuple[Run, str, str]:
         """Run a built-in step (tests, merge, mark done) and record its run."""
 
@@ -143,6 +144,14 @@ class BuiltinSteps(WorkflowRunnerBase):
                 event_recorder=lambda event_record: self.persist_builtin_event(run, event_record),
                 evidence_builder=self.build_completion_evidence,
                 working_dir=task_working_dir(project, task),
+                # A merge lands the commit its gate approved, not the branch's
+                # head at the moment git runs.
+                merge_commit=(
+                    approved[1]
+                    if workflow is not None
+                    and (approved := self._approved_commit(workflow, task, step_def))
+                    else None
+                ),
                 # A user's Stop, or an engine command, may cut a test run.
                 interrupt_poll=lambda: self._poll_commands(task.id),
             )
@@ -246,6 +255,26 @@ class BuiltinSteps(WorkflowRunnerBase):
         None when nothing was recorded or the branch is where it was approved.
         """
 
+        approved = self._approved_commit(workflow, task, step_def)
+        if approved is None:
+            return None
+        gate_step, approved_sha = approved
+        try:
+            head = head_sha(project.repo_path, f"refs/heads/{task.branch_name}")
+        except (GitError, OSError):
+            return None  # the merge itself says what is wrong with the branch
+        if not head or head == approved_sha:
+            return None
+        return gate_step, approved_sha, head
+
+    def _approved_commit(
+        self,
+        workflow: WorkflowDefinition,
+        task: Task,
+        step_def: WorkflowStep,
+    ) -> tuple[str, str] | None:
+        """The gate step and the commit a merge step's approval recorded, if any."""
+
         if step_def.role != "_builtin:merge" or not task.branch_name:
             return None
         gates = [
@@ -266,13 +295,7 @@ class BuiltinSteps(WorkflowRunnerBase):
         decision = max(decisions, key=lambda found: found.decided_at)
         if decision.decision != "approve" or not decision.branch_sha:
             return None
-        try:
-            head = head_sha(project.repo_path, f"refs/heads/{task.branch_name}")
-        except (GitError, OSError):
-            return None  # the merge itself says what is wrong with the branch
-        if not head or head == decision.branch_sha:
-            return None
-        return decision.workflow_step, decision.branch_sha, head
+        return decision.workflow_step, decision.branch_sha
 
     def _auto_approve_gate(
         self,

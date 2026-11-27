@@ -101,6 +101,7 @@ class BuiltinExecutorBase:
         evidence_builder: Callable[[Task, Project], CompletionEvidence | None] | None = None,
         working_dir: Path | None = None,
         interrupt_poll: Callable[[], None] | None = None,
+        merge_commit: str | None = None,
     ) -> BuiltinResult:
         """Dispatch one built-in role by identifier.
 
@@ -142,6 +143,7 @@ class BuiltinExecutorBase:
                 store=store,
                 evidence_builder=evidence_builder,
                 working_dir=task_dir,
+                merge_commit=merge_commit,
             )
         if role_id == "_builtin:mark_done":
             return self._mark_done(

@@ -239,6 +239,7 @@ class MergeStep(BuiltinExecutorBase):
         store: ForemanStore | None,
         evidence_builder: Callable[[Task, Project], CompletionEvidence | None] | None = None,
         working_dir: Path | None = None,
+        merge_commit: str | None = None,
     ) -> BuiltinResult:
         if not task.branch_name:
             return _merge_failed("", "Task branch is not set.")
@@ -306,7 +307,7 @@ class MergeStep(BuiltinExecutorBase):
         # checkout sitting on the default branch is then brought along, the
         # way a fast-forward pull would (ADR-0031).
         target_before = _read_head(integration_path, f"refs/heads/{project.default_branch}")
-        branch_head = _read_head(project.repo_path, f"refs/heads/{task.branch_name}")
+        branch_head = merge_commit or _read_head(project.repo_path, f"refs/heads/{task.branch_name}")
         # A decision a branch wrote as ``new-<slug>.md`` is numbered in the
         # merge commit, against the default branch as it is now (ADR-0040).
         # The branch is not touched, so what lands is what was tested, and the
@@ -327,7 +328,9 @@ class MergeStep(BuiltinExecutorBase):
 
         result: GitMergeResult = merge_branch(
             integration_path,
-            source_branch=task.branch_name,
+            # The approved commit itself, when a gate approved one: a branch
+            # that moves now is not merged with it.
+            source_branch=merge_commit or task.branch_name,
             target_branch=project.default_branch,
             # Only a branch that brings a decision is merged in two steps.
             finish=number_adrs if _brings_adrs(integration_path, project, task, adr_dir) else None,

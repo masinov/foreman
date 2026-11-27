@@ -263,13 +263,22 @@ class MergeGateFlowTests(unittest.TestCase):
             ["git", "rev-parse", "HEAD"], cwd=path, check=True, capture_output=True, text=True
         ).stdout.strip()
 
-    def test_a_branch_that_moved_after_its_approval_goes_back_to_the_gate_unmerged(self) -> None:
+    def test_a_branch_that_moved_after_its_approval_is_tested_and_reviewed_again(self) -> None:
         repo, db_path = self._workspace()
         with ForemanStore(db_path) as store:
             store.initialize()
             project, task = self._seed(store, repo, settings={"merge_approval": "human"})
             orchestrator = ForemanOrchestrator(
-                store, agent_runners={"claude_code": _ScriptedRunner([self._developer(repo), _reviewer_sees_tests_then_approves])}
+                store,
+                agent_runners={
+                    "claude_code": _ScriptedRunner(
+                        [
+                            self._developer(repo),
+                            _reviewer_sees_tests_then_approves,
+                            _reviewer_sees_tests_then_approves,
+                        ]
+                    )
+                },
             )
             self.assertEqual(orchestrator.run_project(project.id).stop_reason, "waiting_for_decision")
             branch = store.get_task(task.id).branch_name
@@ -281,29 +290,27 @@ class MergeGateFlowTests(unittest.TestCase):
             moved_to = self._commit_on_task_branch(repo, branch)
             self.assertNotEqual(moved_to, approved.version.branch_sha)
 
-            orchestrator.run_project(project.id)
+            result = orchestrator.run_project(project.id)
 
+            # Back through test and review, to the gate again: no second unblock.
+            self.assertEqual(result.stop_reason, "waiting_for_decision")
             back = store.get_task(task.id)
             self.assertEqual(back.status, "blocked")
             self.assertEqual(back.workflow_current_step, "merge_approval")
-            self.assertIn("The branch moved after it was approved", back.blocked_reason)
-            self.assertIn(approved.version.branch_sha[:7], back.blocked_reason)
-            self.assertIn(moved_to[:7], back.blocked_reason)
+            self.assertEqual(back.blocked_reason, "Awaiting human approval")
+            steps = self._steps(store, task.id)
+            self.assertEqual(steps[-3:], ["test", "review", "merge_approval"])
             main_after = subprocess.run(
                 ["git", "rev-parse", "main"], cwd=repo, check=True, capture_output=True, text=True
             ).stdout.strip()
             self.assertEqual(main_after, main_before, "nothing was merged")
-            blocked = [e for e in store.list_events(task_id=task.id) if e.event_type == "engine.merge_blocked"]
-            self.assertEqual(blocked[-1].payload["reason"], "moved_after_approval")
+            moved = [e for e in store.list_events(task_id=task.id) if e.event_type == "engine.merge_blocked"]
+            self.assertEqual(moved[-1].payload["reason"], "moved_after_approval")
+            self.assertEqual(moved[-1].payload["retest_step"], "test")
 
-            # The new head can be approved; the merge then holds it to the
-            # tests and review, which ran on the commit before it.
-            again = orchestrator.resume_human_gate(task.id, outcome="approve", seen_version=moved_to)
-            self.assertTrue(again.version_named)
-            self.assertEqual(store.get_human_gate_decision(task.id, "merge_approval").branch_sha, moved_to)
-            after = store.get_task(task.id)
-            self.assertNotIn("moved after it was approved", after.blocked_reason or "")
-            self.assertIn("changed after it was tested and reviewed", after.blocked_reason or "")
+            # The new head, tested and reviewed, is approved and merged.
+            orchestrator.resume_human_gate(task.id, outcome="approve", seen_version=moved_to)
+            self.assertEqual(store.get_task(task.id).status, "done")
 
     def test_per_task_override_requires_a_human_even_when_the_project_is_auto(self) -> None:
         repo, db_path = self._workspace()
