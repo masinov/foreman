@@ -218,6 +218,15 @@ def _register_unblock(task_commands: argparse._SubParsersAction) -> None:
 
     task_unblock = task_commands.add_parser("unblock", help="Unblock a task.")
     task_unblock.add_argument("task_id", help="Task id or key (FOR-56).")
+    task_unblock.add_argument(
+        "--reset-visits",
+        action="store_true",
+        help=(
+            "For a task blocked by a step's max_visits cap: start every step's visit "
+            "count over. Without it the counts are kept and the capped step runs once "
+            "more. Any other block resets the counts either way."
+        ),
+    )
     add_db_option(
         task_unblock,
         help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",

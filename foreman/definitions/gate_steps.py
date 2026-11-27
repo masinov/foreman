@@ -145,3 +145,35 @@ def blocked_kind_counts(
         if kind is not None:
             counts[kind] += 1
     return counts
+
+
+def capped_step_block(store: ForemanStore, project: Project | None, task: Task) -> str | None:
+    """The step whose own cap (``max_visits``) blocks a task, or None.
+
+    A task blocked at a capped step keeps that step as its resume point and a
+    count that has reached the cap; nothing else is needed to tell it apart.
+    """
+
+    step_id = task.workflow_current_step
+    if task.status != "blocked" or not step_id or project is None or not project.workflow_id:
+        return None
+    try:
+        workflow = project_definitions(store, project.id).workflows.get(project.workflow_id)
+    except Exception:  # noqa: BLE001 - a broken definition must not break unblocking
+        return None
+    step = workflow.get_step(step_id) if workflow is not None else None
+    if step is None or step.max_visits is None:
+        return None
+    if task.step_visit_counts.get(step_id, 0) < step.max_visits:
+        return None
+    return step_id
+
+
+def step_cap(store: ForemanStore, project: Project | None, step_id: str) -> int | None:
+    """A step's ``max_visits``, or None."""
+
+    if project is None or not project.workflow_id:
+        return None
+    workflow = project_definitions(store, project.id).workflows.get(project.workflow_id)
+    step = workflow.get_step(step_id) if workflow is not None else None
+    return step.max_visits if step is not None else None

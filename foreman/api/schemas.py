@@ -136,6 +136,8 @@ class TaskBlock(_Body):
 class TaskUnblock(_Body):
     #: Guidance for the next agent step, recorded with the unblock.
     note: str | None = None
+    #: For a task blocked by a step's cap: start every visit count over.
+    reset_visits: bool = False
     requested_by: str | None = None
 
 

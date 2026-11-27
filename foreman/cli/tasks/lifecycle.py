@@ -9,6 +9,7 @@ import sys
 from ...mutations import MutationError
 from ...store import ForemanStore
 from ..common import (
+    format_step_visits,
     cli_mutations,
     print_lines,
     resolve_db_path_or_print,
@@ -58,7 +59,9 @@ def handle_task_unblock(args: argparse.Namespace) -> int:
         if task is None:
             return 1
         try:
-            cli_mutations(store).unblock_task(task)
+            cli_mutations(store).unblock_task(
+                task, reset_visits=getattr(args, "reset_visits", False)
+            )
         except MutationError as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -69,7 +72,11 @@ def handle_task_unblock(args: argparse.Namespace) -> int:
         f"Database: {db_path}",
         f"Task: {task.id} | {task.title}",
         f"Status: {task.status}",
-        "Step visits reset: yes",
+        (
+            "Step visits reset: yes"
+            if not task.step_visit_counts
+            else f"Step visits kept: {format_step_visits(task.step_visit_counts)}"
+        ),
     )
     return 0
 

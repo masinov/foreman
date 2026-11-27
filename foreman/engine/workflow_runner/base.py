@@ -37,6 +37,7 @@ from ..limits import resolve_project_settings
 from ..prompts import PromptBuilder
 from ..results import AgentExecutionResult
 from ..signals import SignalHandler
+from ..step_failures import step_cap_reason
 from ..task_worktrees import TaskWorktrees
 from ..task_writes import TaskWrites
 
@@ -310,7 +311,25 @@ class WorkflowRunnerBase:
                     )
                     break
 
-            visit_count = current_task.step_visit_counts.get(current_step, 0) + 1
+            # A step's own cap is checked first, before the step is entered
+            # and counted: a person decides (ADR-0041 section 3).
+            prior_visits = current_task.step_visit_counts.get(current_step, 0)
+            if step_def.max_visits is not None and prior_visits >= step_def.max_visits:
+                self._block_at_step(
+                    current_task,
+                    current_step,
+                    detail=step_cap_reason(current_step, step_def.max_visits),
+                    event_type="workflow.step_cap",
+                    payload={
+                        "step": current_step,
+                        "visit_count": prior_visits,
+                        "max_visits": step_def.max_visits,
+                    },
+                    attention_trigger="loop_limit",
+                )
+                break
+
+            visit_count = prior_visits + 1
             current_task.step_visit_counts[current_step] = visit_count
             self.tasks.save(current_task)
 

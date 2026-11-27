@@ -462,7 +462,12 @@ class TaskService(Service):
         return self.get_task(task.id)
 
     def unblock_task(
-        self, task_id: str, *, note: str | None = None, requested_by: str | None = None
+        self,
+        task_id: str,
+        *,
+        note: str | None = None,
+        reset_visits: bool = False,
+        requested_by: str | None = None,
     ) -> dict[str, Any]:
         """Return a blocked task to the queue (see ``Mutations.unblock_task``).
 
@@ -473,7 +478,7 @@ class TaskService(Service):
 
         task = self._require_task(task_id)
         try:
-            self._mutations(requested_by).unblock_task(task)
+            self._mutations(requested_by).unblock_task(task, reset_visits=reset_visits)
         except MutationError as exc:
             raise InvalidRequestError(str(exc)) from exc
         if note and note.strip():
