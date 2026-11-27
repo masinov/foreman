@@ -12,6 +12,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime
 import json
+import sqlite3
 import time
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from ..domain.models import Project, Run, Task, TokenUsage
 from ..domain.outcomes import ERROR
 from ..definitions.roles import COMMAND_TOOLS, RoleDefinition
 from ..runner import AgentRunConfig, PreflightError, run_with_retry
+from ..domain.sandbox import SandboxPolicy
 from ..runner.base import AgentRunner as NativeAgentRunner
 from ..runner.env import passthrough_env, resolve_env
 from ..runner.process import EngineShutdown
@@ -42,6 +44,10 @@ DEFAULT_NATIVE_STEP_HEARTBEAT_SECONDS = 30.0
 #: How often an agent that keeps printing is checked for a user's Stop and
 #: for engine commands. A silent agent is checked on every tick.
 COMMAND_POLL_SECONDS = 5.0
+
+
+#: Where a sandbox is given a snapshot of the database (``scripts/review_screenshots.py`` reads it).
+REVIEW_DATABASE_COPY = ".review/live.db"
 
 
 class AgentStepRunner:
@@ -229,6 +235,7 @@ class AgentStepRunner:
 
         try:
             with WorktreeManager(project).sandbox(task) as box:
+                self._give_database_copy(box.path)
                 result = self._execute_in(
                     role=role,
                     project=project,
@@ -240,7 +247,7 @@ class AgentStepRunner:
                     model=model,
                     event_recorder=event_recorder,
                     working_dir=box.path,
-                    extra_env=box.env,
+                    sandbox=box.policy,
                 )
                 violation = box.check()
         except WorktreeError as exc:
@@ -271,6 +278,31 @@ class AgentStepRunner:
             ),
         )
 
+    def _give_database_copy(self, sandbox_path: Path) -> None:
+        """Put a copy of Foreman's database in the sandbox, where the review scripts look.
+
+        The sandbox cannot read the main checkout, where the live database
+        is, and writes nothing outside itself; the reviewer's screenshot
+        script serves the dashboard from a database, so it is given a
+        snapshot (made by SQLite's backup, never the live file) at
+        ``.review/live.db``. A step without a store has none to give.
+        """
+
+        store = getattr(self.records, "store", None)
+        db_path = getattr(store, "db_path", None)
+        if not db_path or db_path == ":memory:" or not Path(db_path).is_file():
+            return
+        target = sandbox_path / REVIEW_DATABASE_COPY
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as source, sqlite3.connect(
+                target
+            ) as copy:
+                source.backup(copy)
+        except sqlite3.Error:
+            # The review can still run; the script says it has no database.
+            target.unlink(missing_ok=True)
+
     def _execute_in(
         self,
         *,
@@ -284,7 +316,7 @@ class AgentStepRunner:
         model: str | None,
         event_recorder: Callable[[AgentEventRecord], None] | None,
         working_dir: Path | None = None,
-        extra_env: Mapping[str, str] | None = None,
+        sandbox: SandboxPolicy | None = None,
     ) -> AgentExecutionResult:
         """One run of the role, in ``working_dir`` when given, else the task's worktree."""
 
@@ -308,7 +340,7 @@ class AgentStepRunner:
             model=model,
             event_recorder=event_recorder,
             working_dir=working_dir,
-            extra_env=extra_env,
+            sandbox=sandbox,
         )
 
     def execute_native(
@@ -323,7 +355,7 @@ class AgentStepRunner:
         model: str | None = None,
         event_recorder: Callable[[AgentEventRecord], None] | None = None,
         working_dir: Path | None = None,
-        extra_env: Mapping[str, str] | None = None,
+        sandbox: SandboxPolicy | None = None,
     ) -> AgentExecutionResult:
         runner = self.agent_runners.get(role.agent.backend)
         if runner is None:
@@ -347,7 +379,7 @@ class AgentStepRunner:
             session_id=session_id,
             model=model,
             working_dir=working_dir,
-            extra_env=extra_env,
+            sandbox=sandbox,
         )
         if isinstance(config, AgentExecutionResult):
             return config
@@ -433,7 +465,7 @@ class AgentStepRunner:
         session_id: str | None,
         model: str,
         working_dir: Path | None = None,
-        extra_env: Mapping[str, str] | None = None,
+        sandbox: SandboxPolicy | None = None,
     ) -> AgentRunConfig | AgentExecutionResult:
         """What the runner is started with, or the failed result of a role that cannot start."""
 
@@ -484,7 +516,6 @@ class AgentStepRunner:
             env={
                 **passthrough_env(resolve_project_settings(project).agent_env_passthrough),
                 **resolved_env,
-                **(extra_env or {}),
             },
             timeout_seconds=project_timeout_seconds(
                 project,
@@ -492,6 +523,7 @@ class AgentStepRunner:
             ),
             max_cost_usd=run_cost_ceiling(project, role.completion.max_cost_usd),
             session_cost_baseline_usd=session_baseline_usd,
+            sandbox=sandbox,
         )
 
 

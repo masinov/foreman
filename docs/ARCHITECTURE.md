@@ -323,30 +323,30 @@ The current runtime supports:
   is the whole tool set, and the process gets the short environment plus what
   the project passes through. The shipped `code_reviewer` has `Read`, `Grep`,
   `Glob` and `Bash`, and no `Write`, `Edit` or `NotebookEdit`.
-- Nothing the agent does may reach the task's branch. All worktrees share one
-  `.git`, so a detached head is not enough: a shell can `git branch -f`,
-  `git update-ref` or push.
-  - After the step, `Sandbox.check` compares `refs/heads/<branch>` with the head
-    it had when the sandbox opened. If it moved, or the branch was deleted,
-    Foreman **puts it back** (`git update-ref` with the moved value as the old
-    value) and the step fails: outcome `error`, `failure_type` `sandbox`, the
-    detail names the branch and both commits. Any record the agent returned is
-    dropped. The check also runs when the step is killed, so the branch is
-    restored even though nobody reads a verdict.
-  - Pushes are made to fail: the sandbox's environment sets
-    `remote.<name>.pushurl` for every remote through `GIT_CONFIG_PARAMETERS`,
-    each entry written `'key=value'`. That form is read by every git version.
-    The `'key'='value'` form needs git 2.31, and older git refuses the whole
-    variable, which broke every git command in the sandbox (git 2.25,
-    2026-11-25). The setting outranks the repository's own config. The
-    agent also has no SSH agent or forge token (ADR-0023). This is a
-    deterrent, not a wall: an agent that clears the variable, or pushes to
-    an explicit URL, is not stopped, and a push is not detected.
-- What it does not guard: refs other than the task's branch. Another task may
-  move any of them legitimately while a review runs, so they cannot be told
-  from the agent's work. A branch or tag the agent creates in the sandbox
-  stays in the shared repository. The process still runs as the engine's user
-  with network access (ADR-0023, "Not covered").
+- The step has a shell and runs as the operator, so what it reaches is set by
+  the backend's sandbox, not by Foreman's own guard (the environment push guard
+  of FOR-75 is gone). `foreman/runner/sandbox.py` turns a `SandboxPolicy`
+  (`runner/base.py`: hosts, closed directories, what stays readable inside
+  them) into Claude Code's `--settings`: `failIfUnavailable`,
+  `allowUnsandboxedCommands = false`, the network allowlist, `denyRead`/
+  `allowRead`, `credentials` for the backend's keys, and Read permission rules
+  for the Read, Grep and Glob tools. `WorktreeManager.sandbox` builds the
+  policy from the project's `sandbox_*` settings.
+- The sandbox is its own **clone** of the commit under review (`git clone
+  --shared`, remote removed, a marker in its git directory), not a linked
+  worktree, so a ref or config written in it cannot reach the repository.
+  `Sandbox.check` still compares `refs/heads/<branch>` with the head it had
+  when the sandbox opened and **puts it back** if it moved; the step fails
+  (`failure_type` `sandbox`). It also runs when the step is killed.
+  `AgentStepRunner._give_database_copy` puts a SQLite backup of the database at
+  `.review/live.db`.
+- Codex: `runner/codex.py` starts a sandboxed step in `workspace-write` without
+  network and approval `never`, a step with no command tool in `read-only` with
+  approval `untrusted` and the shell tools off, declines every approval
+  request, and checks what the app server says it applied. The role loader
+  refuses `run_scope = "sandbox"` on Codex unless the role sets
+  `accept_open_reads`.
+- Not covered: the developer step (unsandboxed, a separate task).
 - The `code_reviewer` prompt tells it to run the project's test command, or the
   tests that cover the change, where it doubts the evidence; for changes under
   `frontend/` to build, serve and screenshot with Playwright at 1440 px and

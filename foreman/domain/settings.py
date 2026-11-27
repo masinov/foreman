@@ -28,6 +28,9 @@ HOST_LEVEL_SETTINGS: frozenset[str] = frozenset(
         "context_dir",
         "merge_push_remote",
         "agent_env_passthrough",
+        "sandbox_allowed_hosts",
+        "sandbox_read_paths",
+        "sandbox_allow_unix_sockets",
     }
 )
 
@@ -144,6 +147,18 @@ class ProjectSettings:
     # top of the short list all agents get (ADR-0023). Host-level: it hands
     # this machine's secrets to an agent.
     agent_env_passthrough: tuple[str, ...] = ()
+    # Hosts a sandboxed step (the code reviewer) may reach over the network,
+    # as names or ``*.example.com`` patterns. Empty: none; localhost always
+    # works. Host-level: it opens the sandbox to the network (ADR new-claude-code-sandbox).
+    sandbox_allowed_hosts: tuple[str, ...] = ()
+    # Absolute paths (``~`` allowed) a sandboxed step may read although they
+    # lie under the operator's home directory or beside the repository,
+    # which are closed to it: a toolchain, a package cache. Host-level.
+    sandbox_read_paths: tuple[str, ...] = ()
+    # Whether a sandboxed step's commands may create unix sockets. A browser
+    # needs them (the screenshots script); the host's own sockets are closed
+    # to the step when this is on. Host-level.
+    sandbox_allow_unix_sockets: bool = False
     # The policy matrix (see foreman/policy.py). Each decision names a
     # project default; "auto" lets the engine decide on its own and records
     # the decision, "human" routes it to a person. `policy_rules` refines the
@@ -218,6 +233,11 @@ class ProjectSettings:
             adr_dir=_validate_adr_dir(raw.get("adr_dir")),
             merge_push_remote=_validate_remote_name(raw.get("merge_push_remote")),
             agent_env_passthrough=_validate_env_names(raw.get("agent_env_passthrough")),
+            sandbox_allowed_hosts=_validate_hosts(raw.get("sandbox_allowed_hosts")),
+            sandbox_read_paths=_validate_read_paths(raw.get("sandbox_read_paths")),
+            sandbox_allow_unix_sockets=_validate_bool(
+                raw.get("sandbox_allow_unix_sockets"), key="sandbox_allow_unix_sockets"
+            ),
             merge_approval=_validate_policy_default(raw, "merge_approval"),
             plan_approval=_validate_policy_default(raw, "plan_approval"),
             triage=_validate_policy_default(raw, "triage"),
@@ -234,6 +254,51 @@ class ProjectSettings:
                 raw.get("review_diff_max_chars"), default=16000
             ),
         )
+
+
+def _string_list(value: Any, *, key: str) -> list[str]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, str):
+        value = [part.strip() for part in value.split(",")]
+    if not isinstance(value, (list, tuple)):
+        raise SettingsError(f"{key} must be a list of strings, got {value!r}.")
+    entries: list[str] = []
+    for entry in value:
+        if not isinstance(entry, str):
+            raise SettingsError(f"{key} entries must be strings, got {entry!r}.")
+        text = entry.strip()
+        if text and text not in entries:
+            entries.append(text)
+    return entries
+
+
+def _validate_hosts(value: Any) -> tuple[str, ...]:
+    """Validate the hosts a sandboxed step may reach: names, ``*.`` patterns."""
+
+    hosts = _string_list(value, key="sandbox_allowed_hosts")
+    for host in hosts:
+        bare = host.removeprefix("*.")
+        if not bare or not all(ch.isalnum() or ch in ".-" for ch in bare) or bare.startswith((".", "-")):
+            raise SettingsError(
+                f"sandbox_allowed_hosts: {host!r} is not a host name "
+                "(a name such as pypi.org, or a pattern such as *.example.com)."
+            )
+    return tuple(hosts)
+
+
+def _validate_read_paths(value: Any) -> tuple[str, ...]:
+    """Validate the absolute paths a sandboxed step may read."""
+
+    paths = _string_list(value, key="sandbox_read_paths")
+    for entry in paths:
+        if not (entry.startswith("/") or entry == "~" or entry.startswith("~/")):
+            raise SettingsError(
+                f"sandbox_read_paths: {entry!r} must be an absolute path (or start with ~/)."
+            )
+        if ".." in Path(entry).parts:
+            raise SettingsError(f"sandbox_read_paths: {entry!r} must not contain '..'.")
+    return tuple(paths)
 
 
 def _validate_env_names(value: Any) -> tuple[str, ...]:

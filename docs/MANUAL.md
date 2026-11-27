@@ -1388,6 +1388,9 @@ offending value, rather than running on silent defaults.
 | `max_live_worktrees` | `4` | ceiling on live task worktrees; the engine reclaims clean, idle trees oldest-first to stay under it. `0` disables the cap (§24) |
 | `worktree_setup_command` | `""` | shell command run once in each new worktree to build that tree's own environment (§24) |
 | `agent_env_passthrough` | `[]` | names of host environment variables given to every agent process on top of the short list all agents get (ADR-0023); for example a database address the tests need |
+| `sandbox_allowed_hosts` | `[]` | hosts a review sandbox may reach, as names or `*.example.com`; none by default, `localhost` always works (host-level; §24) |
+| `sandbox_read_paths` | `[]` | absolute paths (`~/` allowed) a review sandbox may read although they lie under your home directory or beside the repository: a toolchain, a package cache (host-level; §24) |
+| `sandbox_allow_unix_sockets` | `false` | lets a review sandbox's commands create unix sockets, which a browser needs for the screenshots script; the host's `/run` and temporary directories are closed to it (host-level; §24) |
 | `write_checkpoint_notes` | `false` | when a sprint is finished, commit a note of its goal, tasks and follow-ups to `docs/checkpoints/<tag>.md` on the default branch before the sprint is tagged (ADR-0036). The tag is made either way |
 | `generate_changelog` | `false` | when a sprint is finished, fold the `changes/<task key>.md` files into a section of `CHANGELOG.md` (newest sprint first, above what the file held before) and remove them, in the checkpoint's commit (ADR-0040). Off: the file and `changes/` are left as they are. `foreman changelog <project> [--sprint <id>]` does the same by hand |
 | `generate_copies` | `false` | Foreman writes `docs/STATUS.md` and `docs/sprints/current.md` from its database when a sprint starts and when it finishes (in the checkpoint's commit), and a finished sprint's archive copy `docs/sprints/archive/sprint-<n>-<slug>.md` (ADR-0040); a sprint's finish and the command also write `docs/sprints/backlog.md`. An archive file written by hand is never replaced. No task edits them. `foreman copies <project> [--sprint <id>]` writes them by hand |
@@ -2011,35 +2014,78 @@ expensive to build and genuinely read-only; prefer `worktree_setup_command`
 for anything a task might modify. This repository uses the setup command above
 and leaves `worktree_link_paths` empty.
 
-#### What a reviewer can read in its sandbox
+#### The review sandbox
 
-The code reviewer (`run_scope = "sandbox"`) runs in a throwaway copy of the
-commit under review. The copy holds the committed files and **the paths the
-project lists in `worktree_link_paths`**, and nothing else of yours. The
-reviewer can read those paths, because a project's tests can need them (Assay's
-tests read its `.env`, the application's own login).
+The code reviewer (`run_scope = "sandbox"`) runs as you, with Bash. It is kept
+from your credentials, from other projects and from the network by **Claude
+Code's own sandbox** (bubblewrap), which Foreman turns on for the step with
+`claude --settings` (ADR new-claude-code-sandbox, amending ADR-0041 section 5).
+Foreman builds no sandbox of its own.
+
+What is enforced, and by what:
+
+| What | How |
+|---|---|
+| The step never runs without its sandbox, and no command runs outside it | `failIfUnavailable` and `allowUnsandboxedCommands = false`; Foreman also checks for `bwrap` and `socat` first. A machine without them fails the step with the reason. |
+| Commands write only in the step's own working copy | the sandbox's file system is read-only everywhere else. A write to `/tmp` or the home directory may seem to work: it lands in a private, throwaway file system that nothing outside sees. |
+| Commands reach no host but the ones you list | the sandbox's proxy refuses every other host (`github.com`, a package index), whatever the command does with proxy variables. `localhost` works, so the project's dashboard preview can be served and fetched in one command. `sandbox_allowed_hosts` lists more. |
+| Commands cannot read your home directory, or the directory the repository sits in (your other projects) | `denyRead` of both, with these opened inside: the step's working copy, the repository's `.git/objects`, what `worktree_link_paths` links in, and `sandbox_read_paths`. What is closed is invisible to a command (`No such file or directory`). |
+| The Read, Grep and Glob tools read the same | the sandbox does not cover them; Foreman gives them permission rules that deny every entry of those directories except what is opened (a deny rule wins over an allow, so the entries are listed). |
+| Commands do not see the backend's keys | `ANTHROPIC_*`, `OPENAI_*` and `CLAUDE_CODE_OAUTH*` in the step's environment are masked from commands (`sandbox.credentials`). |
+| Nothing the step does to git reaches your repository | the working copy is its **own clone** of the commit under review: objects shared, **no remote**, its own refs and config. A ref moved, a tag made or a config changed in it stays in it; a linked worktree would write your repository's refs. The task's branch is still checked after the step, put back if it moved, and the step fails. |
+
+Codex (`run_scope` on `backend = "codex"`):
+
+- `none`: the thread runs in Codex's `read-only` sandbox without network, with
+  an approval policy that asks about every command (`untrusted`) and the
+  shell tools switched off; Foreman declines each request.
+- `sandbox`: Codex's sandbox cannot keep reads of your home directory, your
+  credentials or other projects from a step, so **a `sandbox` role on Codex is
+  refused when the role loads**. A role that accepts the open reads writes
+  `accept_open_reads = true` under `[agent.flags]`: it then runs in Codex's
+  `workspace-write` sandbox, in the clone, without network, and is never
+  allowed out of it (approval policy `never`). Foreman reads back what the app
+  server applied and refuses to run the step in another sandbox.
+- Checked against codex-cli 0.159.3's app server for what it applies
+  (`thread/start`); its enforcement of a command was not run live, as the
+  engine's Codex login was refused (401) when this was written.
+
+What the machine needs: Linux with `bubblewrap` (`bwrap`) and `socat` (Ubuntu:
+`sudo apt install bubblewrap socat`), and Claude Code with sandbox support.
+
+What a project sets, all host-level (`foreman config <project> --set`):
+
+- `sandbox_allowed_hosts`: hosts the step may reach (default none).
+- `sandbox_read_paths`: what the toolchain needs that lies under your home or
+  beside the repository (a Python or Node you installed under `~`, a cache,
+  and the base interpreter a `worktree_setup_command` venv points to). A
+  reviewer that cannot start `python` or `node` is missing one.
+- `sandbox_allow_unix_sockets`: needed for a browser (the screenshots script).
+  Off, creating a unix socket is refused. On, Foreman closes `/run` and the
+  temporary directories (where your session bus, container engine, ssh agent
+  and X server have their sockets) except what Claude Code's sandbox itself
+  needs.
+- `worktree_setup_command` builds the clone's environment, as for a task
+  worktree, outside the sandbox and with network. Build a venv and
+  `node_modules` of its own there; a path linked with `worktree_link_paths`
+  is **read-only** to the step (a build that writes into a linked
+  `node_modules` fails). `.review/live.db`, a snapshot of Foreman's database
+  made with SQLite's backup, is put in the clone for
+  `scripts/review_screenshots.py`, which cannot read the main checkout.
 
 A server's admin login (Assay's `.env.admin`) or any other secret is **never
-linked**: do not list one in `worktree_link_paths`. The reviewer has Bash, so
-whatever is linked, it can read.
+linked or listed in `sandbox_read_paths`**: whatever the step can read, it can
+quote in its review.
 
-What the sandbox enforces, and where it stops:
+Where it stops:
 
-- `run_scope = "none"` refuses a Claude Code agent every tool that runs a
-  command (Bash, Monitor, PowerShell) whatever its tool list says. A Codex
-  agent runs commands in Codex's own sandbox without asking, so on Codex the
-  scope is not enforced.
-- Pushes are turned away by git settings Foreman gives the step's environment:
-  a push to a configured remote goes to an empty repository of the sandbox's
-  own and fails the step with "tried to push", so the attempt is on the task's
-  record, and a push to an address given on the command line goes nowhere.
-  This stops a push made the ordinary way. It does not stop an agent that sets
-  out to get round it: the reviewer has Bash and runs as your user, with your
-  git credentials, so it can drop those settings and push. Keeping the
-  reviewer from your credentials and the network is FOR-100.
-- The task's branch is put back if the step moved or deleted it, whether or
-  not it also pushed. Other refs and the repository's config are shared with
-  your checkout and are not checked.
+- **The developer step is not sandboxed.** It runs as you, in the task's
+  worktree, with your credentials and the network. Sandboxing it is a separate
+  task.
+- Anything the reviewer is allowed to read is in its context, and so with the
+  model provider. The backend's own keys are kept from commands, not from
+  Claude Code itself.
+- A host in `sandbox_allowed_hosts` is open to everything the step runs.
 - A sandbox a killed engine left behind is removed when an engine starts for
   the project again.
 

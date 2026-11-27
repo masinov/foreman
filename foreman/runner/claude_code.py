@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
+from dataclasses import replace
 from datetime import datetime, timezone
 import json
 import os
@@ -24,6 +25,7 @@ from .base import (
     QuotaExhaustedError,
 )
 from .env import agent_environment
+from .sandbox import check_machine, claude_settings, credential_env_names
 from .process import DEFAULT_TICK_SECONDS, ManagedProcess, popen_kwargs
 from .signals import extract_signal_events
 
@@ -121,8 +123,14 @@ class ClaudeCodeRunner(AgentRunner):
         self._which = which
         self.tick_seconds = tick_seconds
 
-    def build_command(self, config: AgentRunConfig) -> list[str]:
-        """Build the Claude CLI command for one run."""
+    def build_command(
+        self, config: AgentRunConfig, *, credential_names: Sequence[str] = ()
+    ) -> list[str]:
+        """Build the Claude CLI command for one run.
+
+        ``credential_names`` are the backend keys in the step's environment;
+        a sandboxed step's commands are kept from them.
+        """
 
         command = [
             self.executable,
@@ -158,6 +166,10 @@ class ClaudeCodeRunner(AgentRunner):
             command.extend(
                 ["--max-budget-usd", f"{config.max_cost_usd + max(carried, 0.0):.2f}"]
             )
+        if config.sandbox is not None:
+            command.extend(
+                ["--settings", json.dumps(self.sandbox_settings(config, credential_names))]
+            )
         flags = dict(config.extra_flags)
         if flags.pop("strict_mcp_config", True) is not False:
             # Only the MCP servers a role names with ``mcp_config``; never the
@@ -169,6 +181,23 @@ class ClaudeCodeRunner(AgentRunner):
         command.extend(_extra_flag_args(flags))
         return command
 
+    def sandbox_settings(
+        self, config: AgentRunConfig, credential_names: Sequence[str] = ()
+    ) -> dict[str, Any]:
+        """The ``--settings`` of a sandboxed run: Claude Code's sandbox, on (see ``sandbox``)."""
+
+        assert config.sandbox is not None
+        # The shell prefix is run inside the sandbox, so it must be readable.
+        policy = replace(
+            config.sandbox, read_paths=(*config.sandbox.read_paths, NO_STDIN_PREFIX)
+        )
+        settings = claude_settings(policy)
+        if credential_names:
+            settings["sandbox"]["credentials"] = {
+                "envVars": [{"name": name, "mode": "deny"} for name in credential_names]
+            }
+        return settings
+
     def run(self, config: AgentRunConfig) -> Iterator[AgentEvent]:
         """Run Claude Code and yield normalized agent events.
 
@@ -179,15 +208,21 @@ class ClaudeCodeRunner(AgentRunner):
         """
 
         self._preflight()
+        if config.sandbox is not None:
+            check_machine(self._which)
         env = {**HEADLESS_STEP_ENV, **config.env}
         _check_shell_prefix(env["CLAUDE_CODE_SHELL_PREFIX"])
-        command = self.build_command(config)
+        process_env = agent_environment(env)
+        command = self.build_command(
+            config,
+            credential_names=credential_env_names(process_env) if config.sandbox else (),
+        )
         try:
             proc = self._popen_factory(
                 command,
                 **popen_kwargs(
                     cwd=config.working_dir,
-                    env=agent_environment(env),
+                    env=process_env,
                     inherit_env=False,
                 ),
             )

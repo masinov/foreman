@@ -72,7 +72,7 @@ def main() -> int:
     parser.add_argument(
         "--db",
         default=None,
-        help="The database to copy (default: .foreman.db in the main checkout this worktree belongs to).",
+        help="The database to copy (default: .review/live.db, which a review sandbox is given, else .foreman.db in the main checkout this worktree belongs to).",
     )
     parser.add_argument("--no-build", action="store_true", help="Use the bundle already built.")
     args = parser.parse_args()
@@ -80,7 +80,10 @@ def main() -> int:
     root = Path.cwd()
     out = root / ".review"
     out.mkdir(exist_ok=True)
-    source = Path(args.db) if args.db else main_checkout(root) / ".foreman.db"
+    # A review sandbox is given a snapshot at .review/live.db: it cannot read
+    # the main checkout, where the live database is.
+    snapshot = out / "live.db"
+    source = Path(args.db) if args.db else snapshot if snapshot.is_file() else main_checkout(root) / ".foreman.db"
     if not source.is_file():
         print(f"No database at {source}; give one with --db.", file=sys.stderr)
         return 2

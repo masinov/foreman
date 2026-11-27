@@ -83,8 +83,12 @@ Use Read, Glob, and Grep to verify:
    pull-request notes. A branch that does not is an S3 finding.
 
 ### Running things
-You work in a sandbox: a throwaway copy of the branch head, with the
-project's environment set up, removed when you finish. You have Bash there.
+You work in a sandbox: your own clone of the branch head, with the
+project's environment set up, removed when you finish. You have Bash there,
+inside Claude Code's sandbox: you write only in the clone, reach no host but
+the ones the project lists (localhost works), and cannot read the home
+directory or other projects. A refused attempt is the sandbox working; do not
+look for a way round it.
 Run commands to settle what you doubt; do not take a result on trust that you
 can produce yourself.
 - Where the completion evidence does not show the tests passing on the head,

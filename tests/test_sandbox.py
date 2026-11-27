@@ -167,6 +167,15 @@ class SandboxWorktreeTests(SandboxCase):
         with manager.sandbox(self.task) as box:
             self.assertEqual(git(box.path, "rev-parse", "HEAD"), self.head())
 
+    def test_a_clone_left_by_a_killed_engine_is_replaced(self) -> None:
+        manager = WorktreeManager(self.project())
+        left = manager.root / f"{SANDBOX_WORKTREE_PREFIX}T-1"
+        manager._clone_without_remote(left, self.head())
+        (left / "stale.txt").write_text("old")
+        with manager.sandbox(self.task) as box:
+            self.assertEqual(box.path, left)
+            self.assertFalse((box.path / "stale.txt").exists())
+
     def test_a_task_without_a_branch_has_nothing_to_open(self) -> None:
         task = Task(id="t2", sprint_id="s", project_id="p", title="T", branch_name=None)
         with self.assertRaisesRegex(WorktreeError, "no branch"):
@@ -182,13 +191,79 @@ class SandboxWorktreeTests(SandboxCase):
             self.assertIsNone(box.check())
         self.assertEqual(self.head(), before)
 
-    def test_a_moved_branch_is_put_back_and_named(self) -> None:
-        before = self.head()
+    def test_it_is_a_clone_with_no_remote_and_its_own_refs_and_config(self) -> None:
+        remote = self.repo.parent / "remote.git"
+        git(self.repo.parent, "init", "--bare", str(remote))
+        git(self.repo, "remote", "add", "origin", str(remote))
+        with WorktreeManager(self.project()).sandbox(self.task) as box:
+            self.assertEqual(git(box.path, "remote"), "")
+            self.assertTrue((box.path / ".git").is_dir(), "a clone owns its .git; a worktree has a file")
+            self.assertEqual(git(box.path, "rev-parse", "--git-common-dir"), ".git")
+            self.assertNotIn(str(box.path), git(self.repo, "worktree", "list"))
+
+    def test_a_ref_moved_or_config_changed_in_it_does_not_reach_the_repository(self) -> None:
+        head, main = self.head(), git(self.repo, "rev-parse", "refs/heads/main")
+        config = (self.repo / ".git" / "config").read_text()
+        refs = git(self.repo, "for-each-ref")
         with WorktreeManager(self.project()).sandbox(self.task) as box:
             (box.path / "b.txt").write_text("b\n")
             git(box.path, "add", ".")
             git(box.path, "commit", "-m", "x")
             git(box.path, "branch", "-f", "feat/x", "HEAD")
+            git(box.path, "branch", "-f", "main", "HEAD")
+            git(box.path, "update-ref", "refs/heads/new", "HEAD")
+            git(box.path, "update-ref", "-d", "refs/heads/feat/x")
+            git(box.path, "config", "remote.origin.url", "https://example.invalid/x.git")
+            git(box.path, "config", "core.hooksPath", "/tmp/hooks")
+            git(box.path, "tag", "t-in-sandbox")
+            # The step moved nothing the repository has.
+            self.assertIsNone(box.check())
+            self.assertEqual(self.head(), head)
+        self.assertEqual(git(self.repo, "rev-parse", "refs/heads/main"), main)
+        self.assertEqual((self.repo / ".git" / "config").read_text(), config)
+        self.assertEqual(git(self.repo, "for-each-ref"), refs)
+        self.assertEqual(git(self.repo, "tag", "--list"), "")
+
+    def test_a_push_from_it_cannot_name_the_repository_as_a_remote(self) -> None:
+        # With no remote configured there is no ``origin`` to push to.
+        with WorktreeManager(self.project()).sandbox(self.task) as box:
+            result = subprocess.run(
+                ["git", "push", "origin", "HEAD:refs/heads/leak"],
+                cwd=box.path, capture_output=True, text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(git(self.repo, "branch", "--list", "leak"), "")
+
+    def test_it_reads_the_repositorys_objects_without_copying_them(self) -> None:
+        with WorktreeManager(self.project()).sandbox(self.task) as box:
+            alternates = (box.path / ".git" / "objects" / "info" / "alternates").read_text()
+            self.assertEqual(Path(alternates.strip()), (self.repo / ".git" / "objects").resolve())
+            self.assertEqual(git(box.path, "cat-file", "-t", "HEAD"), "commit")
+
+    def test_its_policy_closes_home_and_the_projects_beside_and_opens_what_it_needs(self) -> None:
+        project = self.project(
+            worktree_link_paths=["venv"],
+            sandbox_allowed_hosts=["pypi.org"],
+            sandbox_read_paths=["~/.pyenv", "/opt/tool"],
+        )
+        with WorktreeManager(project).sandbox(self.task) as box:
+            policy = box.policy
+            self.assertEqual(policy.allowed_hosts, ("pypi.org",))
+            self.assertIn(Path.home().resolve(), policy.deny_roots)
+            self.assertIn(self.repo.resolve().parent, policy.deny_roots)
+            readable = set(policy.read_paths)
+            self.assertIn(box.path.resolve(), readable)
+            self.assertIn((self.repo / ".git" / "objects").resolve(), readable)
+            self.assertIn((self.repo / "venv").resolve(), readable)
+            self.assertIn((Path.home() / ".pyenv").resolve(), readable)
+            self.assertIn(Path("/opt/tool"), readable)
+
+    def test_a_moved_branch_is_put_back_and_named(self) -> None:
+        # An escape from the sandbox (the clone cannot do this itself).
+        before = self.head()
+        with WorktreeManager(self.project()).sandbox(self.task) as box:
+            git(self.repo, "commit", "--allow-empty", "-m", "moved")
+            git(self.repo, "update-ref", "refs/heads/feat/x", "HEAD")
             self.assertNotEqual(self.head(), before)
             violation = box.check()
         self.assertIn("feat/x was at", violation)
@@ -198,120 +273,26 @@ class SandboxWorktreeTests(SandboxCase):
     def test_a_deleted_branch_is_put_back(self) -> None:
         before = self.head()
         with WorktreeManager(self.project()).sandbox(self.task) as box:
-            git(box.path, "update-ref", "-d", "refs/heads/feat/x")
+            git(self.repo, "update-ref", "-d", "refs/heads/feat/x")
             self.assertIn("was deleted", box.check())
         self.assertEqual(self.head(), before)
 
     def test_a_branch_moved_by_a_killed_step_is_put_back(self) -> None:
         before = self.head()
         with self.assertRaises(EngineShutdown):
-            with WorktreeManager(self.project()).sandbox(self.task) as box:
-                (box.path / "c").write_text("c")
-                git(box.path, "add", ".")
-                git(box.path, "commit", "-m", "c")
-                git(box.path, "update-ref", "refs/heads/feat/x", "HEAD")
+            with WorktreeManager(self.project()).sandbox(self.task):
+                git(self.repo, "commit", "--allow-empty", "-m", "c")
+                git(self.repo, "update-ref", "refs/heads/feat/x", "HEAD")
                 raise EngineShutdown("stop")
         self.assertEqual(self.head(), before)
 
-    def test_a_branch_moved_then_pushed_is_put_back_and_both_are_named(self) -> None:
-        import os
-
-        before = self.head()
-        remote = self.repo.parent / "remote.git"
-        git(self.repo.parent, "init", "--bare", str(remote))
-        git(self.repo, "remote", "add", "origin", str(remote))
-        with WorktreeManager(self.project()).sandbox(self.task) as box:
-            (box.path / "d").write_text("d")
-            git(box.path, "add", ".")
-            git(box.path, "commit", "-m", "d")
-            git(box.path, "branch", "-f", "feat/x", "HEAD")
-            subprocess.run(
-                ["git", "push", "origin", "feat/x"],
-                cwd=box.path, env={**os.environ, **box.env}, capture_output=True, text=True,
-            )
-            violation = box.check()
-            self.assertEqual(box.check(), violation)
-        self.assertIn("tried to push", violation)
-        self.assertIn("feat/x was at", violation)
-        self.assertEqual(self.head(), before)
-        self.assertEqual(git(remote, "branch", "--list"), "")
-
-    def test_a_push_goes_nowhere(self) -> None:
-        remote = self.repo.parent / "remote.git"
-        git(self.repo.parent, "init", "--bare", str(remote))
-        git(self.repo, "remote", "add", "origin", str(remote))
-        with WorktreeManager(self.project()).sandbox(self.task) as box:
-            import os
-
-            result = subprocess.run(
-                ["git", "push", "origin", "HEAD:refs/heads/leak"],
-                cwd=box.path, env={**os.environ, **box.env}, capture_output=True, text=True,
-            )
-            self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(git(remote, "branch", "--list"), "")
-
-    def test_a_push_to_an_address_given_on_the_command_line_goes_nowhere(self) -> None:
-        import os
-
-        remote = self.repo.parent / "remote.git"
-        git(self.repo.parent, "init", "--bare", str(remote))
-        with WorktreeManager(self.project()).sandbox(self.task) as box:
-            env = {**os.environ, **box.env}
-            for extra in ((), ("--no-verify",)):
-                for address in (str(remote), f"file://{remote}"):
-                    result = subprocess.run(
-                        ["git", "push", *extra, address, "HEAD:refs/heads/leak"],
-                        cwd=box.path, env=env, capture_output=True, text=True,
-                    )
-                    self.assertNotEqual(result.returncode, 0, (extra, address))
-        self.assertEqual(git(remote, "branch", "--list"), "")
-
-    def test_a_push_to_a_remote_is_refused_and_fails_the_step(self) -> None:
-        remote = self.repo.parent / "remote.git"
-        git(self.repo.parent, "init", "--bare", str(remote))
-        git(self.repo, "remote", "add", "origin", str(remote))
-        for flags in ((), ("--no-verify",)):
-            def act(config, flags=flags) -> None:
-                import os
-
-                subprocess.run(
-                    ["git", "push", *flags, "origin", "HEAD:refs/heads/leak"],
-                    cwd=config.working_dir, env={**os.environ, **config.env},
-                    capture_output=True, text=True,
-                )
-
-            result = SandboxedStepTests.run_step(self._steps(), FakeRunner(act))
-            self.assertEqual((result.outcome, result.status), ("error", "failed"), flags)
-            self.assertEqual(result.failure_type, "sandbox")
-            self.assertIn("tried to push", result.detail)
-            self.assertEqual(git(remote, "branch", "--list"), "")
-
-    def _steps(self):
-        steps = SandboxedStepTests("step_runner")
-        steps.repo, steps.task, steps.project = self.repo, self.task, self.project
-        return steps
-
     def test_git_works_in_a_sandbox_of_a_repository_with_a_remote(self) -> None:
-        # The push block must not break every other git command: git before
-        # 2.31 refuses the whole GIT_CONFIG_PARAMETERS variable when an entry
-        # is written in the newer 'key'='value' form (2026-11-25, git 2.25).
         remote = self.repo.parent / "remote.git"
         git(self.repo.parent, "init", "--bare", str(remote))
         git(self.repo, "remote", "add", "origin", str(remote))
         with WorktreeManager(self.project()).sandbox(self.task) as box:
-            import os
-
-            env = {**os.environ, **box.env}
             for command in (["status", "--short"], ["log", "--oneline", "-1"], ["diff", "--stat", "HEAD"]):
-                result = subprocess.run(
-                    ["git", *command], cwd=box.path, env=env, capture_output=True, text=True,
-                )
-                self.assertEqual(result.returncode, 0, f"git {' '.join(command)}: {result.stderr}")
-            pushurl = subprocess.run(
-                ["git", "config", "remote.origin.pushurl"],
-                cwd=box.path, env=env, capture_output=True, text=True,
-            )
-            self.assertIn("foreman-sandbox-guard", pushurl.stdout)
+                git(box.path, *command)
 
 
 class StaleSandboxTests(SandboxCase):
@@ -320,6 +301,9 @@ class StaleSandboxTests(SandboxCase):
         manager = WorktreeManager(project)
         left = manager.root / f"{SANDBOX_WORKTREE_PREFIX}T-1"
         git(self.repo, "worktree", "add", "--detach", str(left), "main")
+        # A clone a killed engine left (the kind a sandbox is now).
+        clone = manager.root / f"{SANDBOX_WORKTREE_PREFIX}T-2"
+        manager._clone_without_remote(clone, self.head())
         # A directory a person put there is not ours and stays.
         stranger = manager.root / f"{SANDBOX_WORKTREE_PREFIX}other"
         stranger.mkdir()
@@ -327,8 +311,9 @@ class StaleSandboxTests(SandboxCase):
 
         removed = manager.remove_stale_sandboxes()
 
-        self.assertEqual(removed, (left,))
+        self.assertEqual(sorted(removed), sorted([left, clone]))
         self.assertFalse(left.exists())
+        self.assertFalse(clone.exists())
         self.assertNotIn("T-1", git(self.repo, "worktree", "list"))
         self.assertTrue((stranger / "keep").exists())
 
@@ -427,10 +412,9 @@ class SandboxedStepTests(SandboxCase):
         before = self.head()
 
         def act(config) -> None:
-            Path(config.working_dir, "b.txt").write_text("b")
-            git(config.working_dir, "add", ".")
-            git(config.working_dir, "commit", "-m", "sneaky")
-            git(config.working_dir, "update-ref", "refs/heads/feat/x", "HEAD")
+            # What a step that got out of its sandbox would do: the clone cannot.
+            git(self.repo, "commit", "--allow-empty", "-m", "sneaky")
+            git(self.repo, "update-ref", "refs/heads/feat/x", "HEAD")
 
         result = self.run_step(FakeRunner(act))
 
@@ -439,6 +423,38 @@ class SandboxedStepTests(SandboxCase):
         self.assertIn("feat/x", result.detail)
         self.assertEqual(self.head(), before)
         self.assertIsNone(result.record)
+
+    def test_the_runner_is_given_the_policy_and_a_clone(self) -> None:
+        runner = FakeRunner(lambda config: None)
+        self.run_step(runner, self.project(sandbox_allowed_hosts=["pypi.org"]))
+        config = runner.configs[0]
+        self.assertIsNotNone(config.sandbox)
+        self.assertEqual(config.sandbox.allowed_hosts, ("pypi.org",))
+        self.assertIn(config.working_dir.resolve(), config.sandbox.read_paths)
+        # No git settings in the step's environment: the sandbox is the guard.
+        self.assertNotIn("GIT_CONFIG_PARAMETERS", config.env)
+
+    def test_a_step_that_is_not_sandboxed_is_given_no_policy(self) -> None:
+        runner = FakeRunner(lambda config: None)
+        self.step_runner(runner).execute(
+            role=load_role_text(role_text(), "r.toml"), project=self.project(), task=self.task,
+            workflow_step="develop", prompt="p", session_id=None, carried_output=None, model="m",
+        )
+        self.assertIsNone(runner.configs[0].sandbox)
+
+    def test_a_machine_that_cannot_sandbox_fails_the_step_with_the_reason(self) -> None:
+        from foreman.runner import ClaudeCodeRunner
+
+        runner = ClaudeCodeRunner(
+            which=lambda name: None if name in ("bwrap", "socat") else f"/usr/bin/{name}",
+            popen_factory=lambda *a, **k: self.fail("the step must never start without its sandbox"),
+        )
+        result = self.run_step(runner)
+
+        self.assertEqual((result.outcome, result.status), ("error", "failed"))
+        self.assertEqual(result.failure_type, "preflight")
+        self.assertIn("bwrap and socat are not installed", result.detail)
+        self.assertIn("never run without it", result.detail)
 
     def test_a_step_that_only_commits_in_the_sandbox_is_not_a_violation(self) -> None:
         def act(config) -> None:

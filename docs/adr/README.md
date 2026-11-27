@@ -72,3 +72,4 @@ Numbered files are `ADR-0001-short-title.md`.
 | ADR-0041 | Workflows Route On Facts, And Roles Declare What They Touch | accepted |
 | ADR-0042 | A Role Returns Its Record In A Fenced Block | accepted |
 | ADR-0043 | The Work Is Paused, Not The Engine | accepted |
+| ADR-0044 | The Reviewer Runs In The Backend's Sandbox, In Its Own Clone | accepted |

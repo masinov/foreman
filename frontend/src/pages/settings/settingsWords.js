@@ -51,6 +51,9 @@ const MACHINE_ROWS = {
   context_dir: { label: "Context folder", empty: "The default" },
   merge_push_remote: { label: "Push merges to", empty: "Nowhere: merges stay on this machine" },
   agent_env_passthrough: { label: "Extra variables agents are given", empty: "None" },
+  sandbox_allowed_hosts: { label: "Hosts a review sandbox may reach", empty: "None" },
+  sandbox_read_paths: { label: "Extra paths a review sandbox may read", empty: "None" },
+  sandbox_allow_unix_sockets: { label: "A review sandbox may use unix sockets (a browser)", empty: "No" },
 };
 
 /**
