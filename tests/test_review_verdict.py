@@ -383,6 +383,33 @@ class CommandMatchTests(unittest.TestCase):
         self.assertTrue(command_was_run("a && b", ["a", "b"]))
         self.assertFalse(command_was_run("a && b", ["a"]))
 
+    def test_a_command_inside_a_group_was_run(self) -> None:
+        cited = "./venv/bin/python -m pytest tests/test_routes_on_facts.py -q"
+        for ran in (
+            "(python -m pytest tests/test_routes_on_facts.py -q 2>&1 || ./venv/bin/python -m pytest tests/test_routes_on_facts.py -q 2>&1) | tail -8",
+            "(./venv/bin/python -m pytest tests/test_routes_on_facts.py -q)",
+            "{ ./venv/bin/python -m pytest tests/test_routes_on_facts.py -q; } | tail -3",
+            "cd /w && (./venv/bin/python -m pytest tests/test_routes_on_facts.py -q)",
+        ):
+            with self.subTest(ran=ran):
+                self.assertTrue(command_was_run(cited, [ran]))
+
+    def test_what_did_not_run_in_a_group_is_not_matched(self) -> None:
+        for cited, ran in (
+            ("pytest x", "echo pytest x"),
+            ("pytest x", "echo '(pytest x)'"),
+            ("pytest x", "echo \"(pytest x)\""),
+            ("pytest x", "(echo pytest x)"),
+            ("pytest x", "(pytest y || true)"),
+            ("pytest x", "{ echo pytest x; }"),
+        ):
+            with self.subTest(ran=ran):
+                self.assertFalse(command_was_run(cited, [ran]))
+
+    def test_a_command_substitution_runs_what_is_inside_it(self) -> None:
+        self.assertTrue(command_was_run("pytest x", ["echo $(pytest x)"]))
+        self.assertFalse(command_was_run("pytest x", ["echo \"$(pytest y)\""]))
+
 
 class JudgementAndOldRolesTests(unittest.TestCase):
     setUp = BasisTests.setUp
