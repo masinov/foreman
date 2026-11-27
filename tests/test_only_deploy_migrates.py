@@ -21,6 +21,18 @@ from foreman.store.migrations import MIGRATIONS
 LATEST = max(m[0] for m in MIGRATIONS)
 
 
+@contextlib.contextmanager
+def _chdir(path: Path):
+    """``contextlib.chdir``, which Python 3.10 (in CI) does not have."""
+
+    before = os.getcwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(before)
+
+
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -148,7 +160,7 @@ class DatabaseDiscoveryTests(unittest.TestCase):
             store.initialize()
         before = _digest(live)
         env = {k: v for k, v in os.environ.items() if k != DB_ENV}
-        with mock.patch.dict(os.environ, env, clear=True), contextlib.chdir(tree):
+        with mock.patch.dict(os.environ, env, clear=True), _chdir(tree):
             with self.assertRaises(CliResolutionError):
                 resolve_db_path(None)
             code, text = _cli("backlog", "list", "p")
@@ -163,7 +175,7 @@ class DatabaseDiscoveryTests(unittest.TestCase):
 
     def test_a_command_in_the_main_checkout_subdirectory_resolves_it(self) -> None:
         env = {k: v for k, v in os.environ.items() if k != DB_ENV}
-        with mock.patch.dict(os.environ, env, clear=True), contextlib.chdir(self.main / "src"):
+        with mock.patch.dict(os.environ, env, clear=True), _chdir(self.main / "src"):
             self.assertEqual(resolve_db_path(None), self.main / ".foreman.db")
 
 
