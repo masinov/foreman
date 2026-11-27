@@ -11,12 +11,13 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
 from ..domain.errors import ForemanError
+from ..domain.labels import LabelError, clean_labels, unknown_labels
 from ..domain.models import (
     Event,
     Project,
@@ -25,6 +26,7 @@ from ..domain.models import (
 )
 from ..domain.policy import PolicyMatrix
 from ..domain.rests_on import DocumentRef, RestsOnError
+from ..domain.settings import SettingsError, settings_of
 from ..notifications.delivery import NotificationDispatcher
 from ..repo.rests_on import name_documents
 from ..repo.worktrees import WorktreeError, WorktreeManager
@@ -92,6 +94,34 @@ class MutationBase:
             )
         except RestsOnError as exc:
             raise MutationError(str(exc)) from exc
+
+    def _check_labels(
+        self, project: Project | None, wanted: object, already: Sequence[str] = ()
+    ) -> list[str]:
+        """The labels a task is to carry, each one the project names.
+
+        A label the task already carries stays even if the project no longer
+        names it (removing a label from the setting edits no task); one that
+        is new must be named by the project, or the refusal lists the names it
+        does.
+        """
+
+        try:
+            labels = clean_labels(wanted)
+            if project is None:
+                raise LabelError("The task's project does not exist.")
+            known = settings_of(project).labels
+        except (LabelError, SettingsError) as exc:
+            raise MutationError(str(exc)) from exc
+        refused = [name for name in unknown_labels(labels, known) if name not in already]
+        if refused:
+            named = ", ".join(known) if known else "none"
+            raise MutationError(
+                f"Project {project.id} does not name the label "
+                f"{', '.join(repr(name) for name in refused)}. It names: {named}. "
+                "Name a label in the project's `labels` setting first."
+            )
+        return labels
 
     def _attention(self, task: Task, project: Project, *, trigger: str, run_id: str) -> Event:
         """Raise one attention turn for a task that waits for a person."""

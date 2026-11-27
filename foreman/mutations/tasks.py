@@ -28,6 +28,7 @@ TASK_EDIT_FIELDS: tuple[str, ...] = (
     "task_type",
     "acceptance_criteria",
     "rests_on",
+    "labels",
     "description",
     "priority",
     "depends_on_task_ids",
@@ -333,6 +334,13 @@ class TaskMutations(MutationBase):
             if documents != task.rests_on:
                 changed["rests_on"] = [ref.as_dict() for ref in documents]
             task.rests_on = documents
+        if "labels" in changes:
+            labels = self._check_labels(
+                self.store.get_project(task.project_id), changes["labels"], task.labels
+            )
+            if labels != task.labels:
+                changed["labels"] = labels
+            task.labels = labels
         if "description" in changes:
             value = changes["description"]
             normalised = str(value).strip() if value is not None else None
@@ -463,6 +471,7 @@ class TaskMutations(MutationBase):
         depends_on: Sequence[str] = (),
         order_index: int | None = None,
         rests_on: object = None,
+        labels: object = None,
     ) -> Task:
         """Add a task to the end of a sprint's queue.
 
@@ -512,6 +521,7 @@ class TaskMutations(MutationBase):
             )
             if rests_on
             else [],
+            labels=self._check_labels(self.store.get_project(sprint.project_id), labels),
             depends_on_task_ids=depends_on_ids,
             order_index=order_index,
             created_by=self.role,

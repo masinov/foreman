@@ -256,6 +256,10 @@ class Task:
     #: The documents of the repository the work rests on, each with the
     #: default branch's commit at the time it was named (ADR-0041 section 6).
     rests_on: list[DocumentRef] = field(default_factory=list)
+    #: Names of the labels the task carries. The project's ``labels`` setting
+    #: names the labels a task may be given; a task keeps one the project
+    #: stops naming (ADR-0041 section 1).
+    labels: list[str] = field(default_factory=list)
     blocked_reason: str | None = None
     created_by: str = "human"
     depends_on_task_ids: list[str] = field(default_factory=list)

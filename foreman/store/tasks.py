@@ -138,12 +138,12 @@ class TaskStore(StoreBase):
                     acceptance_criteria, blocked_reason, created_by,
                     depends_on_task_ids, workflow_current_step,
                     workflow_carried_output, step_visit_counts, step_failures, completion_evidence_json,
-                    executor_overrides_json, rests_on_json,
+                    executor_overrides_json, rests_on_json, labels_json,
                     source_system, source_ref, source_url, reporter,
                     created_at, started_at, completed_at,
                     paused_at, paused_by, pause_mode, block_requested
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     sprint_id = excluded.sprint_id,
                     project_id = excluded.project_id,
@@ -167,6 +167,7 @@ class TaskStore(StoreBase):
                     completion_evidence_json = excluded.completion_evidence_json,
                     executor_overrides_json = excluded.executor_overrides_json,
                     rests_on_json = excluded.rests_on_json,
+                    labels_json = excluded.labels_json,
                     source_system = excluded.source_system,
                     source_ref = excluded.source_ref,
                     source_url = excluded.source_url,
@@ -200,6 +201,7 @@ class TaskStore(StoreBase):
                     _serialize_evidence(getattr(task, "completion_evidence", None)),
                     _json_dumps(getattr(task, "executor_overrides", {}) or {}),
                     _json_dumps([ref.as_dict() for ref in task.rests_on]),
+                    _json_dumps(list(task.labels)),
                     getattr(task, "source_system", None),
                     getattr(task, "source_ref", None),
                     getattr(task, "source_url", None),

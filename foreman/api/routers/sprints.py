@@ -89,6 +89,7 @@ def build_router(ctx: ApiContext) -> APIRouter:
                 description=body.description,
                 depends_on=body.depends_on,
                 rests_on=body.rests_on,
+                labels=body.labels,
             )
         )
 

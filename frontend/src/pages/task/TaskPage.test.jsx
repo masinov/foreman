@@ -790,6 +790,17 @@ describe("the documents a task rests on", () => {
     expect(screen.queryByRole("heading", { name: "Rests on" })).toBeNull();
   });
 
+  it("shows the task's labels as one muted line, and marks one the project no longer names", async () => {
+    const { unmount } = await renderTask(
+      BASE,
+      taskRoutes({ task: taskDetail({ labels: ["ui", "needs-docs"], unknown_labels: ["needs-docs"] }) }),
+    );
+    expect(await screen.findByText("Labels: ui, needs-docs (unknown)")).toBeInTheDocument();
+    unmount();
+    await renderTask(BASE, taskRoutes({ task: taskDetail({ labels: [], unknown_labels: [] }) }));
+    expect(screen.queryByText(/^Labels:/)).toBeNull();
+  });
+
   it("says a document changed in a merge since it was named, and shows what changed", async () => {
     const changed = { commit: "abc1234" + "0".repeat(33), task_key: "FOR-80", at: "2026-11-27T10:00:00Z" };
     const rests = [{ ...RESTS_ON[0], changed }, { ...RESTS_ON[1], changed: null }];

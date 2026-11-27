@@ -17,10 +17,13 @@ from ..domain.guidance import guidance_notes
 from ..domain.gate_version import PLAN_APPROVAL, GateVersion
 from ..domain.models import (
     Event,
+    Project,
     Task,
 )
+from ..domain.labels import unknown_labels
 from ..domain.policy import PolicyMatrix, describe_resolution
 from ..domain.rests_on import RestsOnError
+from ..domain.settings import SettingsError, settings_of
 from ..engine.document_changes import changes_by_document
 from ..mutations import MutationError
 from ..mutations.gates import GateVersionChanged, GateVersionInvalid
@@ -147,6 +150,18 @@ class TaskService(Service):
             items.append(item)
         return items
 
+    @staticmethod
+    def _unknown_labels(task: Task, project: Project | None) -> list[str]:
+        """The task's labels its project does not name now."""
+
+        if not task.labels:
+            return []
+        try:
+            known = settings_of(project).labels if project is not None else {}
+        except SettingsError:
+            known = {}
+        return unknown_labels(task.labels, known)
+
     def _dependencies(self, task: Task) -> list[dict[str, Any]]:
         """The tasks ``task`` waits for, named, in the order they were given.
 
@@ -266,6 +281,9 @@ class TaskService(Service):
             "step_running": bool(self.store.list_runs(task_id=task.id, status="running")),
             "acceptance_criteria": task.acceptance_criteria,
             "rests_on": self._rests_on(task),
+            "labels": list(task.labels),
+            # Labels the project no longer names (or whose setting is unreadable).
+            "unknown_labels": self._unknown_labels(task, project),
             "workflow_current_step": task.workflow_current_step,
             "step_visit_counts": task.step_visit_counts or {},
             "depends_on_task_ids": task.depends_on_task_ids or [],
@@ -313,6 +331,7 @@ class TaskService(Service):
         description: str | None = None,
         depends_on: list[str] | None = None,
         rests_on: list[Any] | None = None,
+        labels: list[str] | None = None,
     ) -> dict[str, Any]:
         """Create one task in a sprint.
 
@@ -330,6 +349,7 @@ class TaskService(Service):
                 description=description,
                 depends_on=depends_on or (),
                 rests_on=rests_on,
+                labels=labels,
             )
         except MutationError as exc:
             raise InvalidRequestError(str(exc)) from exc
@@ -342,6 +362,7 @@ class TaskService(Service):
             "acceptance_criteria": task.acceptance_criteria,
             "description": task.description,
             "rests_on": [ref.as_dict() for ref in task.rests_on],
+            "labels": list(task.labels),
             "depends_on_task_ids": task.depends_on_task_ids,
             "order_index": task.order_index,
             "created_at": task.created_at,

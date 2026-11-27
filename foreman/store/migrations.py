@@ -1173,6 +1173,14 @@ MIGRATIONS: list[tuple[int, str, str]] = [
         SELECT 1;
         """,
     ),
+    (
+        37,
+        "tasks: the labels a task carries",
+        """
+        -- A JSON list of label names; existing tasks carry none.
+        ALTER TABLE tasks ADD COLUMN labels_json TEXT NOT NULL DEFAULT '[]';
+        """,
+    ),
 ]
 
 

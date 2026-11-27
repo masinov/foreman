@@ -28,6 +28,8 @@ export function TaskHead({ task, changes, checks, onChanged, onDeleted }) {
   const facts = [task.task_key, task.task_type, task.branch_name, shortSha(headCommit(changes, checks)), changeSize(changes)].filter(
     Boolean,
   );
+  const unknown = new Set(task.unknown_labels || []);
+  const labels = (task.labels || []).map((name) => (unknown.has(name) ? `${name} (unknown)` : name));
   return (
     <div className="task__title-row">
       <div className="task__title">
@@ -36,6 +38,11 @@ export function TaskHead({ task, changes, checks, onChanged, onDeleted }) {
           <Mono quiet className="task__facts">
             {facts.join(" · ")}
           </Mono>
+        ) : null}
+        {labels.length ? (
+          <p className="task__labels" title="Labels the project names; one marked unknown is no longer named by it.">
+            Labels: {labels.join(", ")}
+          </p>
         ) : null}
       </div>
       <div className="task__actions">
