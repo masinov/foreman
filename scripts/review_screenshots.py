@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import re
+import os
 import shutil
 import socket
 import sqlite3
@@ -27,6 +28,24 @@ import urllib.request
 
 WIDTHS = ((1440, 900), (390, 844))
 BROWSERS = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser")
+
+
+def browser_proxy() -> dict[str, str] | None:
+    """The proxy the environment names, for a browser, which does not read the variables itself.
+
+    In a review sandbox the only way out is Claude Code's proxy: without it the
+    page's fonts are never fetched and the page never finishes loading. The
+    dashboard itself, on this machine, is reached directly.
+    """
+
+    server = next(
+        (os.environ[name] for name in ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy")
+         if os.environ.get(name)),
+        None,
+    )
+    if not server:
+        return None
+    return {"server": server, "bypass": "127.0.0.1,localhost"}
 
 
 def free_port() -> int:
@@ -88,8 +107,9 @@ def main() -> int:
         print(f"No database at {source}; give one with --db.", file=sys.stderr)
         return 2
     if not args.no_build:
+        # No update check: in a review sandbox the registry is out of reach.
         subprocess.run(["npm", "--prefix", "frontend", "run", "build"], check=True, stdin=subprocess.DEVNULL,
-                       stdout=subprocess.DEVNULL)
+                       stdout=subprocess.DEVNULL, env={**os.environ, "NPM_CONFIG_UPDATE_NOTIFIER": "false"})
     copy_database(source, out / "review.db")
     # The dashboard no longer migrates when it opens (a deploy step since
     # FOR-87): the copy is brought to this checkout's schema, so a branch that
@@ -119,7 +139,11 @@ def main() -> int:
             raise
         executable = next((shutil.which(name) for name in BROWSERS if shutil.which(name)), None)
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(executable_path=executable) if executable else playwright.chromium.launch()
+            options = {"executable_path": executable} if executable else {}
+            proxy = browser_proxy()
+            if proxy:
+                options["proxy"] = proxy
+            browser = playwright.chromium.launch(**options)
             for path in args.paths:
                 for width, height in WIDTHS:
                     page = browser.new_page(viewport={"width": width, "height": height})
