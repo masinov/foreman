@@ -110,9 +110,10 @@ class Sandbox:
     The worktree is detached at ``commit``, so a commit made in it moves
     nothing. All worktrees share one ``.git``, though, so an agent with a shell
     can still move a ref (``git branch -f``, ``git update-ref``) or push.
-    ``env`` makes every push fail, and ``check`` compares the task branch with
-    the head it had when the sandbox opened, puts it back if it moved, and
-    returns why the step must fail.
+    ``env`` turns away a push made the ordinary way (see ``_no_push_env`` for
+    where that stops), and ``check`` compares the task branch with the head
+    it had when the sandbox opened, puts it back if it moved, and returns why
+    the step must fail.
     """
 
     path: Path
@@ -132,37 +133,47 @@ class Sandbox:
         return f"refs/heads/{self.branch}"
 
     def check(self) -> str | None:
-        """Return why the step broke the sandbox, or None; a moved branch is restored."""
+        """Return why the step broke the sandbox, or None; a moved branch is restored.
 
-        if self.violation is not None:
-            return self.violation
+        The branch is checked and put back on every call, a push or not: a
+        step that moved the branch and then pushed leaves it where it began.
+        """
+
+        reasons: list[str] = []
         pushed = self.push_marker is not None and self.push_marker.exists()
         if not pushed and self.push_sink is not None and self.push_sink.is_dir():
             refs = run_git(self.push_sink, "for-each-ref", check=False)
             pushed = bool(refs.stdout.strip())
         if pushed:
-            self.violation = (
+            reasons.append(
                 "The sandboxed step tried to push. A sandbox never pushes: the push was "
                 "refused, and the step fails so the attempt is on the task's record."
             )
-            return self.violation
         current = head_sha(self.repo_path, self.ref)
-        if current == self.commit:
-            return None
-        found = f"moved to {current[:12]}" if current else "was deleted"
-        restore = run_git(
-            self.repo_path, "update-ref", self.ref, self.commit, current or "", check=False
-        )
-        restored = (
-            "Foreman put it back."
-            if restore.returncode == 0
-            else f"Foreman could not put it back: {restore.stderr or restore.stdout}"
-        )
-        self.violation = (
-            f"The sandboxed step changed the task's branch: {self.branch} was at "
-            f"{self.commit[:12]} when the step began and {found}. A sandboxed step may "
-            f"not commit to, move or push the task's branch. {restored}"
-        )
+        if current != self.commit:
+            found = f"moved to {current[:12]}" if current else "was deleted"
+            restore = run_git(
+                self.repo_path, "update-ref", self.ref, self.commit, current or "", check=False
+            )
+            restored = (
+                "Foreman put it back."
+                if restore.returncode == 0
+                else f"Foreman could not put it back: {restore.stderr or restore.stdout}"
+            )
+            reasons.append(
+                f"The sandboxed step changed the task's branch: {self.branch} was at "
+                f"{self.commit[:12]} when the step began and {found}. A sandboxed step may "
+                f"not commit to, move or push the task's branch. {restored}"
+            )
+        if self.violation is not None:
+            # A later call finds the branch already put back; what the first
+            # call found still stands.
+            for reason in reasons:
+                if reason not in self.violation:
+                    self.violation = f"{self.violation} {reason}"
+            return self.violation
+        if reasons:
+            self.violation = " ".join(reasons)
         return self.violation
 
 
@@ -390,17 +401,19 @@ class WorktreeManager:
             run_git(self.repo_path, "worktree", "add", "--detach", str(path), commit)
         except GitError as exc:
             raise WorktreeError(f"Could not create sandbox at {path}: {exc}") from exc
-        guard_dir = Path(tempfile.mkdtemp(prefix="foreman-sandbox-guard-"))
-        box = Sandbox(
-            path=path,
-            repo_path=self.repo_path,
-            branch=branch,
-            commit=commit,
-            env=self._no_push_env(guard_dir),
-            push_marker=guard_dir / PUSH_MARKER_NAME,
-            push_sink=guard_dir / "sink.git",
-        )
+        guard_dir: Path | None = None
+        box: Sandbox | None = None
         try:
+            guard_dir = Path(tempfile.mkdtemp(prefix="foreman-sandbox-guard-"))
+            box = Sandbox(
+                path=path,
+                repo_path=self.repo_path,
+                branch=branch,
+                commit=commit,
+                env=self._no_push_env(guard_dir),
+                push_marker=guard_dir / PUSH_MARKER_NAME,
+                push_sink=guard_dir / "sink.git",
+            )
             self._link_shared_paths(path)
             self._run_setup_command(path)
             yield box
@@ -408,10 +421,12 @@ class WorktreeManager:
             try:
                 # Anything the step did to the branch is undone even when the
                 # step was killed and nobody reads the verdict.
-                box.check()
+                if box is not None:
+                    box.check()
             finally:
                 self.remove_path(path)
-                shutil.rmtree(guard_dir, ignore_errors=True)
+                if guard_dir is not None:
+                    shutil.rmtree(guard_dir, ignore_errors=True)
 
     def remove_stale_sandboxes(self) -> tuple[Path, ...]:
         """Remove every sandbox worktree; call it only when no step can be running one.
@@ -442,6 +457,11 @@ class WorktreeManager:
         skipped with ``--no-verify``) is a push too. Either way the step is
         failed, so the attempt is on the task. A push to an address is
         prevented, not detected.
+
+        These are settings in the step's environment: they stop a push made
+        the ordinary way, not an agent that unsets them on purpose (it runs
+        as the operator, with their credentials). That needs the step kept
+        from the credentials and the network, which this does not do.
         """
 
         # Pushes to a configured remote land in an empty repository of the

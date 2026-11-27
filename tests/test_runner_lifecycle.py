@@ -182,15 +182,17 @@ class ManagedProcessTests(unittest.TestCase):
     def test_a_worker_killed_hard_leaves_no_agent_or_tool_of_its_agent_running(self) -> None:
         """ADR-0043: the worker is SIGKILLed; nothing it started may keep running.
 
-        The agent starts a tool of its own (a grandchild of the worker). The
-        parent-death signal reaches only the agent, so the group guard must
-        reach the tool.
+        The agent starts a tool of its own (a grandchild of the worker), and
+        another in a session of its own, as Claude Code starts each Bash
+        command. The parent-death signal reaches only the agent; the guard
+        must reach both tools.
         """
 
         agent = (
             "import subprocess, time\n"
             "tool = subprocess.Popen(['sleep', '60'])\n"
-            "print(tool.pid, flush=True)\n"
+            "own = subprocess.Popen(['sleep', '60'], start_new_session=True)\n"
+            "print(tool.pid, own.pid, flush=True)\n"
             "time.sleep(60)\n"
         )
         worker = (
@@ -211,9 +213,11 @@ class ManagedProcessTests(unittest.TestCase):
         pids: list[int] = []
         try:
             agent_pid = int(proc.stdout.readline().strip())
-            tool_pid = int(proc.stdout.readline().strip())
-            pids = [agent_pid, tool_pid]
+            tool_pid, own_session_pid = (int(part) for part in proc.stdout.readline().split())
+            pids = [agent_pid, tool_pid, own_session_pid]
             self.assertTrue(all(_pid_is_alive(pid) for pid in pids))
+            # The guard looks at the agent's tree every two seconds.
+            time.sleep(2.5)
             proc.kill()
             proc.wait(timeout=5)
             for pid in pids:

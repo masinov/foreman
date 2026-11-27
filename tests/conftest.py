@@ -19,13 +19,24 @@ import pytest
 _BROWSER_TESTS = "test_e2e.py"
 
 
+def _running_loop() -> asyncio.AbstractEventLoop | None:
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+
+
 @pytest.fixture(autouse=True)
 def no_asyncio_loop_is_left_running(request: pytest.FixtureRequest):
+    # A loop already running when the test began was left by another one
+    # (a browser test, or one already failed): this test is not blamed.
+    before = _running_loop()
     yield
     if request.node.nodeid.split("::")[0].endswith(_BROWSER_TESTS):
         return
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
+    loop = _running_loop()
+    if loop is None or loop is before:
         return
+    # Cleared, so the tests after this one on the worker run as usual.
+    asyncio.events._set_running_loop(None)
     pytest.fail(f"this test left an asyncio loop running on its worker: {loop!r}", pytrace=False)

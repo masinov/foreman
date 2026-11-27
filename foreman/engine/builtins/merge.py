@@ -32,7 +32,7 @@ from ...repo.worktrees import WorktreeError, WorktreeManager
 from ...store import ForemanStore
 from ..repo_facts import merge_facts
 from .base import BuiltinEventRecord, BuiltinExecutorBase, BuiltinResult, _task_worktree
-from .completion import _completion_guard_payload
+from .completion import _completion_guard_payload, only_stale
 
 
 def _follow_operator_checkout(project: Project, sha: str | None) -> BuiltinEventRecord | None:
@@ -389,6 +389,24 @@ class MergeStep(BuiltinExecutorBase):
                 detail="Completion evidence could not be built. Cannot merge.",
                 event_type="engine.completion_guard",
                 payload={"error": "evidence_build_failed"},
+            )
+        if only_stale(evidence):
+            # The branch moved after its tests and review (a commit while the
+            # task waited at its gate): it goes back to be tested and
+            # reviewed, as a branch brought up to date does, not to a person.
+            return BuiltinResult(
+                outcome="updated",
+                detail=(
+                    f"Branch {task.branch_name!r} changed after it was tested and reviewed "
+                    f"(it is now at {evidence.head_sha[:7]}). It is tested and reviewed again "
+                    "before it is merged."
+                ),
+                events=(
+                    BuiltinEventRecord(
+                        event_type="engine.completion_guard",
+                        payload={**_completion_guard_payload(evidence), "retest": True},
+                    ),
+                ),
             )
         block_reason = self._completion_guard_block_reason(task, evidence, project, store)
         if block_reason is not None:

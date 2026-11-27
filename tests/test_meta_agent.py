@@ -719,6 +719,10 @@ class ManagerProposalStreamTests(ProcessMessagePersistenceTests):
         # The one folder it may write to exists.
         self.assertTrue((repo / ".foreman" / "manager").is_dir())
 
+    def test_the_session_is_not_given_the_operators_memory(self) -> None:
+        environment = meta_agent.manager_process_env({"FOREMAN_MANAGER_SESSION": "proj-1"})
+        self.assertEqual(environment["CLAUDE_CODE_DISABLE_AUTO_MEMORY"], "1")
+
     def test_this_installations_foreman_is_first_on_the_sessions_path(self) -> None:
         import sys
 

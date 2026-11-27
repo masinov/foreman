@@ -20,7 +20,7 @@ from .verdict import criteria_items, session_commands
 from ..domain.errors import EngineCommandInterrupt
 from ..domain.models import Project, Run, Task, TokenUsage
 from ..domain.outcomes import ERROR
-from ..definitions.roles import RoleDefinition
+from ..definitions.roles import COMMAND_TOOLS, RoleDefinition
 from ..runner import AgentRunConfig, PreflightError, run_with_retry
 from ..runner.base import AgentRunner as NativeAgentRunner
 from ..runner.env import passthrough_env, resolve_env
@@ -496,16 +496,18 @@ class AgentStepRunner:
 
 
 def _disallowed_tools(role: RoleDefinition) -> tuple[str, ...]:
-    """The tools the agent is refused: the role's own, and Bash for ``run_scope = "none"``.
+    """The tools the agent is refused: the role's own, and every command tool for ``run_scope = "none"``.
 
     A role that runs nothing may list no ``allowed`` tools at all, which leaves
-    the backend's whole set, Bash included; refusing it here keeps the scope
-    true whatever the tool list says.
+    the backend's whole set, Bash, Monitor and PowerShell included; refusing
+    them here keeps the scope true whatever the tool list says. (Codex runs
+    commands in its own sandbox without asking: the scope is not enforced
+    there; see the MANUAL.)
     """
 
     disallowed = tuple(role.agent.tools.disallowed)
-    if role.run_scope == "none" and "Bash" not in disallowed:
-        disallowed = (*disallowed, "Bash")
+    if role.run_scope == "none":
+        disallowed = (*disallowed, *(tool for tool in COMMAND_TOOLS if tool not in disallowed))
     return disallowed
 
 

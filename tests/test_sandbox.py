@@ -66,11 +66,13 @@ class RunScopeLoaderTests(unittest.TestCase):
         with self.assertRaisesRegex(RoleLoadError, "agent.run_scope must be one of none, sandbox, branch"):
             load_role_text(role_text(agent='run_scope = "container"'), "r.toml")
 
-    def test_a_role_that_runs_nothing_cannot_list_bash(self) -> None:
-        with self.assertRaisesRegex(RoleLoadError, "run_scope is none"):
-            load_role_text(
-                role_text(agent='run_scope = "none"', tools='allowed = ["Read", "Bash"]'), "r.toml"
-            )
+    def test_a_role_that_runs_nothing_cannot_list_a_command_tool(self) -> None:
+        for tool in ("Bash", "Monitor", "PowerShell"):
+            with self.subTest(tool=tool), self.assertRaisesRegex(RoleLoadError, "run_scope is none"):
+                load_role_text(
+                    role_text(agent='run_scope = "none"', tools=f'allowed = ["Read", "{tool}"]'),
+                    "r.toml",
+                )
 
     def test_only_the_code_reviewer_is_sandboxed_among_the_shipped_roles(self) -> None:
         roles = load_roles(ROLES_DIR)
@@ -211,6 +213,29 @@ class SandboxWorktreeTests(SandboxCase):
                 raise EngineShutdown("stop")
         self.assertEqual(self.head(), before)
 
+    def test_a_branch_moved_then_pushed_is_put_back_and_both_are_named(self) -> None:
+        import os
+
+        before = self.head()
+        remote = self.repo.parent / "remote.git"
+        git(self.repo.parent, "init", "--bare", str(remote))
+        git(self.repo, "remote", "add", "origin", str(remote))
+        with WorktreeManager(self.project()).sandbox(self.task) as box:
+            (box.path / "d").write_text("d")
+            git(box.path, "add", ".")
+            git(box.path, "commit", "-m", "d")
+            git(box.path, "branch", "-f", "feat/x", "HEAD")
+            subprocess.run(
+                ["git", "push", "origin", "feat/x"],
+                cwd=box.path, env={**os.environ, **box.env}, capture_output=True, text=True,
+            )
+            violation = box.check()
+            self.assertEqual(box.check(), violation)
+        self.assertIn("tried to push", violation)
+        self.assertIn("feat/x was at", violation)
+        self.assertEqual(self.head(), before)
+        self.assertEqual(git(remote, "branch", "--list"), "")
+
     def test_a_push_goes_nowhere(self) -> None:
         remote = self.repo.parent / "remote.git"
         git(self.repo.parent, "init", "--bare", str(remote))
@@ -308,12 +333,22 @@ class StaleSandboxTests(SandboxCase):
         self.assertTrue((stranger / "keep").exists())
 
     def test_the_orchestrator_removes_them_at_the_start_of_a_pass(self) -> None:
-        from foreman.engine.task_worktrees import TaskWorktrees
+        from foreman.engine.orchestrator import ForemanOrchestrator
+        from foreman.store import ForemanStore
 
         project = self.project()
+        store = ForemanStore(self.repo.parent / "f.db")
+        self.addCleanup(store.close)
+        store.initialize()
+        store.save_project(project)
         left = WorktreeManager(project).root / f"{SANDBOX_WORKTREE_PREFIX}T-1"
         git(self.repo, "worktree", "add", "--detach", str(left), "main")
-        TaskWorktrees(None, records=None, tasks=None).remove_stale_sandboxes(project)
+        orchestrator = ForemanOrchestrator(store)
+
+        # An idle wake does no housekeeping; the pass an engine starts with does.
+        orchestrator.run_project(project.id, maintenance=False)
+        self.assertTrue(left.exists())
+        orchestrator.run_project(project.id)
         self.assertFalse(left.exists())
 
 
@@ -435,7 +470,8 @@ class SandboxedStepTests(SandboxCase):
                 role=each, project=self.project(), task=self.task, workflow_step="x",
                 prompt="p", session_id=None, carried_output=None, model="m",
             )
-            self.assertIn("Bash", runner.configs[0].disallowed_tools)
+            for tool in ("Bash", "Monitor", "PowerShell"):
+                self.assertIn(tool, runner.configs[0].disallowed_tools)
         branch = FakeRunner(lambda config: None)
         self.step_runner(branch).execute(
             role=load_role_text(role_text(), "r.toml"), project=self.project(), task=self.task,

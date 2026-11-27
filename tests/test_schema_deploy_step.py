@@ -60,6 +60,25 @@ class DriftMigrationTests(unittest.TestCase):
     def test_store_has_no_repair_at_open(self) -> None:
         self.assertFalse(hasattr(ForemanStore, "_repair_known_schema_drift"))
 
+    def test_initializing_a_store_at_the_latest_version_repairs_nothing(self) -> None:
+        # The old repair ran in initialize(): a database whose ledger says it
+        # is current but lacks a column keeps lacking it. (task_key is left
+        # out: initialize() numbers tasks by it, so no database can open
+        # without it.)
+        for table, column in DRIFT:
+            if column == "task_key":
+                continue
+            with self.subTest(column=column), tempfile.TemporaryDirectory() as tmp:
+                db = Path(tmp) / "f.db"
+                with ForemanStore(db) as store:
+                    store._connection.executescript(_SCHEMA_MIGRATIONS_DDL)
+                    store.migrate(_without_column(column))
+                    self.assertEqual(store.schema_version(), LATEST)
+                    self.assertNotIn(column, _columns(store, table))
+                with ForemanStore(db) as store:
+                    store.initialize()
+                    self.assertNotIn(column, _columns(store, table))
+
 
 class SchemaCheckTests(unittest.TestCase):
     def _db(self, tmp: str, *, older: bool = False, newer: bool = False) -> str:

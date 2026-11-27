@@ -37,14 +37,17 @@ _NEUTRAL = frozenset({"cd", "pushd", "popd", "set", "export", "true"})
 _SEPARATORS = {"&&", "||", ";", "|", "&"}
 # A redirect into a file; ``2>&1``, ``>&2`` and ``/dev/null`` are not one.
 _REDIRECT = re.compile(r"(?:^|[^<>&\d])\d?>>?(?!&)\s*(?!/dev/null\b)[^\s&|;>]")
-_HEREDOC_TO_FILE = re.compile(r"<<-?\s*['\"]?\w+['\"]?[^\n]*>")
-_HEREDOC_START = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?")
+# ``<<<`` is a here-string, not a heredoc: no lines follow it.
+_HEREDOC_TO_FILE = re.compile(r"(?<!<)<<(?!<)-?\s*['\"]?\w+['\"]?[^\n]*>")
+_HEREDOC_START = re.compile(r"(?<!<)<<(?!<)-?\s*['\"]?(\w+)['\"]?")
 _FILE_COMMANDS = frozenset({"mv", "cp", "rm"})
 _GIT_CHANGES = frozenset({"commit", "apply", "mv", "rm"})
 _GIT_APPLY_READ_ONLY = frozenset({"--check", "--stat", "--numstat", "--summary"})
 # A Python script that writes: open(p, 'w'), Path.write_text, shutil or os file operations.
 _PY_WRITE = re.compile(
-    r"open\([^)]*,\s*(?:mode\s*=\s*)?['\"][^'\"]*[wax+][^'\"]*['\"]"
+    # The mode is open's own argument (a call inside the path is skipped
+    # whole) and a real mode string, not any string with a w, a, x or + in it.
+    r"open\((?:[^()]|\([^()]*\))*?,\s*(?:mode\s*=\s*)?['\"](?=[rbt]*[wax+])[rwxabt+]{1,4}['\"]"
     r"|\.write_(?:text|bytes)\(|shutil\.(?:copy|move|rmtree)|os\.(?:remove|unlink|rename|replace)\("
 )
 _SHELL_WRAP = re.compile(r"^(?:/\S*/)?(?:ba|z)?sh\s+-l?c\s+(.+)$", re.DOTALL)

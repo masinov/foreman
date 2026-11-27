@@ -29,6 +29,22 @@ class SystemdUnitTests(unittest.TestCase):
         self.assertEqual(unit["Install"]["WantedBy"], "default.target")
         self.assertTrue(unit["Service"]["ExecStart"].endswith(" dashboard"))
 
+    def test_units_are_given_the_installers_path(self) -> None:
+        # A user unit's own PATH lacks ~/.local/bin, where `claude` usually is.
+        for name in ("foreman-worker@.service", "foreman-dashboard.service"):
+            self.assertEqual(_read(name)["Service"]["Environment"], '"PATH=@PATH@"', name)
+
+    def test_restarts_outlast_the_lease_of_a_worker_killed_hard(self) -> None:
+        from foreman.engine.lock import DEFAULT_LEASE_DURATION_SECONDS
+
+        unit = _read("foreman-worker@.service")
+        spacing = float(unit["Service"]["RestartSec"])
+        starts = int(unit["Unit"]["StartLimitBurst"])
+        window = float(unit["Unit"]["StartLimitIntervalSec"])
+        # The starts left before systemd gives up reach past the dead lease.
+        self.assertGreater(spacing * (starts - 1), DEFAULT_LEASE_DURATION_SECONDS)
+        self.assertLessEqual(spacing * (starts - 1), window)
+
 
 if __name__ == "__main__":
     unittest.main()
