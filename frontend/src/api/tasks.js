@@ -53,6 +53,14 @@ export function denyTask(client, taskId, note, options) {
   return client.post(`${task(taskId)}/deny`, { note: note || null }, options);
 }
 
+/**
+ * Answer the question an agent asked: `option` is the number (from 1) of the
+ * option chosen and `text` the person's own words; either, or both.
+ */
+export function answerTask(client, taskId, { option, text }, options) {
+  return client.post(`${task(taskId)}/answer`, { option: option ?? null, text: text || null }, options);
+}
+
 // What a person does to a task from its page.
 
 /** Hold a task with a reason until it is unblocked; a running step finishes first. */

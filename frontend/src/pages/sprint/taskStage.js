@@ -88,6 +88,10 @@ export function stageOf(task, engine = null) {
             : "Waiting for approval";
       return { tone: "attention", word, group: GROUPS.needsYou };
     }
+    if (task.blocked_kind === "question") {
+      if (held) return { ...held, word: atStep(held.word, task), group: GROUPS.needsYou };
+      return { tone: "attention", word: "Waiting for an answer", group: GROUPS.needsYou };
+    }
     return { tone: "attention", word: atStep("Blocked", task), group: GROUPS.needsYou };
   }
   if (task.status === "triage") {

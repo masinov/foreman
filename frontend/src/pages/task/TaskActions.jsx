@@ -148,7 +148,7 @@ export function actionsFor(task) {
   if (blocking) buttons.push("withdraw");
   // A task blocked by a failure cannot run anyway; one waiting at a gate can
   // be paused, which lets the sprint go on without it (ADR-0043).
-  const pausable = startable || (task.status === "blocked" && task.awaiting_human_gate);
+  const pausable = startable || (task.status === "blocked" && (task.awaiting_human_gate || task.blocked_kind === "question"));
   if (planned && pausable && !hold) buttons.push("pause");
   if (running && !(paused && hold.mode === "now") && !blocking) buttons.push("stop");
   if (CLOSED.has(task.status)) buttons.push("reopen");
