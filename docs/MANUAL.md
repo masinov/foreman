@@ -187,6 +187,17 @@ A single step executes like this:
 Built-in (non-agent) steps are prefixed `_builtin:` — `_builtin:run_tests`,
 `_builtin:merge`, `_builtin:mark_done`, `_builtin:human_gate`.
 
+### What an agent is given (the runner)
+
+A Claude Code agent starts in the task's worktree. It is given that
+worktree's own `CLAUDE.md` and `AGENTS.md`, once each (the main checkout's
+copies are not loaded), and the prompt Foreman builds. It is **not** given the
+operator's Claude Code memory: the runner starts every Claude Code agent with
+`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, so the notes under
+`~/.claude/projects/<repository path>/memory/` are neither read by the agent
+nor open to its writes. (`--bare` is not used: it also stops `CLAUDE.md`
+loading.) A role's `[agent.env]` can set the variable back to `0`.
+
 ---
 
 ## 5. Data model

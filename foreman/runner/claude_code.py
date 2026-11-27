@@ -41,7 +41,14 @@ _FILE_TOOLS = {"Read", "Write", "Edit", "NotebookEdit"}
 #: socket as its input, so a read in it waited until the timeout (FOR-53's
 #: 18-minute stall; checked live on 2026-11-25 with Claude Code 2.1.332).
 NO_STDIN_PREFIX = Path(__file__).resolve().parent.parent / "data" / "shell" / "no-stdin.sh"
+#:
+#: Auto-memory is off: Claude Code otherwise gives an agent the operator's
+#: private notes for the repository (``~/.claude/projects/<path>/memory``),
+#: and an agent running as the same user could write to them. The
+#: worktree's own ``CLAUDE.md`` and ``AGENTS.md`` still load (checked live on
+#: 2026-11-27 with Claude Code 2.1.332; ``--bare`` would drop them too).
 HEADLESS_STEP_ENV: dict[str, str] = {
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
     "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
     "BASH_DEFAULT_TIMEOUT_MS": "1200000",
     "BASH_MAX_TIMEOUT_MS": "1800000",
