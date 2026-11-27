@@ -474,7 +474,7 @@ class AgentStepRunner:
             working_dir=working_dir or task_working_dir(project, task),
             session_id=session_id,
             permission_mode=role.agent.permission_mode,
-            disallowed_tools=role.agent.tools.disallowed,
+            disallowed_tools=_disallowed_tools(role),
             allowed_tools=role.agent.tools.allowed,
             no_tools=role.agent.tools.none,
             extra_flags=role.agent.flags,
@@ -493,6 +493,20 @@ class AgentStepRunner:
             max_cost_usd=run_cost_ceiling(project, role.completion.max_cost_usd),
             session_cost_baseline_usd=session_baseline_usd,
         )
+
+
+def _disallowed_tools(role: RoleDefinition) -> tuple[str, ...]:
+    """The tools the agent is refused: the role's own, and Bash for ``run_scope = "none"``.
+
+    A role that runs nothing may list no ``allowed`` tools at all, which leaves
+    the backend's whole set, Bash included; refusing it here keeps the scope
+    true whatever the tool list says.
+    """
+
+    disallowed = tuple(role.agent.tools.disallowed)
+    if role.run_scope == "none" and "Bash" not in disallowed:
+        disallowed = (*disallowed, "Bash")
+    return disallowed
 
 
 class _NativeRunTally:
