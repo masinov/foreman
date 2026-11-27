@@ -10,7 +10,9 @@ Reading: ``Read``, ``Grep`` and ``Glob``; a shell command that only reads
 ``wc``, ``git log``, ``git show``, ``git diff``, ``git status``, ``git grep``).
 A change: ``Edit``, ``Write``, ``MultiEdit``, ``NotebookEdit`` or
 ``apply_patch``; a shell command that writes a file (a redirect into a file,
-``sed -i``, ``perl -i``, a heredoc into a file, ``tee``); ``git commit``.
+``sed -i``, ``perl -i``, a heredoc into a file, ``tee``); ``git commit``, ``git apply``, ``mv``, ``cp``, ``rm``, a Python script (a
+heredoc or ``-c``) that opens a file for writing. A ``>`` inside quotes is not
+a redirect, a newline separates commands, and a heredoc's body is not a command.
 Any other call is neither.
 """
 
@@ -36,6 +38,15 @@ _SEPARATORS = {"&&", "||", ";", "|", "&"}
 # A redirect into a file; ``2>&1``, ``>&2`` and ``/dev/null`` are not one.
 _REDIRECT = re.compile(r"(?:^|[^<>&\d])\d?>>?(?!&)\s*(?!/dev/null\b)[^\s&|;>]")
 _HEREDOC_TO_FILE = re.compile(r"<<-?\s*['\"]?\w+['\"]?[^\n]*>")
+_HEREDOC_START = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?")
+_FILE_COMMANDS = frozenset({"mv", "cp", "rm"})
+_GIT_CHANGES = frozenset({"commit", "apply", "mv", "rm"})
+_GIT_APPLY_READ_ONLY = frozenset({"--check", "--stat", "--numstat", "--summary"})
+# A Python script that writes: open(p, 'w'), Path.write_text, shutil or os file operations.
+_PY_WRITE = re.compile(
+    r"open\([^)]*,\s*(?:mode\s*=\s*)?['\"][^'\"]*[wax+][^'\"]*['\"]"
+    r"|\.write_(?:text|bytes)\(|shutil\.(?:copy|move|rmtree)|os\.(?:remove|unlink|rename|replace)\("
+)
 _SHELL_WRAP = re.compile(r"^(?:/\S*/)?(?:ba|z)?sh\s+-l?c\s+(.+)$", re.DOTALL)
 
 
@@ -61,6 +72,73 @@ def _unwrap(command: str) -> str:
     except ValueError:
         return match.group(1)
     return parts[0] if len(parts) == 1 else match.group(1)
+
+
+def _mask_quotes(command: str) -> tuple[str, str]:
+    """The command with quoted text blanked out, and with unquoted newlines as ``;``.
+
+    The first is for finding redirects, which a ``>`` inside quotes is not; the
+    second is for splitting into commands. Both keep the command's length.
+    """
+
+    masked: list[str] = []
+    split: list[str] = []
+    quote = ""
+    i = 0
+    while i < len(command):
+        ch = command[i]
+        if quote:
+            if ch == quote:
+                quote = ""
+                masked.append(ch)
+            elif ch == "\\" and quote == '"' and i + 1 < len(command):
+                masked.append("xx")
+                split.append(ch + command[i + 1])
+                i += 2
+                continue
+            else:
+                masked.append("x" if ch != "\n" else "\n")
+            split.append(ch)
+        elif ch in "'\"":
+            quote = ch
+            masked.append(ch)
+            split.append(ch)
+        elif ch == "\\" and i + 1 < len(command):
+            masked.append("xx")
+            split.append(ch + command[i + 1])
+            i += 2
+            continue
+        else:
+            masked.append(ch)
+            split.append(";" if ch == "\n" else ch)
+        i += 1
+    return "".join(masked), "".join(split)
+
+
+def _strip_heredocs(command: str) -> tuple[str, bool]:
+    """The command without heredoc bodies, and whether a Python body writes a file."""
+
+    out: list[str] = []
+    writes = False
+    pending: list[tuple[str, bool]] = []
+    body: list[str] = []
+    for line in command.split("\n"):
+        if pending:
+            delimiter, python = pending[0]
+            if line.strip() == delimiter:
+                pending.pop(0)
+                writes = writes or (python and bool(_PY_WRITE.search("\n".join(body))))
+                body = []
+            else:
+                body.append(line)
+            continue
+        out.append(line)
+        masked, _ = _mask_quotes(line)
+        for match in _HEREDOC_START.finditer(line):
+            if masked[match.start() : match.start() + 2] == "<<":
+                python = bool(re.search(r"(?:^|[\s/;&|])python[\d.]*\b", line[: match.start()]))
+                pending.append((match.group(1), python))
+    return "\n".join(out), writes
 
 
 def _segments(command: str) -> list[list[str]]:
@@ -102,7 +180,9 @@ def _segment_kind(words: list[str]) -> str | None:
         return "neutral"
     if name == "apply_patch":
         return "change"
-    if name == "tee":
+    if name == "tee" or name in _FILE_COMMANDS:
+        return "change"
+    if name.startswith("python") and any(_PY_WRITE.search(w) for w in words[1:]):
         return "change"
     if name == "sed":
         flags = [w for w in words[1:] if w.startswith("-") and not w.startswith("--")]
@@ -113,7 +193,9 @@ def _segment_kind(words: list[str]) -> str | None:
         return "change" if any(re.fullmatch(r"-\w*i\w*", w) for w in words[1:]) else None
     if name == "git":
         sub = _git_subcommand(words)
-        if sub == "commit":
+        if sub == "apply":
+            return "read" if _GIT_APPLY_READ_ONLY & set(words) else "change"
+        if sub in _GIT_CHANGES:
             return "change"
         return "read" if sub in _READ_GIT else None
     return "read" if name in _READ_COMMANDS else None
@@ -126,10 +208,15 @@ def classify_command(command: str) -> str | None:
     every part of it reads (``cat a | grep b`` is a read, ``cat a > b`` is not).
     """
 
-    command = _unwrap(command)
+    command, python_writes = _strip_heredocs(_unwrap(command))
+    if python_writes:
+        return "change"
+    masked, command = _mask_quotes(command)
     # Redirects that write no file: ``2>&1``, ``>/dev/null``.
-    command = re.sub(r"(?:\d|&)?>>?\s*(?:&\d|/dev/null\b)", " ", command)
-    if _REDIRECT.search(command) or _HEREDOC_TO_FILE.search(command):
+    no_file = r"(?:\d|&)?>>?\s*(?:&\d|/dev/null\b)"
+    masked = re.sub(no_file, " ", masked)
+    command = re.sub(no_file, " ", command)
+    if _REDIRECT.search(masked) or _HEREDOC_TO_FILE.search(masked):
         return "change"
     kinds = [_segment_kind(words) for words in _segments(command)]
     if "change" in kinds:
@@ -147,8 +234,9 @@ def _classify_event(event_type: str, payload: Mapping[str, Any]) -> str | None:
             return "read"
         if tool in CHANGE_TOOLS:
             return "change"
+        # Codex's ``commandExecution`` tool use repeats an ``agent.command``; it is not counted again.
         if tool == "commandExecution":
-            return classify_command(str((payload.get("input") or {}).get("command") or ""))
+            return None
         if event_type == "agent.file_change":
             return "change"
     return None
