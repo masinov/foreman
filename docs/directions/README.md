@@ -58,4 +58,4 @@ The repository and the agents' view of it:
 
 Other projects:
 
-- [Assay and Foreman: an evidence base that feeds projects](assay-and-foreman.md) (2026-11-26)
+- [Assay and Foreman: an evidence base that feeds projects](assay-and-foreman.md) (2026-11-26; Assay serves any client, 2026-11-27)
