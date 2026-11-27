@@ -594,6 +594,43 @@ refused, when it is lost to another engine, or on a project-level error.
 
 ---
 
+
+### 6.2 Keeping the worker and the dashboard running (systemd)
+
+`deploy/systemd/` holds two systemd **user** units: `foreman-worker@.service`
+(one instance per project, `foreman serve <project>`) and
+`foreman-dashboard.service`. Both start at boot and start again after any
+exit, a crash or a SIGKILL included, ten seconds later; after ten starts in ten
+minutes systemd gives up, and the dashboard says "no worker" with Restart.
+`foreman serve` exits 0 when ended with `foreman engine shutdown`, so the unit
+starts it again: ending a worker holds nothing (ADR-0043). A worker started
+again takes over the project's engine lock when the dead one's lease has
+expired and carries on the task it was on, as after any engine restart.
+
+Installing them is your step; Foreman does not do it. From the checkout, with
+`foreman` in `./venv/bin`:
+
+```bash
+mkdir -p ~/.config/systemd/user
+for f in deploy/systemd/*.service; do
+  sed "s|@REPO@|$PWD|g; s|@FOREMAN@|$PWD/venv/bin/foreman|g" "$f" \
+    > ~/.config/systemd/user/$(basename "$f")
+done
+systemctl --user daemon-reload
+systemctl --user enable --now foreman-dashboard.service foreman-worker@foreman.service
+loginctl enable-linger "$USER"     # start at boot, before you log in
+systemctl --user status foreman-worker@foreman.service
+journalctl --user -u foreman-worker@foreman.service -f
+```
+
+Replace `foreman` in `foreman-worker@foreman.service` with the project id. Run
+`foreman db migrate` before starting after an update (section 20). To remove:
+`systemctl --user disable --now <unit>` and delete the file.
+
+A killed worker leaves no agent behind: each agent's process group has a small
+guard process that kills the group (the agent and every tool it started) when
+the worker's end of a pipe closes.
+
 ## 7. Roles
 
 A role is a declarative TOML file describing one agent identity. Shipped roles:

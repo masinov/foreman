@@ -164,6 +164,8 @@ class ManagedProcess:
         for thread in self._threads:
             thread.start()
 
+        self._guard_release: int | None = _start_group_guard(proc)
+
         with _registry_lock:
             _registry.add(self)
         self._registered = True
@@ -297,7 +299,23 @@ class ManagedProcess:
             with _registry_lock:
                 _registry.discard(self)
             self._registered = False
+        self._release_group_guard()
         self._release_streams()
+
+    def _release_group_guard(self) -> None:
+        """Tell the guard its group was settled by us, so it stands down."""
+
+        fd, self._guard_release = self._guard_release, None
+        if fd is None:
+            return
+        try:
+            os.write(fd, b"x")
+        except OSError:
+            pass
+        try:
+            os.close(fd)
+        except OSError:
+            pass
 
     def _release_streams(self) -> None:
         """Close the child's pipes once it has exited and the pumps are done."""
@@ -407,6 +425,60 @@ def _iter_stream(stream: Any) -> Iterator[str]:
         text = read()
         if text:
             yield from str(text).splitlines(keepends=True)
+
+
+#: Runs in a process of its own for each child group. It holds the read end of
+#: a pipe whose write end only the worker has. If the worker dies by SIGKILL,
+#: the out-of-memory killer or a crash, the pipe reaches end of file and the
+#: guard kills the whole group: the agent and every tool it started, which the
+#: parent-death signal (agent process only) does not reach. A byte means the
+#: worker settled the group itself.
+_GROUP_GUARD_SOURCE = """
+import os, select, signal, sys
+pgid, fd = int(sys.argv[1]), int(sys.argv[2])
+while True:
+    ready = select.select([fd], [], [], 2.0)[0]
+    if ready:
+        if os.read(fd, 1) == b"x":
+            sys.exit(0)
+        break
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        sys.exit(0)
+    except PermissionError:
+        pass
+try:
+    os.killpg(pgid, signal.SIGKILL)
+except OSError:
+    pass
+"""
+
+
+def _start_group_guard(proc: Any) -> int | None:
+    """Start the guard for a real child's process group; return the release fd."""
+
+    if not isinstance(proc, subprocess.Popen) or not sys.platform.startswith("linux"):
+        return None
+    pid = proc.pid
+    if not isinstance(pid, int) or pid <= 1 or pid == os.getpgrp():
+        return None
+    read_fd, write_fd = os.pipe()
+    try:
+        subprocess.Popen(  # noqa: S603 - fixed argv
+            [sys.executable, "-I", "-c", _GROUP_GUARD_SOURCE, str(pid), str(read_fd)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            pass_fds=(read_fd,),
+            start_new_session=True,
+        )
+    except OSError:
+        os.close(write_fd)
+        return None
+    finally:
+        os.close(read_fd)
+    return write_fd
 
 
 def _kill_leftover_group(proc: Any) -> None:
