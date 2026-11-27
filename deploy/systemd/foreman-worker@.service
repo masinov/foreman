@@ -18,6 +18,9 @@ ExecStart=@FOREMAN@ serve %i
 # `foreman serve` exits 0 when asked to stop (`foreman engine shutdown`), and
 # the work is paused, not the engine, so a worker that ended is started again.
 Restart=always
+# Exit status 78: the database's schema is not this Foreman's (`foreman db
+# migrate`, or upgrade Foreman). Restarting cannot fix it, so systemd does not.
+RestartPreventExitStatus=78
 # Thirty seconds apart: a worker killed hard holds the project's engine lease
 # for up to two minutes, and the starts before it expires fail. Ten starts
 # at this spacing outlast it well before the start limit.

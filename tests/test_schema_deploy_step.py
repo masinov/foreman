@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 from foreman.api.app import create_dashboard_app
+from foreman.cli.common import EXIT_SCHEMA_REFUSED
 from foreman.cli.engine import handle_dashboard, handle_serve
 from foreman.store import ForemanStore, SchemaVersionError
 from foreman.store.base import _SCHEMA_MIGRATIONS_DDL, _split_sql_statements
@@ -118,7 +119,7 @@ class SchemaCheckTests(unittest.TestCase):
                     serve = handle_serve(
                         argparse.Namespace(db=path, project_id='x', poll_seconds=1.0, once=True)
                     )
-                self.assertEqual(serve, 1)
+                self.assertEqual(serve, EXIT_SCHEMA_REFUSED)
                 self.assertIn("foreman db migrate", err.getvalue())
                 with self.assertRaises(SchemaVersionError):
                     create_dashboard_app(path)
@@ -137,7 +138,7 @@ class SchemaCheckTests(unittest.TestCase):
             )
             err = io.StringIO()
             with contextlib.redirect_stderr(err):
-                self.assertEqual(handle_dashboard(args), 1)
+                self.assertEqual(handle_dashboard(args), EXIT_SCHEMA_REFUSED)
             self.assertIn("foreman db migrate", err.getvalue())
 
 

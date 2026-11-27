@@ -13,6 +13,9 @@ WorkingDirectory=@REPO@
 Environment="PATH=@PATH@"
 ExecStart=@FOREMAN@ dashboard
 Restart=always
+# Exit status 78: the database's schema is not this Foreman's (`foreman db
+# migrate`, or upgrade Foreman). Restarting cannot fix it, so systemd does not.
+RestartPreventExitStatus=78
 RestartSec=30
 TimeoutStopSec=30
 

@@ -54,7 +54,7 @@ def handle_db_migrate(args: argparse.Namespace) -> int:
         return 1
 
     with ForemanStore(db_path) as store:
-        applied = store.initialize()
+        applied = store.upgrade()
         current_version = store.schema_version()
 
     if not applied:

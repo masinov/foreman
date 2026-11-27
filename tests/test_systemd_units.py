@@ -45,6 +45,13 @@ class SystemdUnitTests(unittest.TestCase):
         self.assertGreater(spacing * (starts - 1), DEFAULT_LEASE_DURATION_SECONDS)
         self.assertLessEqual(spacing * (starts - 1), window)
 
+    def test_a_refused_schema_is_not_restarted(self) -> None:
+        from foreman.cli.common import EXIT_SCHEMA_REFUSED
+
+        for name in ("foreman-worker@.service", "foreman-dashboard.service"):
+            codes = _read(name)["Service"]["RestartPreventExitStatus"].split()
+            self.assertIn(str(EXIT_SCHEMA_REFUSED), codes, name)
+
 
 if __name__ == "__main__":
     unittest.main()

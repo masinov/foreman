@@ -29,6 +29,7 @@ from .common import (
     read_or_print,
     DB_OPTION_NOTE,
     EXIT_QUOTA_EXHAUSTED,
+    EXIT_SCHEMA_REFUSED,
     add_db_option,
     add_json_option,
     print_json,
@@ -165,6 +166,35 @@ def handle_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _log_schema_refusal(db_path, project_id: str, message: str) -> None:
+    """Write a refused schema to the worker's log (``serve.log``), as well as stderr.
+
+    Under systemd stderr is only the journal. The log is in the project's
+    context directory when the project can be read; a schema that is not the
+    code's may not allow that, so it falls back to the default one beside the
+    database. Best effort: a log that cannot be written changes nothing.
+    """
+
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    from ..engine.control import SERVE_LOG_NAME, serve_log_path
+    from ..repo.context import DEFAULT_CONTEXT_DIR
+
+    try:
+        with ForemanStore(db_path) as store:
+            log_path = serve_log_path(store.get_project(project_id))
+    except Exception:  # noqa: BLE001 - the schema may not be readable
+        log_path = Path(db_path).parent / DEFAULT_CONTEXT_DIR / SERVE_LOG_NAME
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).isoformat()
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(f"{stamp} foreman serve {project_id}: refused: {message}\n")
+    except OSError:
+        pass
+
+
 def handle_serve(args: argparse.Namespace) -> int:
     """Handle ``foreman serve``.
 
@@ -189,7 +219,8 @@ def handle_serve(args: argparse.Namespace) -> int:
             store.check_schema()
         except SchemaVersionError as exc:
             print(str(exc), file=sys.stderr)
-            return 1
+            _log_schema_refusal(db_path, args.project_id, str(exc))
+            return EXIT_SCHEMA_REFUSED
         project = resolve_project_or_print(store, args.project_id)
         if project is None:
             return 1
@@ -238,7 +269,7 @@ def handle_dashboard(args: argparse.Namespace) -> int:
         )
     except SchemaVersionError as exc:
         print(f"Dashboard not started: {exc}", file=sys.stderr)
-        return 1
+        return EXIT_SCHEMA_REFUSED
     except (OSError, RuntimeError) as exc:
         print(f"Failed to start dashboard: {exc}", file=sys.stderr)
         return 1

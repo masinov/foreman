@@ -29,7 +29,7 @@ class RecordsTestCase(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.db_path = Path(temp.name) / "foreman.db"
         self.store = ForemanStore(self.db_path)
-        self.store.initialize()
+        self.store.upgrade()
         self.addCleanup(self.store.close)
         self.store.save_project(
             Project(id="p", name="P", repo_path=temp.name, workflow_id="development")
@@ -262,7 +262,7 @@ class MovingOldRecordsTests(unittest.TestCase):
         store.close()
         self.store = ForemanStore(db_path)
         self.addCleanup(self.store.close)
-        self.assertEqual(self.store.initialize()[0], 29)
+        self.assertEqual(self.store.upgrade()[0], 29)
 
     def owner(self, event_id: str) -> tuple[str | None, str | None, str | None]:
         event = self.store.get_event(event_id)
