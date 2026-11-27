@@ -12,7 +12,7 @@ from unittest.mock import patch
 from foreman.runner import AgentRunConfig, CodexRunner, InfrastructureError, PreflightError
 from foreman.runner.env import NON_INTERACTIVE_ENV
 from foreman.definitions.roles import COMMAND_TOOLS
-from foreman.runner.base import SandboxPolicy
+from foreman.domain.sandbox import SandboxPolicy
 from foreman.runner.codex import (
     _JsonRpcClient,
     _approval_response,

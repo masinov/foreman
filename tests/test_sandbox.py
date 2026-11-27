@@ -280,7 +280,7 @@ class SandboxWorktreeTests(SandboxCase):
     def test_a_branch_moved_by_a_killed_step_is_put_back(self) -> None:
         before = self.head()
         with self.assertRaises(EngineShutdown):
-            with WorktreeManager(self.project()).sandbox(self.task) as box:
+            with WorktreeManager(self.project()).sandbox(self.task):
                 git(self.repo, "commit", "--allow-empty", "-m", "c")
                 git(self.repo, "update-ref", "refs/heads/feat/x", "HEAD")
                 raise EngineShutdown("stop")

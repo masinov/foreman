@@ -11,7 +11,7 @@ from foreman.definitions.roles import ACCEPT_OPEN_READS_FLAG, RoleLoadError, loa
 from foreman.domain.models import Project
 from foreman.domain.settings import SettingsError, settings_of
 from foreman.runner import AgentRunConfig, ClaudeCodeRunner, PreflightError
-from foreman.runner.base import SandboxPolicy
+from foreman.domain.sandbox import SandboxPolicy
 from foreman.runner.claude_code import NO_STDIN_PREFIX
 from foreman.runner.sandbox import (
     check_machine,

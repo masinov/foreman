@@ -23,7 +23,8 @@ from ..domain.models import Project, Run, Task, TokenUsage
 from ..domain.outcomes import ERROR
 from ..definitions.roles import COMMAND_TOOLS, RoleDefinition
 from ..runner import AgentRunConfig, PreflightError, run_with_retry
-from ..runner.base import AgentRunner as NativeAgentRunner, SandboxPolicy
+from ..domain.sandbox import SandboxPolicy
+from ..runner.base import AgentRunner as NativeAgentRunner
 from ..runner.env import passthrough_env, resolve_env
 from ..runner.process import EngineShutdown
 from ..repo.worktrees import WorktreeError, WorktreeManager

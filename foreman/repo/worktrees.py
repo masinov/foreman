@@ -36,7 +36,7 @@ from pathlib import Path
 from ..domain.errors import ForemanError
 from ..domain.models import Project, Task
 from ..domain.settings import ProjectSettings, SettingsError, settings_of
-from ..runner.base import SandboxPolicy
+from ..domain.sandbox import SandboxPolicy
 from ..store import ForemanStore
 from .git import (
     GitError,
