@@ -65,6 +65,8 @@ class DashboardBackendTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+        with ForemanStore(cls.db_path) as store:
+            store.initialize()
         cls.store = ForemanStore(cls.db_path)
         cls.store.initialize()
 
@@ -507,6 +509,8 @@ class DashboardApproveDenyIntegrationTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+        with ForemanStore(cls.db_path) as store:
+            store.initialize()
 
     @classmethod
     def tearDownClass(cls):
@@ -777,6 +781,8 @@ class DashboardSettingsTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+        with ForemanStore(cls.db_path) as store:
+            store.initialize()
 
     @classmethod
     def tearDownClass(cls):
@@ -1046,6 +1052,8 @@ class DashboardAutonomyLevelTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+        with ForemanStore(cls.db_path) as store:
+            store.initialize()
 
     @classmethod
     def tearDownClass(cls):
@@ -1190,6 +1198,8 @@ class DashboardSprintLifecycleTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+        with ForemanStore(cls.db_path) as store:
+            store.initialize()
 
     @classmethod
     def tearDownClass(cls):
@@ -1612,6 +1622,8 @@ class DashboardSprintTaskBacklogTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+        with ForemanStore(cls.db_path) as store:
+            store.initialize()
 
     @classmethod
     def tearDownClass(cls):
@@ -2320,6 +2332,8 @@ class DashboardTaskEditingTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+        with ForemanStore(cls.db_path) as store:
+            store.initialize()
 
     @classmethod
     def tearDownClass(cls):
@@ -3038,6 +3052,8 @@ class DashboardTaskEditEventTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+        with ForemanStore(cls.db_path) as store:
+            store.initialize()
 
     @classmethod
     def tearDownClass(cls):
@@ -3228,6 +3244,8 @@ class DashboardInterventionTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+        with ForemanStore(cls.db_path) as store:
+            store.initialize()
         cls.store = ForemanStore(cls.db_path)
         cls.store.initialize()
 
@@ -3378,6 +3396,8 @@ class DashboardDecisionGateTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+        with ForemanStore(cls.db_path) as store:
+            store.initialize()
 
     @classmethod
     def tearDownClass(cls):
@@ -3579,6 +3599,8 @@ class DashboardMetaAgentTests(unittest.TestCase):
     def setUpClass(cls):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.db_path = Path(cls.temp_dir.name) / "foreman.db"
+        with ForemanStore(cls.db_path) as store:
+            store.initialize()
 
     @classmethod
     def tearDownClass(cls):
