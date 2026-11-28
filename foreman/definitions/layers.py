@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 
 from ..domain.errors import ForemanError
 from ..domain.models import utc_now_text
+from ..domain.settings import ProjectSettings, SettingsError
 from ..store import ForemanStore
 from .roles import RoleDefinition, RoleLoadError, branch_role_ids, load_role_text, load_roles
 from .workflows import (
@@ -284,6 +285,44 @@ def save_role(
     return definitions.roles[role.id]
 
 
+def _check_projects_using(
+    store: ForemanStore, project_id: str | None, workflow: WorkflowDefinition
+) -> None:
+    """Refuse a workflow whose routes name a label or path group a project using it does not.
+
+    Every project that would run it: this project, or for the workspace every
+    project on that workflow without its own of the same id. Checked here, when
+    it is saved, because a project's engine refuses to start on such a
+    workflow (sprint 69 review: saving one stopped a project's engine).
+    """
+
+    if project_id is not None:
+        candidates = [p for p in [store.get_project(project_id)] if p is not None]
+    else:
+        candidates = [
+            p
+            for p in store.list_projects()
+            if workflow.id not in _own_texts(store, p.id)[1]
+        ]
+    problems: list[str] = []
+    for project in candidates:
+        if project.workflow_id != workflow.id:
+            continue
+        try:
+            named = ProjectSettings.from_raw(project.settings or {})
+        except SettingsError:
+            continue  # the project's own settings are refused where they are saved
+        for error in workflow.route_project_errors(
+            labels=named.labels, path_groups=named.path_groups
+        ):
+            problems.append(f"Project {project.id}: {error}")
+    if problems:
+        raise DefinitionError(
+            f"Workflow {workflow.id!r} cannot be saved: projects use it whose settings "
+            f"do not name what its routes do. {' '.join(problems)}"
+        )
+
+
 def save_workflow(
     store: ForemanStore,
     project_id: str | None,
@@ -314,6 +353,7 @@ def save_workflow(
         )
     own_workflows[workflow.id] = text
     definitions = _checked(store, project_id, (own_roles, own_workflows))
+    _check_projects_using(store, project_id, workflow)
     store.add_definition_revision(
         project_id=project_id,
         kind=WORKFLOW,

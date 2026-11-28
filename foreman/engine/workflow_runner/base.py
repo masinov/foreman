@@ -14,6 +14,7 @@ from ...domain.outcomes import (
     ASK,
     ERROR,
 )
+from ...history.routes import record_route_taken, resolve_route
 from ...definitions.question import ASKED_EVENT, QUESTION_BLOCKED_REASON, question_of
 from ...history.records import RunRecords
 from ...repo.context import ProjectContextProjection, relative_project_path
@@ -296,14 +297,11 @@ class WorkflowRunnerBase:
                     "head_sha": now_at,
                     "gate_step": gate_step,
                 }
-                retest = next(
-                    (
-                        t.to_step
-                        for t in workflow.transitions
-                        if t.from_step == current_step and t.trigger == "completion:updated"
-                    ),
-                    None,
+                # Where the routes depend on facts, the one they choose.
+                updated, choice = resolve_route(
+                    workflow, project, current_task, current_step, "completion:updated"
                 )
+                retest = updated.to_step if updated is not None else None
                 if retest is not None and workflow.get_step(retest) is not None:
                     run = self.records.create_system_run(
                         current_task,
@@ -311,6 +309,8 @@ class WorkflowRunnerBase:
                         outcome="updated",
                         detail=detail,
                     )
+                    if choice is not None:
+                        record_route_taken(self.records, current_task, current_step, choice)
                     self.records.emit_event(
                         run, "engine.merge_blocked", {**payload, "retest_step": retest}
                     )

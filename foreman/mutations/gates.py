@@ -31,8 +31,9 @@ from ..domain.gate_version import (
 )
 from ..domain.models import HumanGateDecision, MergeWaiver, Project, Run, Task, utc_now_text
 from ..history.records import RunRecords, new_id
+from ..history.routes import RouteChoice, record_route_taken, resolve_route
 from ..notifications.delivery import NotificationDispatcher
-from ..repo.git import head_sha
+from ..repo.git import GitError, head_sha
 from ..store import ForemanStore
 from .base import MutationBase, MutationError
 
@@ -167,6 +168,8 @@ class GateStop:
     workflow: WorkflowDefinition
     paused_step: str
     next_step: WorkflowStep
+    #: The route the decision takes when facts chose it, to be recorded.
+    route: RouteChoice | None = None
 
 
 @dataclass(frozen=True)
@@ -207,7 +210,15 @@ def find_gate_stop(
     paused_step = workflow.get_step(task.workflow_current_step)
     if paused_step is None or paused_step.role != HUMAN_GATE_ROLE:
         raise MutationError(f"Task {task_id!r} is not paused on a resumable human-gate step.")
-    transition = workflow.find_transition(paused_step.id, outcome)
+    # A decision follows the workflow's routes like any other end of a step:
+    # where they depend on facts, the one they choose for this task, never
+    # just the first (sprint 69 review: an approval skipped a security review).
+    try:
+        transition, route = resolve_route(
+            workflow, project, task, paused_step.id, f"completion:{outcome}"
+        )
+    except GitError as exc:
+        raise MutationError(f"The route this decision takes could not be chosen: {exc}") from exc
     if transition is None:
         raise MutationError(
             f"Workflow {workflow.id!r} has no `{outcome}` transition from {paused_step.id!r}."
@@ -221,6 +232,7 @@ def find_gate_stop(
         workflow=workflow,
         paused_step=paused_step.id,
         next_step=next_step,
+        route=route,
     )
 
 
@@ -281,6 +293,8 @@ def record_gate_decision(
         role_id=HUMAN_GATE_ROLE,
         agent_backend="human",
     )
+    if stop.route is not None:
+        record_route_taken(records, task, stop.paused_step, stop.route)
     records.emit_event(
         run,
         "workflow.transition",

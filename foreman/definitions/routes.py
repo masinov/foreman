@@ -14,7 +14,7 @@ are no expressions:
 A fact prefixed ``not:`` holds when the fact does not. This module parses a
 fact, says it in words, and checks a workflow's routes against what a project
 names; deciding whether a fact holds on a task is the engine's
-(``foreman.engine.route_facts``).
+(``foreman.history.routes``).
 """
 
 from __future__ import annotations
@@ -104,7 +104,9 @@ def parse_facts(texts: Iterable[object]) -> tuple[Fact, ...]:
 def fact_words(fact: Fact) -> str:
     """A fact as the Activity says it: "no criteria", "docs changed", "not labelled ui"."""
 
-    names = ", ".join(fact.names)
+    # Groups of one fact are alternatives ("only docs or tests changed"); the
+    # facts of a route are all needed, so they are joined with "and".
+    names = " or ".join(fact.names)
     no = fact.negated
     if fact.kind == NO_CRITERIA:
         return "criteria given" if no else "no criteria"
@@ -126,7 +128,7 @@ def fact_words(fact: Fact) -> str:
 def words_of(facts: Iterable[str]) -> str:
     """Several facts, said together; ``facts`` are the texts as written."""
 
-    return ", ".join(fact_words(parse_fact(text)) for text in facts)
+    return " and ".join(fact_words(parse_fact(text)) for text in facts)
 
 
 def route_line(

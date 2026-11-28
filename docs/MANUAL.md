@@ -896,7 +896,9 @@ default, and every step and trigger that has routes needs exactly one.
 
 `not:` before a fact holds when the fact does not: `not:label:ui`. There are no
 other expressions. A change is the paths changed between the merge base of the
-task's branch with the default branch and the branch's head. `frozen_touched`
+task's branch with the default branch and the branch's head; a rename counts
+as both its paths (moving code out of `src` into `docs` is not "only docs
+changed"). `frozen_touched`
 is not available yet (it comes with write scope and frozen checks) and is
 refused by name.
 
@@ -931,13 +933,25 @@ trigger = "completion:done"
 to = "test"
 ```
 
+Routes are followed wherever a task moves on, not only after an agent's
+step: a person's decision at a human gate (approve, deny, steer), the
+retest of a branch that moved after its approval, and what a card says a
+decision leads to all take the route the task's facts choose, and the
+Activity records it.
+
 A workflow is refused before it runs when a fact is not in the list, when a
 step and trigger have routes but no default or a default that is not last,
-when `visits:` names a step the workflow lacks, and when a route tests
-`changed` or `changed_only` from a step a task can reach before any step that
-commits (a role with `run_scope = "branch"`: nothing has changed yet there).
+when `visits:` names a step the workflow lacks, when a route tests `changed`
+or `changed_only` from a step a task can reach before any step that commits
+(a role with `run_scope = "branch"` and a tool to change a file with: a
+reviewer with only Read, Grep and Glob commits nothing), when it tests them
+after the merge step (the branch is then on the default branch, so nothing
+reads as changed), and when routing steps alone send a task round in a loop.
 A route that names a label or path group the project does not name is refused
-when the workflow is set for the project and when the engine starts. A workflow
+when the workflow is set for the project, when the project's `labels` or
+`path_groups` change, when the workflow's text is saved for a project that
+uses it (or for the workspace, for every project on it), and when the engine
+starts. A workflow
 with routes is edited as text in Settings, not in the form.
 
 Every route taken is recorded on the task with the facts that chose it, and the

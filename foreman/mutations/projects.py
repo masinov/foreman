@@ -193,16 +193,29 @@ class ProjectMutations(MutationBase):
                 raise MutationError(f"The workflow could not be loaded: {exc}") from exc
             if workflow_id not in workflows:
                 raise SettingError(f"There is no workflow {workflow_id!r}.", field="workflow_id")
-            # Its routes may only name the labels and path groups this project names.
-            named = ProjectSettings.from_raw(merged)
-            unnamed = workflows[workflow_id].route_project_errors(
-                labels=named.labels, path_groups=named.path_groups
-            )
-            if unnamed:
-                raise SettingError(
-                    f"Workflow {workflow_id!r} cannot be used by this project: {' '.join(unnamed)}",
-                    field="workflow_id",
+        # The workflow's routes may only name the labels and path groups this
+        # project names: checked when either changes, not only the workflow
+        # (sprint 69 review: removing a label a route named stopped the
+        # project's engine).
+        route_fields = {"labels", "path_groups"} & set(settings or {})
+        if "workflow_id" in fields or route_fields:
+            workflow_id = str(fields.get("workflow_id") or project.workflow_id or "")
+            try:
+                workflows = project_definitions(self.store, project.id).workflows
+            except (RoleLoadError, WorkflowLoadError) as exc:
+                raise MutationError(f"The workflow could not be loaded: {exc}") from exc
+            chosen = workflows.get(workflow_id)
+            if chosen is not None:
+                named = ProjectSettings.from_raw(merged)
+                unnamed = chosen.route_project_errors(
+                    labels=named.labels, path_groups=named.path_groups
                 )
+                if unnamed:
+                    field = "workflow_id" if "workflow_id" in fields else sorted(route_fields)[0]
+                    raise SettingError(
+                        f"Workflow {workflow_id!r} cannot be used by this project: {' '.join(unnamed)}",
+                        field=field,
+                    )
         if "autonomy_level" in fields:
             value = str(fields["autonomy_level"])
             if value not in AUTONOMY_LEVELS:

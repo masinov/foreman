@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
+from ..history.routes import resolve_route
 from ..definitions.gate_steps import HUMAN_GATE_ROLE
 from ..definitions.layers import project_definitions
 from ..domain.errors import ForemanError
@@ -576,8 +577,12 @@ def _gate_of(store: ForemanStore, project: Project, task: Any) -> dict[str, Any]
     step = workflow.get_step(task.workflow_current_step) if workflow is not None else None
     if step is None or step.role != HUMAN_GATE_ROLE:
         return None
-    approve = workflow.find_transition(step.id, "approve")
-    deny = workflow.find_transition(step.id, "deny")
+    # Where a decision leads for this task: the route its facts choose.
+    try:
+        approve, _ = resolve_route(workflow, project, task, step.id, "completion:approve")
+        deny, _ = resolve_route(workflow, project, task, step.id, "completion:deny")
+    except Exception:  # noqa: BLE001 - git out of reach only costs the card its detail
+        return None
     return {
         "step": step.id,
         "policy": step.policy,
