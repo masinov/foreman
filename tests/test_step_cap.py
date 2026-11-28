@@ -76,7 +76,7 @@ class ParseTests(unittest.TestCase):
                 self._load(f"max_visits = {bad}")
 
 
-class StepCapTests(OrchestratorTestCase):
+class _CapCase(OrchestratorTestCase):
     def _start(self, *, cap: int | None, settings: dict | None = None):
         repo_path, db_path = self.create_workspace()
         self.initialize_repo(repo_path)
@@ -126,6 +126,8 @@ class StepCapTests(OrchestratorTestCase):
             and r.role_id == "code_reviewer"
         ]
 
+
+class StepCapTests(_CapCase):
     def test_a_review_capped_at_two_blocks_before_it_runs_a_third_time(self) -> None:
         store, project, task = self._start(cap=2)
         self._run(store, project, ["deny", "deny", "approve"])
@@ -181,3 +183,82 @@ class StepCapTests(OrchestratorTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CapReviewFixTests(_CapCase):
+    """Sprint 69 review of FOR-109."""
+
+    def test_a_cap_that_blocks_a_resumed_task_keeps_its_resume_point(self) -> None:
+        store, project, task = self._start(cap=2)
+        waiting = store.get_task(task.id)
+        waiting.workflow_current_step = "review"
+        waiting.step_visit_counts = {"develop": 2, "test": 2, "review": 2}
+        store.save_task(waiting)
+        self._run(store, project, [])
+        blocked = store.get_task(task.id)
+        self.assertEqual(blocked.status, "blocked")
+        self.assertIn("its cap", blocked.blocked_reason)
+        self.assertEqual(blocked.workflow_current_step, "review")
+        fake = SimpleNamespace(workflows=self.workflow_map)
+        with mock.patch("foreman.definitions.gate_steps.project_definitions", return_value=fake):
+            TaskMutations(store, via="cli").unblock_task(blocked)
+        resumed = store.get_task(task.id)
+        self.assertEqual(resumed.workflow_current_step, "review")
+        self.assertEqual(resumed.step_visit_counts["review"], 1)
+
+    def test_another_block_at_a_capped_step_is_not_taken_for_the_cap(self) -> None:
+        from foreman.definitions.gate_steps import capped_step_block
+
+        store, project, task = self._start(cap=2)
+        other = store.get_task(task.id)
+        other.status = "blocked"
+        other.blocked_reason = "The run's cost limit was reached."
+        other.workflow_current_step = "review"
+        other.step_visit_counts = {"review": 2}
+        store.save_task(other)
+        fake = SimpleNamespace(workflows=self.workflow_map)
+        with mock.patch("foreman.definitions.gate_steps.project_definitions", return_value=fake):
+            self.assertIsNone(capped_step_block(store, project, store.get_task(task.id)))
+            # Capped for real, it is the cap's; blocked again for another
+            # reason afterwards, it is not.
+            self._run_to_cap(store, project, task)
+            capped = store.get_task(task.id)
+            self.assertEqual(capped_step_block(store, project, capped), "review")
+            capped.blocked_reason = "Blocked by a person."
+            store.save_task(capped)
+            self.assertIsNone(capped_step_block(store, project, store.get_task(task.id)))
+
+    def _run_to_cap(self, store, project, task) -> None:
+        reset = store.get_task(task.id)
+        reset.status = "todo"
+        reset.blocked_reason = None
+        reset.workflow_current_step = None
+        reset.step_visit_counts = {}
+        store.save_task(reset)
+        self._run(store, project, ["deny", "deny", "deny"])
+
+    def test_model_ladder_retries_do_not_use_up_the_cap(self) -> None:
+        store, project, task = self._start(cap=1)
+        # The room a ladder of three models gives a step.
+        with mock.patch(
+            "foreman.engine.workflow_runner.transitions.Transitions._ladder_visits",
+            return_value=2,
+        ):
+            self._run(store, project, ["deny", "deny", "approve"])
+        # Capped at 1, with room for two ladder failures: three reviews ran.
+        self.assertEqual(len(self._reviews(store, task)), 3)
+
+
+class GateCapTests(unittest.TestCase):
+    def test_a_human_gate_takes_no_max_visits(self) -> None:
+        text = _WORKFLOW.format(extra="") + """
+[[steps]]
+id = "gate"
+role = "_builtin:human_gate"
+max_visits = 1
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "w.toml"
+            path.write_text(text, encoding="utf-8")
+            with self.assertRaisesRegex(WorkflowLoadError, "human gate takes no max_visits"):
+                load_workflow(path)

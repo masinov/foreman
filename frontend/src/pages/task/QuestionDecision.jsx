@@ -66,6 +66,11 @@ export function QuestionDecision({ task, onDecided }) {
                   name={`question-${task.id}`}
                   checked={option === number}
                   onChange={() => setOption(number)}
+                  // A chosen option is cleared by choosing it again, so a
+                  // person can still answer in words alone.
+                  onClick={() => {
+                    if (option === number) setOption(null);
+                  }}
                 />
                 <span className="question__words">
                   {number}. {words}
@@ -82,7 +87,7 @@ export function QuestionDecision({ task, onDecided }) {
         ) : null}
         <Field
           label="Or answer in your own words"
-          hint="Alone, or beside an option."
+          hint="Alone, or beside an option. Click a chosen option again to clear it."
           multiline
           value={text}
           onChange={(event) => setText(event.target.value)}

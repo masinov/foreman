@@ -148,18 +148,34 @@ class AgentSteps(WorkflowRunnerBase):
     ) -> str:
         """The prompt of a step that runs again with a person's answer to its question.
 
-        A step is answered when the task's latest run is the person's answer
-        at this step. One that resumes its session receives the question and
-        the answer as the next message, the session holding the rest; one
-        that does not receives them as a section of its prompt (ADR-0041
-        section 4).
+        A step is answered when a person's answer at this step has not been
+        used yet: no run of the step's agent came after it and finished with
+        an outcome. Runs of the engine in between (a Stop, a pause, crash
+        recovery, a notice that a document changed) and attempts that were
+        killed or failed do not use it (sprint 69 review: the answer was lost
+        when it was not the task's very latest run). One that resumes its
+        session receives the question and the answer as the next message, the
+        session holding the rest; one that does not receives them as a
+        section of its prompt (ADR-0041 section 4).
         """
 
-        runs = self.store.list_runs(task_id=task.id)
-        latest = runs[-1] if runs else None
-        if latest is None or latest.role_id != ANSWER_ROLE or latest.workflow_step != step:
+        answer_run = None
+        for earlier in reversed(self.store.list_runs(task_id=task.id)):
+            if earlier.workflow_step != step:
+                continue
+            if earlier.role_id == ANSWER_ROLE:
+                answer_run = earlier
+                break
+            if (
+                not earlier.role_id.startswith("_builtin:")
+                and earlier.status == "completed"
+                and earlier.outcome not in (None, "", "error")
+            ):
+                # The step's agent already ran on whatever answer came before.
+                return prompt
+        if answer_run is None:
             return prompt
-        fields = (latest.record or {}).get("fields") or {}
+        fields = (answer_run.record or {}).get("fields") or {}
         message = answer_message({"question": fields.get("question", "")}, fields)
         if resumes:
             return prompt_with_guidance(message, guidance)

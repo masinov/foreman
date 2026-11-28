@@ -108,6 +108,11 @@ class MutationBase:
 
         try:
             labels = clean_labels(wanted)
+            if not labels:
+                # Nothing to check: a task without labels never reads the
+                # project's settings, so a setting that does not validate
+                # cannot stop a task being added (sprint 69 review).
+                return labels
             if project is None:
                 raise LabelError("The task's project does not exist.")
             known = settings_of(project).labels

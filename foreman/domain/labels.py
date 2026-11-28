@@ -10,6 +10,7 @@ the one function that answers which groups a set of changed paths falls in.
 from __future__ import annotations
 
 import re
+import warnings
 from collections.abc import Iterable, Mapping, Sequence
 from functools import lru_cache
 
@@ -42,10 +43,30 @@ def check_pattern(value: object) -> str:
         raise LabelError(f"Path pattern {pattern!r} must be relative to the repository.")
     if pattern.startswith("!"):
         raise LabelError(f"Path pattern {pattern!r}: a negated pattern is not supported.")
-    if ".." in pattern.split("/"):
-        raise LabelError(f"Path pattern {pattern!r} must not contain '..'.")
     if "\\" in pattern or "\n" in pattern:
         raise LabelError(f"Path pattern {pattern!r} must use '/' and be on one line.")
+    if re.match(r"[A-Za-z]:", pattern):
+        raise LabelError(f"Path pattern {pattern!r} must be relative to the repository.")
+    parts = pattern.rstrip("/").split("/")
+    if any(part.strip() == ".." for part in parts):
+        raise LabelError(f"Path pattern {pattern!r} must not contain '..'.")
+    if any(part.strip() in {"", "."} for part in parts):
+        # ``./docs``, ``docs//a`` and ``docs/./a`` would never match a path.
+        raise LabelError(
+            f"Path pattern {pattern!r}: write it without './', '//' or '/./', "
+            "such as 'docs/**'."
+        )
+    if "[:" in pattern:
+        raise LabelError(
+            f"Path pattern {pattern!r}: character classes such as [[:alpha:]] are "
+            "not supported; list the characters, such as [a-z]."
+        )
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            _compile(pattern)
+    except (re.error, Warning) as exc:
+        raise LabelError(f"Path pattern {pattern!r} is not a valid pattern: {exc}.") from exc
     return pattern
 
 
@@ -130,13 +151,16 @@ def clean_labels(value: object) -> list[str]:
 def _compile(pattern: str) -> re.Pattern[str]:
     """A gitignore-style pattern as a regular expression over a path.
 
-    A pattern with no ``/`` (``*.md``) matches a name at any depth; one with a
-    ``/`` in it (``frontend/**``, ``docs/guide``) is anchored at the
-    repository's root. A trailing ``/`` names a directory. A pattern that
-    matches a directory matches everything below it. ``*`` and ``?`` stay
-    within one path part, ``**`` crosses them.
+    As gitignore: a pattern with no ``/`` but a trailing one (``*.md``,
+    ``docs/``) matches a name at any depth; one with a ``/`` at its start or
+    in its middle (``frontend/**``, ``docs/guide``) is anchored at the
+    repository's root. A trailing ``/`` names a directory only, so ``docs/``
+    matches what is below a ``docs`` directory and not a file named ``docs``.
+    A pattern that matches a directory matches everything below it. ``*``
+    and ``?`` stay within one path part, ``**`` crosses them.
     """
 
+    directory_only = pattern.endswith("/")
     body = pattern.rstrip("/")
     anchored = "/" in body
     parts = body.split("/")
@@ -155,7 +179,8 @@ def _compile(pattern: str) -> re.Pattern[str]:
         # trailing "/" the loop added before ``**`` is already in the regex.
         tail = ""
     else:
-        tail = "(?:/.*)?"
+        # A paths list holds files: a directory-only pattern matches below it.
+        tail = "/.*" if directory_only else "(?:/.*)?"
     head = "" if anchored else "(?:.*/)?"
     return re.compile(f"{head}{regex}{tail}")
 
