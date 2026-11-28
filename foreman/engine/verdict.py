@@ -14,7 +14,7 @@ from difflib import SequenceMatcher
 import re
 from typing import Any
 
-from ..domain.step_reads import _segments, _unwrap
+from ..domain.step_reads import _segments, _strip_heredocs, _unwrap
 
 #: The kind of record a reviewer role declares.
 REVIEW_VERDICT = "review_verdict"
@@ -128,7 +128,9 @@ def command_parts(command: str) -> list[tuple[str, ...]]:
     undone, so ``"a b"`` and ``'a b'`` are the same word.
     """
 
-    inner = _unwrap(command.strip())
+    # A heredoc's body is text given to a command, not commands: a note that
+    # names a command "(in parentheses)" does not run it (sprint 69 review).
+    inner, _ = _strip_heredocs(_unwrap(command.strip()))
     inner = _REDIRECTION.sub(" ", inner)
     return [
         tuple(words)

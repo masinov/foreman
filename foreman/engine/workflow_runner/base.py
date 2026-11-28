@@ -354,18 +354,27 @@ class WorkflowRunnerBase:
                     break
 
             # A step's own cap is checked first, before the step is entered
-            # and counted: a person decides (ADR-0041 section 3).
+            # and counted: a person decides (ADR-0041 section 3). A step that
+            # moves up its models gets room for those failures, as the
+            # project's max_step_visits does: they are the ladder's, not rounds.
             prior_visits = current_task.step_visit_counts.get(current_step, 0)
-            if step_def.max_visits is not None and prior_visits >= step_def.max_visits:
+            if step_def.max_visits is not None and prior_visits >= step_def.max_visits + self._ladder_visits(
+                current_task, current_step, workflow
+            ):
+                reason = step_cap_reason(current_step, step_def.max_visits)
+                # The resume point is this step, whatever cleared it before
+                # (a resumed run starts with none): unblocking runs it once more.
+                current_task.workflow_current_step = current_step
                 self._block_at_step(
                     current_task,
                     current_step,
-                    detail=step_cap_reason(current_step, step_def.max_visits),
+                    detail=reason,
                     event_type="workflow.step_cap",
                     payload={
                         "step": current_step,
                         "visit_count": prior_visits,
                         "max_visits": step_def.max_visits,
+                        "reason": reason,
                     },
                     attention_trigger="loop_limit",
                 )
@@ -460,13 +469,6 @@ class WorkflowRunnerBase:
                 run, project, current_task, step_def, current_step, outcome, settings
             )
 
-            if outcome == ASK:
-                # The step asked a person: the task waits, and the step runs
-                # again with the answer (ADR-0041 section 4).
-                return self._wait_for_answer(
-                    project, current_task, run, step=current_step, carried_output=carried_output
-                )
-
             # After every step: the task's own work must not be on the default
             # branch before the merge step puts it there. The default branch
             # itself may move (an operator commits, another task merges); that
@@ -499,6 +501,16 @@ class WorkflowRunnerBase:
                     clear_resume_point=True,
                 )
                 break
+
+            if outcome == ASK:
+                # The step asked a person: the task waits, and the step runs
+                # again with the answer (ADR-0041 section 4). Only after the
+                # branch-leak check: a step that asked is checked like any other,
+                # or its leaked commits would look like the default branch
+                # merely moving once it runs again (sprint 69 review).
+                return self._wait_for_answer(
+                    project, current_task, run, step=current_step, carried_output=carried_output
+                )
 
             failed_step = self._charge_failure(
                 project, workflow, current_task, run, step_def, current_step, outcome

@@ -327,6 +327,13 @@ def _optional_max_visits(step_data: Mapping[str, Any], workflow_path: Path) -> i
             f"{workflow_path}: step {step_data.get('id')!r}: max_visits must be a "
             f"positive integer, got {value!r}."
         )
+    if step_data.get("role") == "_builtin:human_gate":
+        # A gate already waits for a person; a cap on it would block the task
+        # as a gate block, which unblocking refuses and approving skips.
+        raise WorkflowLoadError(
+            f"{workflow_path}: step {step_data.get('id')!r}: a human gate takes no "
+            "max_visits; cap the step that sends the task back to it instead."
+        )
     return value
 
 

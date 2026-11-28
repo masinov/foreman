@@ -485,6 +485,23 @@ describe("the decision", () => {
       expect(postCalls(fetchImpl, "answer")[0].body).toEqual({ option: null, text: "Use a file, in /var." });
     });
 
+    it("clears a chosen option when it is chosen again, to answer in words alone", async () => {
+      const routes = taskRoutes({ task: asked() });
+      routes[post("answer")] = { status: "answered", message: "Answered FOR-14." };
+      const { fetchImpl } = await renderTask(BASE, routes);
+      const region = await screen.findByRole("region", { name: "Which store holds it?" });
+      const first = within(region).getAllByRole("radio")[0];
+      fireEvent.click(first);
+      expect(first).toBeChecked();
+      fireEvent.click(first);
+      expect(first).not.toBeChecked();
+      expect(within(region).getByRole("button", { name: "Answer" })).toBeDisabled();
+      fireEvent.change(within(region).getByLabelText("Or answer in your own words"), { target: { value: "Neither." } });
+      fireEvent.click(within(region).getByRole("button", { name: "Answer" }));
+      await screen.findByText("Answered FOR-14.");
+      expect(postCalls(fetchImpl, "answer")[0].body).toEqual({ option: null, text: "Neither." });
+    });
+
     it("says why when the answer is refused", async () => {
       const routes = taskRoutes({ task: asked() });
       routes[post("answer")] = reply(400, { error: "The question has 2 options: answer with a number from 1 to 2." });

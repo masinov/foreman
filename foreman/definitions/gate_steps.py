@@ -155,8 +155,11 @@ def blocked_kind_counts(
 def capped_step_block(store: ForemanStore, project: Project | None, task: Task) -> str | None:
     """The step whose own cap (``max_visits``) blocks a task, or None.
 
-    A task blocked at a capped step keeps that step as its resume point and a
-    count that has reached the cap; nothing else is needed to tell it apart.
+    Told by the block itself, not by the counts: the task's latest
+    ``workflow.step_cap`` event names this step and the reason the task is
+    blocked with. A cost or time limit, a step out of models or a person's
+    block can also leave a task at a capped step with its count at the cap,
+    and those are not a cap's (sprint 69 review).
     """
 
     step_id = task.workflow_current_step
@@ -169,7 +172,15 @@ def capped_step_block(store: ForemanStore, project: Project | None, task: Task) 
     step = workflow.get_step(step_id) if workflow is not None else None
     if step is None or step.max_visits is None:
         return None
-    if task.step_visit_counts.get(step_id, 0) < step.max_visits:
+    caps = [
+        event
+        for event in store.list_events(task_id=task.id)
+        if event.event_type == "workflow.step_cap"
+    ]
+    if not caps:
+        return None
+    latest = caps[-1].payload
+    if latest.get("step") != step_id or latest.get("reason") != task.blocked_reason:
         return None
     return step_id
 

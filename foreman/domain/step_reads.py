@@ -31,9 +31,9 @@ READ_TOOLS = frozenset({"Read", "Grep", "Glob"})
 CHANGE_TOOLS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch", "codex.fileChange", "fileChange"})
 
 _READ_COMMANDS = frozenset({"cat", "rg", "grep", "ls", "find", "head", "tail", "wc"})
-_READ_GIT = frozenset({"log", "show", "diff", "status", "grep"})
+_READ_GIT = frozenset({"log", "show", "diff", "status", "grep", "rev-parse", "ls-files", "ls-tree", "cat-file", "blame"})
 #: Commands that read and write nothing of the repository; they do not make a line a non-read.
-_NEUTRAL = frozenset({"cd", "pushd", "popd", "set", "export", "true"})
+_NEUTRAL = frozenset({"cd", "pushd", "popd", "set", "export", "true", "pwd", "which", "dirname", "basename", "realpath"})
 # A redirect into a file; ``2>&1``, ``>&2`` and ``/dev/null`` are not one.
 _REDIRECT = re.compile(r"(?:^|[^<>&\d])\d?>>?(?!&)\s*(?!/dev/null\b)[^\s&|;>]")
 # ``<<<`` is a here-string, not a heredoc: no lines follow it.
@@ -144,44 +144,102 @@ def _strip_heredocs(command: str) -> tuple[str, bool]:
 
 
 _OPERATORS = re.compile(r"&&|\|\||;;|[;&|()]")
+#: What a substitution leaves in the command around it.
+_SUBSTITUTION = "$(…)"
 
 
 def _segments(command: str) -> list[list[str]]:
-    """The simple commands of a command line, each as words.
+    """The simple commands of a command line, each as words, as the shell would run them.
 
     A line is split where the shell starts another command: at ``&&``, ``||``,
-    ``;``, ``&``, ``|``, at a subshell's ``(`` and ``)``, and at a group's
-    ``{`` and ``}`` (which only count when they stand as words, so ``{a,b}``
-    is not one). So ``(a || b) | tail`` is ``a``, ``b`` and ``tail``.
+    ``;``, ``&``, ``|`` and a newline. A ``(`` or a ``{`` opens a subshell or
+    a group only where a command starts, and the matching ``)`` or ``}``
+    closes it, so ``(a || b) | tail`` is ``a``, ``b`` and ``tail``. Anywhere
+    else they are ordinary words that make the line run nothing a check can
+    count: a function's definition (``run() { a; }`` defines, it does not
+    run), an array (``cmd=(a b)``), ``echo { a; }``, ``echo (a)`` (which the
+    shell refuses).
 
-    A ``$( )`` command substitution is split the same way: the shell runs what
-    is inside it, so ``echo $(pytest x)`` is the commands ``echo`` and
-    ``pytest x`` (the ``$`` is dropped). Quoted text is one word, so
-    ``'(pytest x)'`` and ``echo "(pytest x)"`` run nothing; a substitution
-    inside double quotes is likewise not looked into.
+    A ``$( )`` command substitution runs what is inside it, so that is a
+    simple command of its own, and the command around it keeps its words
+    with ``$(…)`` in its place: ``cat $(which x)`` is ``cat $(…)`` and
+    ``which x``. Quoted text is one word: ``'(pytest x)'``, ``"(pytest x)"``
+    and ``"$(pytest x)"`` run nothing a check counts. Escaped characters
+    (``find \\( -name a \\)``, ``\\$(x)``) are a word's own. Heredoc bodies
+    are not commands; callers take them off first (``_strip_heredocs``).
     """
 
-    # An escaped parenthesis (``find \\( -name a \\)``) is a word's own character.
-    command = command.replace("\\(", "\ue000").replace("\\)", "\ue001")
+    _, command = _mask_quotes(command)  # unquoted newlines end a command
+    for escaped, mark in (("\\(", "\ue000"), ("\\)", "\ue001"), ("\\$", "\ue002")):
+        command = command.replace(escaped, mark)
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()")
         lexer.whitespace_split = True
         words = list(lexer)
     except ValueError:
         words = command.split()
+
     out: list[list[str]] = [[]]
-    for index, word in enumerate(words):
+    # Each open group: "group" (a subshell or braces, a new command follows its
+    # close) or the index of the segment a substitution sits in.
+    stack: list[object] = []
+    at_start = True
+
+    def begin() -> None:
+        out.append([])
+
+    for word in words:
         if word and set(word) <= set(";&|()"):
-            for _ in _OPERATORS.findall(word):
-                out.append([])
+            for op in _OPERATORS.findall(word):
+                current = out[-1]
+                if op == "(":
+                    if current and current[-1] == "$":
+                        current[-1] = _SUBSTITUTION
+                        stack.append(len(out) - 1)
+                        begin()
+                        at_start = True
+                    elif at_start:
+                        stack.append("group")
+                        begin()
+                        at_start = True
+                    else:
+                        current.append("(")
+                        at_start = False
+                elif op == ")":
+                    if stack:
+                        opened = stack.pop()
+                        if opened == "group":
+                            begin()
+                            at_start = False
+                        else:
+                            # Back to the command the substitution sits in.
+                            out.append(out[opened])
+                            out[opened] = []
+                            at_start = False
+                    else:
+                        current.append(")")
+                        at_start = False
+                else:
+                    begin()
+                    at_start = True
             continue
-        if word in {"{", "}"}:
-            out.append([])
+        if word == "{" and at_start:
+            stack.append("group")
+            begin()
             continue
-        if word == "$" and words[index + 1 : index + 2] == ["("]:
+        if word == "}" and at_start and stack and stack[-1] == "group":
+            stack.pop()
+            begin()
+            at_start = False
             continue
-        out[-1].append(word.replace("\ue000", "(").replace("\ue001", ")"))
-    return [segment for segment in out if segment]
+        out[-1].append(word)
+        at_start = False
+    # Escaped characters are put back last, so ``\\$(`` never looks like ``$(``.
+    return [
+        [w.replace("\ue000", "(").replace("\ue001", ")").replace("\ue002", "$") for w in segment]
+        for segment in out
+        if segment
+    ]
 
 
 def _git_subcommand(words: list[str]) -> str:

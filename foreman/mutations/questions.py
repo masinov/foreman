@@ -72,6 +72,10 @@ class QuestionMutations(MutationBase):
             answer = resolve_answer(question, option=option, text=text)
         except AnswerError as exc:
             raise MutationError(str(exc)) from exc
+        if not self.store.claim_answered_question(task.id, QUESTION_BLOCKED_REASON):
+            raise MutationError(
+                f"Task {task.id}'s question was answered meanwhile, or the task no longer waits."
+            )
         now = self._now().isoformat()
         who = (self.actor or "").strip() or self.via
         answer = {**answer, "answered_by": who, "answered_via": self.via, "answered_at": now}

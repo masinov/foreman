@@ -921,14 +921,22 @@ instead, before the step runs: the reason names the step and its cap ("Review
 ran twice, its cap: a person decides."), a `workflow.step_cap` event is
 recorded, and the task keeps the step as its resume point. A step's own cap is
 checked first; `max_step_visits` stays the overall stop for a loop through a
-step without a cap.
+step without a cap. A step that moves up its role's models on failure gets
+the same room for those failures under its cap as under `max_step_visits`:
+they are the ladder's, not rounds. A human gate takes no `max_visits` (the
+workflow is refused): it already waits for a person, so cap the step that
+sends the task back to it.
 
 The block is a dead letter of the `engine` kind: clear it with
 `foreman task unblock` or Unblock on the task page. The step then runs once
 more, and the count is **not** reset: the capped step's count drops by one (to
 n−1), the other counts stay, and the next entry blocks again. Say
 `foreman task unblock <task> --reset-visits` (the API's `reset_visits`) to start
-every count over, so the step has its n visits again.
+every count over, so the step has its n visits again. Only a block the cap
+made is taken for one (its `workflow.step_cap` event and reason): another
+block of a task that happens to sit at a capped step with its count at the
+cap (a cost or time limit, no model left, a person's block) unblocks as any
+other block does.
 
 Use `max_visits` when the answer to "it has gone round enough" is a person.
 When the workflow has another path at a count (send it to a different step,
@@ -1519,7 +1527,7 @@ offending value, rather than running on silent defaults.
 | `generate_changelog` | `false` | when a sprint is finished, fold the `changes/<task key>.md` files into a section of `CHANGELOG.md` (newest sprint first, above what the file held before) and remove them, in the checkpoint's commit (ADR-0040). Off: the file and `changes/` are left as they are. `foreman changelog <project> [--sprint <id>]` does the same by hand |
 | `generate_copies` | `false` | Foreman writes `docs/STATUS.md` and `docs/sprints/current.md` from its database when a sprint starts and when it finishes (in the checkpoint's commit), and a finished sprint's archive copy `docs/sprints/archive/sprint-<n>-<slug>.md` (ADR-0040); a sprint's finish and the command also write `docs/sprints/backlog.md`. An archive file written by hand is never replaced. No task edits them. `foreman copies <project> [--sprint <id>]` writes them by hand |
 | `labels` | `{}` | the labels a task may carry: `{"<name>": "<one-line meaning>"}`. A name is lowercase words joined by `-` or `_` (`ui`, `needs-docs`). Set by `foreman config <project-id> --set labels='{"ui": "changes what a person sees"}'`; a bad name or an empty or many-line meaning is refused. Not host-level. Removing one edits no task (see Tasks › Labels) |
-| `path_groups` | `{}` | named groups of path patterns, for the routes' facts `changed:<group>` (any changed path is in the group) and `changed_only:<group>` (every changed path is in the listed groups): `{"<name>": ["<pattern>", ...]}`, such as `{"frontend": ["frontend/**"], "docs": ["docs/**", "*.md"]}`. A pattern is gitignore-style and relative to the repository: no `/` in it (`*.md`) matches at any depth, one with a `/` is anchored at the root (`docs/*.md`), `**` crosses directories, a directory matches everything under it. No leading `/` or `~`, no `..`, no `!`. A path in no group counts for none, so it defeats `changed_only:`. Not host-level |
+| `path_groups` | `{}` | named groups of path patterns, for the routes' facts `changed:<group>` (any changed path is in the group) and `changed_only:<group>` (every changed path is in the listed groups): `{"<name>": ["<pattern>", ...]}`, such as `{"frontend": ["frontend/**"], "docs": ["docs/**", "*.md"]}`. A pattern is gitignore-style and relative to the repository: one with no `/` except a trailing one (`*.md`, `docs/`) matches at any depth; one with a `/` at its start or in its middle is anchored at the root (`docs/*.md`); a trailing `/` matches a directory only (`docs/` is everything under any `docs` directory, not a file named `docs`); `**` crosses directories; a directory matches everything under it. No leading `/` or `~`, no `..`, no `!`, no `./`, `//` or `/./`, and no `[[:class:]]`: a pattern is refused when the setting is saved, not when it is first used. A path in no group counts for none, so it defeats `changed_only:`. Not host-level |
 | `adr_dir` | `docs/adr` | the folder whose decisions are numbered when a task merges (ADR-0040): a branch writes `<adr_dir>/new-<slug>.md`; the merge commit renames it to `ADR-NNNN-<slug>.md` (next free number), sets the number in its title line, rewrites references to it and regenerates the folder's `README.md` index from each ADR's title and status (the hand-written part above the list is kept). A merge that would leave two ADRs with one number is refused, naming the files. Empty, or no such folder: left alone |
 | `merge_push_remote` | `""` | name of the git remote the default branch is pushed to after each merge (for example `origin`). Empty: merges stay on this machine. A push that fails is recorded (`engine.push_failed`) and the merge stands |
 | `worktree_setup_timeout_seconds` | `1800` | wall-clock cap for `worktree_setup_command`; `0` disables the timeout |

@@ -279,5 +279,82 @@ class AskedAndAnsweredTests(OrchestratorTestCase):
             Mutations(store, via="cli").unblock_task(store.get_task(task.id))
 
 
+    # --- Sprint 69 review of FOR-110 ---
+
+    def test_a_step_that_leaked_commits_and_asked_is_blocked_for_the_leak(self) -> None:
+        store, project, task = self._start(keeps_session=True)
+        repo = self.repo_path
+
+        def asks_after_leaking(*, task, prompt, carried_output):
+            tree = self.work_dir(task, repo)
+            self.write_text(tree / "leak.txt", "unreviewed\n")
+            self.commit_all(tree, "feat: unreviewed")
+            self.git(tree, "update-ref", "refs/heads/main", "HEAD")
+            return self._developer_asks()
+
+        self._run(store, project, {("developer", 1): asks_after_leaking})
+        blocked = store.get_task(task.id)
+        events = [e.event_type for e in store.list_events(task_id=task.id)]
+        self.assertIn("engine.branch_violation", events)
+        self.assertEqual(blocked.status, "blocked")
+        self.assertIn("before the merge step", blocked.blocked_reason)
+
+    def test_the_answer_reaches_the_step_after_an_engine_run_in_between(self) -> None:
+        store, project, task = self._ask(False)
+        Mutations(store, via="cli", actor="mario").answer_question(
+            store.get_task(task.id), text="Use SQLite."
+        )
+        orchestrator = ForemanOrchestrator(
+            store, roles=self.roles, workflows=self.workflows, agent_executor=self.executor
+        )
+        orchestrator.record_engine_event(
+            project_id=project.id,
+            event_type="engine.command_rejected",
+            task_id=task.id,
+            detail="x",
+            payload={},
+        )
+        self._run_after_answer(store, project)
+        self.assertIn("Use SQLite.", self.executor.capture("developer", 1).prompt)
+
+    def test_an_answer_is_used_once(self) -> None:
+        store, project, task = self._ask(False)
+        Mutations(store, via="cli", actor="mario").answer_question(
+            store.get_task(task.id), text="Use SQLite."
+        )
+        self._run_after_answer(store, project)
+        # A later visit of the same step (sent back by review) is not told
+        # the answer again as if it were new.
+        from foreman.engine.workflow_runner.agent_steps import AgentSteps
+
+        prompt = AgentSteps._prompt_with_answer(
+            type("S", (), {"store": store})(), "PROMPT", [], store.get_task(task.id), "develop",
+            resumes=False,
+        )
+        self.assertEqual(prompt, "PROMPT")
+
+    def test_two_answers_at_once_record_only_one(self) -> None:
+        from unittest import mock
+
+        store, project, task = self._ask(True)
+        waiting = store.get_task(task.id)
+        also_waiting = store.get_task(task.id)
+        runs_before = store.list_runs(task_id=task.id)
+        Mutations(store, via="cli", actor="mario").answer_question(also_waiting, option=1)
+        # The second read the task and its runs before the first wrote: it
+        # still sees the question pending. Only the store's claim stops it.
+        with mock.patch.object(store, "list_runs", return_value=runs_before):
+            with self.assertRaises(MutationError):
+                Mutations(store, via="dashboard").answer_question(waiting, option=2)
+        answers = [r for r in store.list_runs(task_id=task.id) if r.outcome == "answered"]
+        self.assertEqual(len(answers), 1)
+
+    def test_a_persons_name_keeps_its_case(self) -> None:
+        from foreman.definitions.question import answer_message
+
+        message = answer_message({"question": "Q?"}, {"answered_by": "Mario Asis", "text": "yes"})
+        self.assertIn("Mario Asis answered", message)
+
+
 if __name__ == "__main__":
     unittest.main()

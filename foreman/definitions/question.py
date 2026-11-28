@@ -217,7 +217,7 @@ def answer_message(question: Mapping[str, Any], answer: Mapping[str, Any]) -> st
         [
             "### Your question, and the answer",
             f"You asked: {question.get('question', '')}",
-            f"{who.capitalize() if who else 'A person'} answered: {answer_words(answer)}",
+            f"{(who[:1].upper() + who[1:]) if who else 'A person'} answered: {answer_words(answer)}",
             "Go on with your step using this answer. Do not ask it again.",
         ]
     )
