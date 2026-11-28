@@ -586,10 +586,29 @@ def _require_string_mapping(
     return dict(value)
 
 
-def branch_role_ids(roles: Mapping[str, RoleDefinition]) -> frozenset[str]:
-    """The roles whose steps commit to the task's branch (``run_scope = "branch"``).
+#: The tools a step changes files with: with none of them, a role commits nothing.
+_WRITING_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit", "Bash", "PowerShell"})
 
-    A workflow's routes that read what changed are checked against these.
+
+def branch_role_ids(roles: Mapping[str, RoleDefinition]) -> frozenset[str]:
+    """The roles whose steps commit to the task's branch.
+
+    ``run_scope = "branch"`` and a tool to change a file with. A reviewer
+    that runs in the branch with only Read, Grep and Glob (the default scope
+    is ``branch``) commits nothing, so a route after it alone has no change to
+    read (sprint 69 review). A workflow's routes that read what changed are
+    checked against these.
     """
 
-    return frozenset(role_id for role_id, role in roles.items() if role.run_scope == "branch")
+    def writes(role: RoleDefinition) -> bool:
+        tools = role.agent.tools
+        if tools.none:
+            return False
+        usable = set(tools.allowed) if tools.allowed else set(_WRITING_TOOLS)
+        return bool((usable & _WRITING_TOOLS) - set(tools.disallowed))
+
+    return frozenset(
+        role_id
+        for role_id, role in roles.items()
+        if role.run_scope == "branch" and writes(role)
+    )

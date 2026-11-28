@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from ...definitions.routes import route_line
 from ...definitions.workflows import WorkflowDefinition, WorkflowStep
 from ...domain.models import Project, Run, Task
 from ...domain.outcomes import DENY, ERROR, FAILURE, KILLED, STEER
@@ -17,12 +16,11 @@ from ..step_failures import (
     move_up_line,
     own_failure_type,
 )
-from ..route_facts import RouteChoice, TaskFacts, choose_route
+from ...history.routes import record_route_taken, resolve_route
 from .base import WorkflowRunnerBase
 
 STEP_FAILED_EVENT = "workflow.step_failed"
 STEP_MOVES_UP_EVENT = "workflow.step_moves_up"
-ROUTE_TAKEN_EVENT = "workflow.route_taken"
 
 
 class Transitions(WorkflowRunnerBase):
@@ -67,6 +65,8 @@ class Transitions(WorkflowRunnerBase):
         step_def: WorkflowStep,
         step: str,
         outcome: str,
+        project: Project | None = None,
+        task: Task | None = None,
     ) -> tuple[str, str] | None:
         """The step whose own work failed with this end, and how: ``(step, kind)``.
 
@@ -89,7 +89,7 @@ class Transitions(WorkflowRunnerBase):
             if outcome in (ERROR, KILLED) and not stopped_by_limit and own_failure_type(run.failure_type):
                 return step, NO_RESULT
             if role.completion.output.extract_decision and outcome in (DENY, STEER):
-                target = self._agent_step_sent_back_to(workflow, step, outcome)
+                target = self._agent_step_sent_back_to(workflow, step, outcome, project, task)
                 return (target, REVIEW) if target else None
             return None
         if step_def.role == "_builtin:run_tests" and outcome == FAILURE:
@@ -98,7 +98,7 @@ class Transitions(WorkflowRunnerBase):
                 event.event_type == "engine.test_run" and event.payload.get("command")
                 for event in self.store.list_events(run_id=run.id)
             )
-            target = self._agent_step_sent_back_to(workflow, step, outcome)
+            target = self._agent_step_sent_back_to(workflow, step, outcome, project, task)
             if not (ran and target) or self._after_branch_update(run):
                 return None
             return target, TESTS
@@ -120,11 +120,24 @@ class Transitions(WorkflowRunnerBase):
         return bool(steps) and steps[-1].role_id == "_builtin:merge"
 
     def _agent_step_sent_back_to(
-        self, workflow: WorkflowDefinition, step: str, outcome: str
+        self,
+        workflow: WorkflowDefinition,
+        step: str,
+        outcome: str,
+        project: Project | None = None,
+        task: Task | None = None,
     ) -> str | None:
-        """The agent step an end sends the work back to, or None."""
+        """The agent step an end sends the work back to, or None.
 
-        transition = workflow.find_transition(step, outcome)
+        The step the task really goes to: where routes depend on facts, the
+        one they choose for this task, not the first (sprint 69 review: a
+        deny routed on ``visits:`` charged no step, or the wrong one).
+        """
+
+        if project is not None and task is not None:
+            transition, _ = resolve_route(workflow, project, task, step, f"completion:{outcome}")
+        else:
+            transition = workflow.find_transition(step, outcome)
         target = workflow.get_step(transition.to_step) if transition and transition.to_step else None
         if target is None or target.role.startswith("_builtin:") or target.role not in self.roles:
             return None
@@ -147,7 +160,7 @@ class Transitions(WorkflowRunnerBase):
         A move up is a line in the task's Activity with its reason.
         """
 
-        failed = self._failure_of_own_work(workflow, run, step_def, step, outcome)
+        failed = self._failure_of_own_work(workflow, run, step_def, step, outcome, project, task)
         if failed is None:
             return None
         target, kind = failed
@@ -229,14 +242,8 @@ class Transitions(WorkflowRunnerBase):
         it has are what the failure is answered with (ADR-0041).
         """
 
-        trigger = f"completion:{outcome}"
-        choice: RouteChoice | None = None
-        if any(route.when for route in workflow.routes_from(step, trigger)):
-            # The routes depend on facts: the first whose facts all hold is taken.
-            choice = choose_route(workflow, step, trigger, TaskFacts(project, task))
-            transition = choice.transition if choice is not None else None
-        else:
-            transition = workflow.find_transition(step, outcome)
+        # Where the routes depend on facts, the first whose facts all hold.
+        transition, choice = resolve_route(workflow, project, task, step, f"completion:{outcome}")
         if transition is None and failed_step == step and self._has_models_to_move_up(task, step, workflow):
             self.records.emit_event(
                 run, "workflow.step_retried", {"step": step, "outcome": outcome}
@@ -274,7 +281,7 @@ class Transitions(WorkflowRunnerBase):
             return None, None
 
         if choice is not None:
-            self._record_route_taken(task, step, choice)
+            record_route_taken(self.records, task, step, choice)
         self.records.emit_event(
             run,
             "workflow.transition",
@@ -304,34 +311,6 @@ class Transitions(WorkflowRunnerBase):
         task.workflow_carried_output = carried_output if transition.to_step is not None else None
         self.tasks.save(task)
         return transition.to_step, carried_output
-
-    def _record_route_taken(self, task: Task, step: str, choice: RouteChoice) -> None:
-        """Record on the task which route was taken and the facts that chose it.
-
-        A line in the task's Activity, with the event it is made from: the
-        route, the facts that held, and for the default the facts that did not.
-        """
-
-        route = choice.transition
-        line = route_line(to_step=route.to_step, default=choice.default, held=choice.held)
-        recorded = self.records.create_system_run(
-            task, workflow_step=step, outcome="success", detail=line
-        )
-        self.records.emit_event(
-            recorded,
-            ROUTE_TAKEN_EVENT,
-            {
-                "from_step": step,
-                "to_step": route.to_step,
-                "trigger": route.trigger,
-                "default": choice.default,
-                "routes": choice.routes,
-                "when": list(route.when),
-                "held": list(choice.held),
-                "not_held": list(choice.not_held),
-                "reason": line,
-            },
-        )
 
     def _ladder_visits(self, task: Task, step: str, workflow: WorkflowDefinition) -> int:
         """The visits a step's models may take with their failures; 0 without a ladder."""

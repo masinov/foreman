@@ -108,6 +108,7 @@ const OUTCOME_WORDS = {
   paused: "Asked a user",
   ask: "Asked a question",
   answered: "Answered",
+  go: "Routed",
   file: "Filed",
   created: "Filed",
   cancel: "Cancelled",

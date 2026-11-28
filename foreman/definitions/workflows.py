@@ -239,6 +239,15 @@ class WorkflowDefinition:
             if branch_roles is not None
             else set()
         )
+        loop = self._route_steps_loop()
+        if loop:
+            errors.append(
+                "Routing steps send a task round without anything running in between: "
+                f"{' -> '.join(loop)}. A task whose facts hold for none of the other routes "
+                "would go round until the visit limit: end the loop at a step that does work."
+            )
+
+        after_merge = self._after_a_merge()
         for transition in self.transitions:
             where = f"The route from {transition.from_step!r} to {transition.to_step!r} on {transition.trigger!r}"
             if not isinstance(transition.when, tuple) or any(not isinstance(f, str) for f in transition.when):
@@ -258,7 +267,70 @@ class WorkflowDefinition:
                         "reach before any step that commits (a role with run_scope = \"branch\"): "
                         "nothing has changed yet there."
                     )
+                if fact.kind in CHANGE_FACTS and (transition.from_step, transition.trigger) in after_merge:
+                    errors.append(
+                        f"{where} tests {text!r} after the merge step: the branch is then on the "
+                        "default branch, so nothing reads as changed and the fact never holds."
+                    )
         return errors
+
+    def _route_steps_loop(self) -> list[str]:
+        """A cycle made only of ``_builtin:route`` steps, as a path, or [] when there is none."""
+
+        routing = {step.id for step in self.steps if step.role == "_builtin:route"}
+        edges: dict[str, list[str]] = {}
+        for transition in self.transitions:
+            if transition.from_step in routing and transition.to_step in routing:
+                edges.setdefault(transition.from_step, []).append(transition.to_step)
+        state: dict[str, int] = {}
+        stack: list[str] = []
+
+        def visit(step: str) -> list[str]:
+            state[step] = 1
+            stack.append(step)
+            for nxt in edges.get(step, []):
+                if state.get(nxt) == 1:
+                    return stack[stack.index(nxt):] + [nxt]
+                if nxt not in state:
+                    found = visit(nxt)
+                    if found:
+                        return found
+            stack.pop()
+            state[step] = 2
+            return []
+
+        for step in sorted(routing):
+            if step not in state:
+                found = visit(step)
+                if found:
+                    return found
+        return []
+
+    def _after_a_merge(self) -> set[tuple[str, str]]:
+        """The (step, trigger) pairs a task can only meet once its branch is merged.
+
+        A merge step's success, and every step reached from it: there the
+        branch is an ancestor of the default branch, and its change is empty.
+        """
+
+        merges = {step.id for step in self.steps if step.role == "_builtin:merge"}
+        reached: set[str] = set()
+        queue = [
+            t.to_step for t in self.transitions
+            if t.from_step in merges and t.trigger == "completion:success"
+        ]
+        while queue:
+            step = queue.pop()
+            if step in reached or step in merges:
+                continue
+            reached.add(step)
+            queue.extend(t.to_step for t in self.transitions if t.from_step == step)
+        return {
+            (t.from_step, t.trigger)
+            for t in self.transitions
+            if t.from_step in reached
+            or (t.from_step in merges and t.trigger == "completion:success")
+        }
 
     def _steps_that_commit(self, branch_roles: Collection[str] | None) -> set[str]:
         wanted = set(branch_roles or ())

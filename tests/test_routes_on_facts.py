@@ -21,7 +21,7 @@ from foreman.definitions.workflows import (
 from foreman.engine.errors import OrchestratorError
 from foreman.engine.orchestrator import ForemanOrchestrator
 from foreman.engine.results import AgentExecutionResult
-from foreman.engine.route_facts import TaskFacts, choose_route
+from foreman.history.routes import TaskFacts, choose_route
 from foreman.mutations import Mutations
 from foreman.mutations.projects import SettingError
 from foreman.store import ForemanStore
@@ -257,7 +257,7 @@ class FactWordsTests(unittest.TestCase):
             "label:ui": "labelled ui",
             "not:label:ui": "not labelled ui",
             "changed:docs": "docs changed",
-            "changed_only:docs,tests": "only docs, tests changed",
+            "changed_only:docs,tests": "only docs or tests changed",
             "visits:develop>=2": "develop visited 2 or more times",
             "not:visits:develop>=2": "develop visited fewer than 2 times",
         }
@@ -342,9 +342,9 @@ class FactsOnATaskTests(_Repo):
         parsed = load_workflow_text(
             HEAD + STANDARD + TAIL, "x.toml", role_outcomes=OUTCOMES, branch_roles=BRANCH_ROLES
         )
-        import tomllib
+        from foreman.definitions._toml import load_toml_text
 
-        data = tomllib.loads(transitions)["transitions"]
+        data = load_toml_text(transitions)["transitions"]
         from foreman.definitions.workflows import WorkflowTransition
 
         routes = tuple(
@@ -610,6 +610,285 @@ class FormTests(unittest.TestCase):
             workflow_text_from_fields(text, "routed", {"name": "R", "steps": [{"id": "a", "role": "developer"}]})
 
         self.assertIn("Edit its text", str(caught.exception))
+
+
+
+# --- The independent review of sprint 69 (FOR-108) ---
+
+GATE_HEAD = HEAD.replace(
+    """[[steps]]
+id = "merge"
+role = "_builtin:merge"
+""",
+    """[[steps]]
+id = "gate"
+role = "_builtin:human_gate"
+
+[[steps]]
+id = "extra"
+role = "developer"
+
+[[steps]]
+id = "merge"
+role = "_builtin:merge"
+""",
+)
+GATE_ROUTES = STANDARD + """
+[[transitions]]
+from = "plan"
+trigger = "completion:done"
+to = "develop"
+
+[[transitions]]
+from = "docs_test"
+trigger = "completion:success"
+to = "gate"
+
+[[transitions]]
+from = "docs_test"
+trigger = "completion:failure"
+to = "develop"
+
+[[transitions]]
+from = "extra"
+trigger = "completion:done"
+to = "test"
+
+[[transitions]]
+from = "test"
+trigger = "completion:success"
+to = "gate"
+
+[[transitions]]
+from = "test"
+trigger = "completion:failure"
+to = "develop"
+
+[[transitions]]
+from = "gate"
+trigger = "completion:approve"
+to = "extra"
+when = ["label:ui"]
+
+[[transitions]]
+from = "gate"
+trigger = "completion:approve"
+to = "merge"
+
+[[transitions]]
+from = "gate"
+trigger = "completion:deny"
+to = "develop"
+
+[[transitions]]
+from = "gate"
+trigger = "completion:steer"
+to = "develop"
+
+[[transitions]]
+from = "merge"
+trigger = "completion:success"
+to = "done"
+
+[[transitions]]
+from = "merge"
+trigger = "completion:failure"
+to = "develop"
+
+[[transitions]]
+from = "merge"
+trigger = "completion:conflict"
+to = "develop"
+
+[[transitions]]
+from = "merge"
+trigger = "completion:updated"
+to = "test"
+"""
+
+
+class ReviewValidationTests(unittest.TestCase):
+    def test_the_facts_of_a_change_are_refused_after_the_merge(self) -> None:
+        after = TAIL.replace(
+            """[[transitions]]
+from = "merge"
+trigger = "completion:success"
+to = "done"
+""",
+            """[[transitions]]
+from = "merge"
+trigger = "completion:success"
+to = "done"
+when = ["changed:docs"]
+
+[[transitions]]
+from = "merge"
+trigger = "completion:success"
+to = "done"
+""",
+        )
+        with self.assertRaises(WorkflowLoadError) as caught:
+            load_workflow_text(
+                HEAD + STANDARD + after, "x.toml", role_outcomes=OUTCOMES, branch_roles=BRANCH_ROLES
+            )
+        self.assertIn("after the merge step", str(caught.exception))
+
+    def test_a_loop_of_routing_steps_alone_is_refused(self) -> None:
+        loop = ROUTE_PLAN.replace('"no_criteria"', '"label:ui"') + """
+[[transitions]]
+from = "route"
+trigger = "completion:go"
+to = "route"
+""" + DEVELOP_DEFAULT
+        self.assertIn("Routing steps send a task round", refusal(loop))
+
+    def test_a_reviewer_that_writes_nothing_does_not_commit(self) -> None:
+        from foreman.data import ROLES_DIR
+
+        committing = branch_role_ids(load_roles(ROLES_DIR))
+        self.assertIn("developer", committing)
+        for reviewer in ("security_reviewer", "code_reviewer", "triage_reviewer"):
+            self.assertNotIn(reviewer, committing)
+
+    def test_several_facts_are_said_with_and_and_groups_with_or(self) -> None:
+        self.assertEqual(
+            route_line(to_step="x", default=False, held=["changed_only:docs,tests", "label:ui"]),
+            "Took the route to x: only docs or tests changed and labelled ui",
+        )
+
+
+class RenameTests(_Repo):
+    def test_a_rename_is_a_change_of_both_its_paths(self) -> None:
+        store, repo = self._store()
+        project, _, task = self.seed_project(store, repo_path=repo)
+        self._name_groups(store, project)
+        self.write_text(repo / "frontend" / "x.js", "x\n")
+        self.commit_all(repo, "feat: code")
+        self.git(repo, "checkout", "-b", "feat/move")
+        (repo / "docs").mkdir(exist_ok=True)
+        self.git(repo, "mv", "frontend/x.js", "docs/x.js")
+        self.commit_all(repo, "move code into docs")
+        self.git(repo, "checkout", "main")
+        task.branch_name = "feat/move"
+        facts = TaskFacts(store.get_project(project.id), task)
+        self.assertTrue(facts.holds(parse_fact("changed:frontend")))
+        self.assertFalse(facts.holds(parse_fact("changed_only:docs")))
+
+
+class GateRouteTests(_Repo):
+    def _gate(self, labels):
+        from foreman.mutations.gates import find_gate_stop
+
+        store, repo = self._store()
+        project, _, task = self.seed_project(store, repo_path=repo)
+        self._name_groups(store, project)
+        wf = load_workflow_text(
+            GATE_HEAD + GATE_ROUTES, "g.toml", role_outcomes=OUTCOMES, branch_roles=BRANCH_ROLES
+        )
+        task.status = "blocked"
+        task.workflow_current_step = "gate"
+        task.labels = list(labels)
+        store.save_task(task)
+        return store, task, find_gate_stop(store, task.id, "approve", lambda _p: wf)
+
+    def test_a_persons_approval_takes_the_route_its_facts_choose(self) -> None:
+        _, _, plain = self._gate([])
+        self.assertEqual(plain.next_step.id, "merge")
+        self.assertTrue(plain.route.default)
+        _, _, labelled = self._gate(["ui"])
+        self.assertEqual(labelled.next_step.id, "extra")
+        self.assertEqual(labelled.route.held, ("label:ui",))
+
+    def test_the_route_a_decision_takes_is_recorded(self) -> None:
+        from foreman.history.records import RunRecords
+        from foreman.mutations.gates import record_gate_decision
+        from foreman.notifications.delivery import NotificationDispatcher
+
+        store, task, stop = self._gate(["ui"])
+        record_gate_decision(
+            store,
+            RunRecords(store, NotificationDispatcher(store)),
+            stop,
+            outcome="approve",
+            note=None,
+            deferred=True,
+            save=store.save_task,
+        )
+        taken = [e for e in store.list_events(task_id=task.id) if e.event_type == "workflow.route_taken"]
+        self.assertEqual([e.payload["to_step"] for e in taken], ["extra"])
+
+
+class SentBackChargeTests(_Repo):
+    def test_the_step_charged_is_the_one_the_route_chooses(self) -> None:
+        from types import SimpleNamespace
+
+        from foreman.engine.workflow_runner.transitions import Transitions
+
+        store, repo = self._store()
+        project, _, task = self.seed_project(store, repo_path=repo)
+        self._name_groups(store, project)
+        wf = load_workflow_text(
+            GATE_HEAD + GATE_ROUTES.replace(
+                """[[transitions]]
+from = "test"
+trigger = "completion:failure"
+to = "develop"
+""",
+                """[[transitions]]
+from = "test"
+trigger = "completion:failure"
+to = "extra"
+when = ["visits:develop>=3"]
+
+[[transitions]]
+from = "test"
+trigger = "completion:failure"
+to = "develop"
+""",
+            ),
+            "g.toml",
+            role_outcomes=OUTCOMES,
+            branch_roles=BRANCH_ROLES,
+        )
+        fake = SimpleNamespace(roles={"developer": object()})
+        task.step_visit_counts = {"develop": 1}
+        self.assertEqual(
+            Transitions._agent_step_sent_back_to(fake, wf, "test", "failure", project, task), "develop"
+        )
+        task.step_visit_counts = {"develop": 3}
+        self.assertEqual(
+            Transitions._agent_step_sent_back_to(fake, wf, "test", "failure", project, task), "extra"
+        )
+
+
+class SettingsAfterTheWorkflowTests(ProjectCheckTests):
+    def _routed(self):
+        store, project = self._with_workflow()
+        Mutations(store, via="cli", actor="alice").change_project(
+            project,
+            fields={"workflow_id": "routed"},
+            settings={"labels": {"ui": "what a person sees"}, "path_groups": {"docs": ["docs/**"]}},
+            host_level=False,
+        )
+        return store, store.get_project(project.id)
+
+    def test_removing_a_label_its_workflow_names_is_refused(self) -> None:
+        store, project = self._routed()
+        with self.assertRaises(SettingError) as caught:
+            Mutations(store, via="cli", actor="alice").change_project(
+                project, settings={"labels": {}}, host_level=False
+            )
+        self.assertIn("label 'ui'", str(caught.exception))
+        self.assertIn("ui", store.get_project(project.id).settings["labels"])
+
+    def test_saving_its_workflow_with_an_unnamed_label_is_refused(self) -> None:
+        from foreman.definitions.layers import DefinitionError
+
+        store, project = self._routed()
+        text = HEAD + self.LABEL_ROUTE.replace('"label:ui"', '"label:other"') + TAIL
+        with self.assertRaises(DefinitionError) as caught:
+            save_workflow(store, project.id, text, changed_by="test")
+        self.assertIn("label 'other'", str(caught.exception))
 
 
 if __name__ == "__main__":
