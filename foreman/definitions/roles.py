@@ -584,3 +584,12 @@ def _require_string_mapping(
     ):
         raise RoleLoadError(f"{path}: expected {key!r} to be a table of strings.")
     return dict(value)
+
+
+def branch_role_ids(roles: Mapping[str, RoleDefinition]) -> frozenset[str]:
+    """The roles whose steps commit to the task's branch (``run_scope = "branch"``).
+
+    A workflow's routes that read what changed are checked against these.
+    """
+
+    return frozenset(role_id for role_id, role in roles.items() if role.run_scope == "branch")

@@ -9,7 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from ...definitions.layers import project_definitions
-from ...definitions.roles import RoleDefinition, default_roles_dir, load_roles
+from ...definitions.roles import RoleDefinition, branch_role_ids, default_roles_dir, load_roles
 from ...definitions.workflows import (
     WorkflowDefinition,
     default_workflows_dir,
@@ -34,6 +34,7 @@ from ..errors import (
 )
 from ..evidence import EvidenceBuilder
 from ..leasing import TASK_LEASE_HEARTBEAT_SECONDS, TaskLeases
+from ..limits import resolve_project_settings
 from ..prompts import PromptBuilder
 from ..recovery import Recovery
 from ..results import (
@@ -114,6 +115,7 @@ class OrchestratorBase:
                     role_id: role.completion.outcomes
                     for role_id, role in loaded_roles.items()
                 },
+                branch_roles=branch_role_ids(loaded_roles),
             )
         )
         self.store = store
@@ -309,5 +311,13 @@ class OrchestratorBase:
         if workflow is None:
             raise OrchestratorError(
                 f"Unknown workflow {project.workflow_id!r} for project {project.id!r}."
+            )
+        # Routes may only name the labels and path groups the project names; a
+        # setting removed since the workflow was set is found here, before any task runs.
+        named = resolve_project_settings(project)
+        unnamed = workflow.route_project_errors(labels=named.labels, path_groups=named.path_groups)
+        if unnamed:
+            raise OrchestratorError(
+                f"Workflow {workflow.id!r} cannot run for project {project.id!r}: {' '.join(unnamed)}"
             )
         return workflow

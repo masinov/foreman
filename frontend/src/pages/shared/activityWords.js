@@ -193,6 +193,8 @@ export function runResult(run) {
   if (role === ORCHESTRATOR && outcome === "success") {
     // A step moving up its role's models after failures of its own work.
     if (/ moves up to /.test(note)) return { tone: "idle", word: "Moved up", note };
+    // A route taken where the workflow chose by facts (the line says which facts).
+    if (/^(Took the route to |No route's facts held)/.test(note)) return { tone: "idle", word: "Took a route", note };
     // A record the engine kept on the task: of stopping or pausing the step
     // under way, of resuming, or of a command about it (ADR-0037).
     if (/^Engine resumed/i.test(note)) return { tone: "idle", word: "Resumed", note: "" };

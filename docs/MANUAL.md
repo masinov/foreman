@@ -879,11 +879,77 @@ to = "develop"
 message = "Unhandled workflow outcome. Requires human review."
 ```
 
+### Routes chosen by facts (ADR-0041)
+
+A transition may carry `when`: facts that must all hold for the route to be
+taken. The routes from one step and trigger are tried **in the file's order**;
+the first whose facts all hold is taken. The **last** has no `when`: it is the
+default, and every step and trigger that has routes needs exactly one.
+
+| Fact | Holds when |
+|---|---|
+| `label:<name>` | the task carries the label (the project names its labels, section 16) |
+| `no_criteria` | the task has no acceptance criteria |
+| `changed:<group>` | a changed path is in the path group (the project names its groups, section 16) |
+| `changed_only:<group>[,<group>]` | every changed path is in one of the groups |
+| `visits:<step>>=<n>` | the step has been visited `n` times or more for this task |
+
+`not:` before a fact holds when the fact does not: `not:label:ui`. There are no
+other expressions. A change is the paths changed between the merge base of the
+task's branch with the default branch and the branch's head. `frozen_touched`
+is not available yet (it comes with write scope and frozen checks) and is
+refused by name.
+
+`_builtin:route` is a step with no agent whose outcome is always `go`, so a
+workflow can choose a path before any agent has run:
+
+```toml
+[[steps]]
+id = "route"
+role = "_builtin:route"
+
+[[transitions]]
+from = "route"
+trigger = "completion:go"
+to = "plan"
+when = ["no_criteria"]          # no criteria: plan first
+
+[[transitions]]
+from = "route"
+trigger = "completion:go"
+to = "develop"                  # no `when`: the default, last
+
+[[transitions]]
+from = "develop"
+trigger = "completion:done"
+to = "docs_test"
+when = ["changed_only:docs"]    # a change of the docs group only
+
+[[transitions]]
+from = "develop"
+trigger = "completion:done"
+to = "test"
+```
+
+A workflow is refused before it runs when a fact is not in the list, when a
+step and trigger have routes but no default or a default that is not last,
+when `visits:` names a step the workflow lacks, and when a route tests
+`changed` or `changed_only` from a step a task can reach before any step that
+commits (a role with `run_scope = "branch"`: nothing has changed yet there).
+A route that names a label or path group the project does not name is refused
+when the workflow is set for the project and when the engine starts. A workflow
+with routes is edited as text in Settings, not in the form.
+
+Every route taken is recorded on the task with the facts that chose it, and the
+task's Activity shows it as a "Took a route" row: "Took the route to plan: no
+criteria"; when none of the facts held, "No route's facts held: the default, to
+develop".
+
 ### Outcomes
 
 Agent/builtin terminal results normalize to a canonical set
 (`foreman/domain/outcomes.py`): `success`, `failure`, `error`, `killed`, `paused`,
-`conflict`, `done`, plus reviewer decisions `approve`, `deny`, `steer`,
+`conflict`, `done`, `go` (a routing step, above), plus reviewer decisions `approve`, `deny`, `steer`,
 `escalate`, and `ask` (a question to a person, which is not routed: see
 [Asking a person](#asking-a-person-the-ask-outcome)). Transitions are keyed `completion:<outcome>`. Unknown agent
 outcomes normalize to `error` (deterministic fallback).

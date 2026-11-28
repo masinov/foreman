@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from ...definitions.routes import route_line
 from ...definitions.workflows import WorkflowDefinition, WorkflowStep
 from ...domain.models import Project, Run, Task
 from ...domain.outcomes import DENY, ERROR, FAILURE, KILLED, STEER
@@ -16,10 +17,12 @@ from ..step_failures import (
     move_up_line,
     own_failure_type,
 )
+from ..route_facts import RouteChoice, TaskFacts, choose_route
 from .base import WorkflowRunnerBase
 
 STEP_FAILED_EVENT = "workflow.step_failed"
 STEP_MOVES_UP_EVENT = "workflow.step_moves_up"
+ROUTE_TAKEN_EVENT = "workflow.route_taken"
 
 
 class Transitions(WorkflowRunnerBase):
@@ -226,7 +229,14 @@ class Transitions(WorkflowRunnerBase):
         it has are what the failure is answered with (ADR-0041).
         """
 
-        transition = workflow.find_transition(step, outcome)
+        trigger = f"completion:{outcome}"
+        choice: RouteChoice | None = None
+        if any(route.when for route in workflow.routes_from(step, trigger)):
+            # The routes depend on facts: the first whose facts all hold is taken.
+            choice = choose_route(workflow, step, trigger, TaskFacts(project, task))
+            transition = choice.transition if choice is not None else None
+        else:
+            transition = workflow.find_transition(step, outcome)
         if transition is None and failed_step == step and self._has_models_to_move_up(task, step, workflow):
             self.records.emit_event(
                 run, "workflow.step_retried", {"step": step, "outcome": outcome}
@@ -263,6 +273,8 @@ class Transitions(WorkflowRunnerBase):
             self.leases.release(task, project)
             return None, None
 
+        if choice is not None:
+            self._record_route_taken(task, step, choice)
         self.records.emit_event(
             run,
             "workflow.transition",
@@ -292,6 +304,34 @@ class Transitions(WorkflowRunnerBase):
         task.workflow_carried_output = carried_output if transition.to_step is not None else None
         self.tasks.save(task)
         return transition.to_step, carried_output
+
+    def _record_route_taken(self, task: Task, step: str, choice: RouteChoice) -> None:
+        """Record on the task which route was taken and the facts that chose it.
+
+        A line in the task's Activity, with the event it is made from: the
+        route, the facts that held, and for the default the facts that did not.
+        """
+
+        route = choice.transition
+        line = route_line(to_step=route.to_step, default=choice.default, held=choice.held)
+        recorded = self.records.create_system_run(
+            task, workflow_step=step, outcome="success", detail=line
+        )
+        self.records.emit_event(
+            recorded,
+            ROUTE_TAKEN_EVENT,
+            {
+                "from_step": step,
+                "to_step": route.to_step,
+                "trigger": route.trigger,
+                "default": choice.default,
+                "routes": choice.routes,
+                "when": list(route.when),
+                "held": list(choice.held),
+                "not_held": list(choice.not_held),
+                "reason": line,
+            },
+        )
 
     def _ladder_visits(self, task: Task, step: str, workflow: WorkflowDefinition) -> int:
         """The visits a step's models may take with their failures; 0 without a ladder."""

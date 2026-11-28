@@ -243,6 +243,8 @@ export function sayEntry(entry) {
       return { says: "Approved without asking anyone" };
     case "workflow.no_transition":
       return { says: `Nothing follows "${d.outcome}" at ${humanize(d.step)}. The task stopped.`, tone: "failed" };
+    case "workflow.route_taken":
+      return { says: d.reason || `Took the route to ${humanize(d.to_step)}` };
     case "workflow.step_visit_reset":
       return { says: `Attempts at ${humanize(d.to_step)} are counted from the start again` };
     case "engine.output_contract_retry":

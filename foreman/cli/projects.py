@@ -11,7 +11,7 @@ from ..definitions.roles import RoleLoadError
 from ..definitions.workflows import WorkflowLoadError
 from ..domain.models import Project
 from ..domain.policy import POLICY_DECISIONS, PolicyMatrix
-from ..domain.settings import settings_of
+from ..domain.settings import ProjectSettings, settings_of
 from ..mutations.projects import SettingError
 from ..repo.scaffold import (
     DEFAULT_DB_FILENAME,
@@ -80,6 +80,11 @@ def handle_init(args: argparse.Namespace) -> int:
         workflow = workflows.get(workflow_id)
         if workflow is None:
             print(f"Unknown workflow: {workflow_id}", file=sys.stderr)
+            return 1
+        named = settings_of(existing) if existing is not None else ProjectSettings()
+        unnamed = workflow.route_project_errors(labels=named.labels, path_groups=named.path_groups)
+        if unnamed:
+            print(f"Workflow {workflow_id} cannot be used by this project: {' '.join(unnamed)}", file=sys.stderr)
             return 1
 
         default_branch = args.default_branch or (

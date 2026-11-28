@@ -28,7 +28,14 @@ from ..definitions.layers import (
 from ..engine.verdict import REVIEW_VERDICT
 from ..runner.model_check import check_model
 from ..domain.outcomes import CANONICAL_OUTCOMES
-from ..definitions.roles import APPROVE_NEEDS, DEFAULT_ESCALATE_AFTER, KNOWN_TOOLS, RoleDefinition, load_role_text
+from ..definitions.roles import (
+    APPROVE_NEEDS,
+    DEFAULT_ESCALATE_AFTER,
+    KNOWN_TOOLS,
+    RoleDefinition,
+    branch_role_ids,
+    load_role_text,
+)
 from ..domain.settings import settings_of
 from ..definitions.workflows import _BUILTIN_OUTCOMES, WorkflowDefinition, load_workflow_text
 
@@ -294,6 +301,7 @@ def _describe_blank(definitions: ProjectDefinitions) -> dict[str, Any]:
         "the empty workflow",
         available_role_ids=set(definitions.roles),
         role_outcomes={role_id: r.completion.outcomes for role_id, r in definitions.roles.items()},
+        branch_roles=branch_role_ids(definitions.roles),
     )
     with_blank = replace(
         definitions,
@@ -479,6 +487,12 @@ def workflow_text_from_fields(base_text: str, workflow_id: str, fields: Mapping[
     """Return a workflow's text from the form's steps, keeping the base's gates and fallback."""
 
     base = tomlkit.parse(base_text)
+    if any("when" in transition for transition in base.get("transitions", ())):
+        # The form has one next step per outcome; saving it would drop the routes.
+        raise DefinitionError(
+            "This workflow has routes chosen by facts (`when`), which the form cannot show. "
+            "Edit its text."
+        )
     name = _string(fields, "name").strip()
     if not name:
         raise DefinitionError("A workflow needs a name.")

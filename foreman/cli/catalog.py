@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from ..definitions.roles import RoleLoadError, default_roles_dir, load_roles
+from ..definitions.roles import RoleLoadError, branch_role_ids, default_roles_dir, load_roles
 from ..definitions.workflows import (
     WorkflowLoadError,
     default_workflows_dir,
@@ -64,6 +64,7 @@ def handle_workflows(args: argparse.Namespace) -> int:
             workflows_dir,
             available_role_ids=set(roles),
             role_outcomes=role_outcomes(roles),
+            branch_roles=branch_role_ids(roles),
         )
     except (RoleLoadError, WorkflowLoadError) as exc:
         print(f"Failed to load workflows: {exc}", file=sys.stderr)

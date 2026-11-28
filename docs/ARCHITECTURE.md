@@ -634,6 +634,20 @@ whoever writes. A backlog task is `triage` (filed), `todo` (accepted) or
   labels are `tasks.labels_json` (migration 37); `MutationBase._check_labels`
   refuses a new label the project does not name, and keeps one a task has.
 
+### Routes on facts (ADR-0041 section 1)
+
+- `definitions/routes.py` — the facts a transition's `when` may name: parsing
+  (`parse_fact`), their words for the Activity, and the check of a workflow's
+  routes against the labels and path groups a project names.
+- `definitions/workflows.py` — `WorkflowTransition.when`, `routes_from`, and
+  the validation of routes (a default, last; facts known; change facts only
+  after a committing role, `branch_role_ids` in `definitions/roles.py`).
+- `engine/route_facts.py` — whether a fact holds on a task (`TaskFacts`; git is
+  asked once, for `branch_changes` against the default branch) and
+  `choose_route`. `workflow_runner/transitions.py` chooses a route when a step's
+  routes carry facts, and records it (`workflow.route_taken` on a system run).
+- `_builtin:route` (`engine/builtins/base.py`) does nothing and ends `go`.
+
 ### A question to a person (ADR-0041 section 4)
 
 - `definitions/question.py` — the question record (`outcome: "ask"`, question,

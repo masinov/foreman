@@ -153,6 +153,9 @@ class BuiltinExecutorBase:
                 evidence_builder=evidence_builder,
                 working_dir=task_dir,
             )
+        if role_id == "_builtin:route":
+            # A routing step does nothing: the facts choose where the task goes next.
+            return BuiltinResult(outcome="go", detail="Chose a route by the task's facts.")
         if role_id == "_builtin:human_gate":
             return self._human_gate(task=task, step_id=step_id, carried_output=carried_output)
         raise ValueError(f"Unsupported builtin role: {role_id}")
