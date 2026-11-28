@@ -13,6 +13,7 @@ import { formatDay, formatDuration, humanize } from "../../ui/format";
 import { decisionSentence, taskName } from "../shared/decisionWords";
 import { MERGE_APPROVAL, versionToken, versionWords } from "../shared/gateVersion";
 import { ReasonDialog } from "../shared/ReasonDialog";
+import { QuestionDecision } from "./QuestionDecision";
 import {
   branchWords,
   codeReview,
@@ -207,6 +208,8 @@ export function Decision({ task, checks, seen = null, onDecided }) {
   const [sendingBack, setSendingBack] = useState(false);
   const decision = decisionOf(task, checks);
   if (!decision) return null;
+  // A question an agent asked has its own shape: options and words, no send-back.
+  if (decision.kind === DECISIONS.question) return <QuestionDecision task={task} onDecided={onDecided} />;
   const calls = CALLS[decision.kind];
   const done = DONE_WORDS[decision.kind];
   const atGate = GATE_KINDS.has(decision.kind);

@@ -16,7 +16,9 @@ from ...domain.guidance import (
     prompt_with_guidance_as_context,
 )
 from ...domain.models import Project, Run, Task
+from ...definitions.question import ANSWER_ROLE, answer_message
 from ...domain.outcomes import (
+    ASK,
     ERROR,
     normalize_agent_outcome,
     normalize_reviewer_decision,
@@ -84,6 +86,9 @@ class AgentSteps(WorkflowRunnerBase):
             mirror_dirs=context_mirror_dirs(project, task),
         )
         prompt, guidance = self._prompt_with_notes(role, project, task, carried_output, context_projection)
+        session_key = (role.id, role.agent.backend)
+        session_id = self._step_session(role, task, session_ids, session_key)
+        prompt = self._prompt_with_answer(prompt, guidance, task, step, resumes=bool(session_id))
         model_selection = resolve_step_model_selection(
             task=task,
             role=role,
@@ -102,8 +107,6 @@ class AgentSteps(WorkflowRunnerBase):
             context_projection=context_projection,
             branch_sync_event=branch_sync_event,
         )
-        session_key = (role.id, role.agent.backend)
-        session_id = self._step_session(role, task, session_ids, session_key)
         attempt = _Attempt(
             role=role,
             project=project,
@@ -139,6 +142,44 @@ class AgentSteps(WorkflowRunnerBase):
         if role.agent.session_persistence and result.session_id:
             session_ids[session_key] = result.session_id
         return run, self._settled_outcome(role, project, task, run, result), result.detail
+
+    def _prompt_with_answer(
+        self, prompt: str, guidance: list[Any], task: Task, step: str, *, resumes: bool
+    ) -> str:
+        """The prompt of a step that runs again with a person's answer to its question.
+
+        A step is answered when a person's answer at this step has not been
+        used yet: no run of the step's agent came after it and finished with
+        an outcome. Runs of the engine in between (a Stop, a pause, crash
+        recovery, a notice that a document changed) and attempts that were
+        killed or failed do not use it (sprint 69 review: the answer was lost
+        when it was not the task's very latest run). One that resumes its
+        session receives the question and the answer as the next message, the
+        session holding the rest; one that does not receives them as a
+        section of its prompt (ADR-0041 section 4).
+        """
+
+        answer_run = None
+        for earlier in reversed(self.store.list_runs(task_id=task.id)):
+            if earlier.workflow_step != step:
+                continue
+            if earlier.role_id == ANSWER_ROLE:
+                answer_run = earlier
+                break
+            if (
+                not earlier.role_id.startswith("_builtin:")
+                and earlier.status == "completed"
+                and earlier.outcome not in (None, "", "error")
+            ):
+                # The step's agent already ran on whatever answer came before.
+                return prompt
+        if answer_run is None:
+            return prompt
+        fields = (answer_run.record or {}).get("fields") or {}
+        message = answer_message({"question": fields.get("question", "")}, fields)
+        if resumes:
+            return prompt_with_guidance(message, guidance)
+        return f"{prompt}\n\n{message}"
 
     def _prompt_with_notes(
         self,
@@ -438,6 +479,9 @@ class AgentSteps(WorkflowRunnerBase):
     ) -> str:
         """The step's outcome in the workflow's words; a decision records its commit."""
 
+        if result.outcome == ASK:
+            # A question is no verdict: nothing is recorded as a review.
+            return ASK
         if not role.completion.output.extract_decision:
             return normalize_agent_outcome(result.outcome)
         outcome = normalize_reviewer_decision(result.outcome)

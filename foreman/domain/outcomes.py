@@ -24,6 +24,10 @@ DENY = "deny"
 STEER = "steer"
 ESCALATE = "escalate"
 
+# An agent's question to a person (ADR-0041 section 4): not a result, the
+# step waits for an answer and runs again with it.
+ASK = "ask"
+
 # All canonical outcome values in one frozenset for validation
 CANONICAL_OUTCOMES = frozenset({
     DONE,
@@ -40,6 +44,7 @@ CANONICAL_OUTCOMES = frozenset({
     DENY,
     STEER,
     ESCALATE,
+    ASK,
 })
 
 
@@ -59,6 +64,8 @@ def normalize_agent_outcome(raw: str) -> str:
         return ERROR
     if normalized in ("failure",):
         return FAILURE
+    if normalized == "ask":
+        return ASK
     if normalized in ("killed", "terminated", "timeout"):
         return KILLED
     if normalized == "paused":

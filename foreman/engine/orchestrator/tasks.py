@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from ...definitions.question import QUESTION_BLOCKED_REASON
 from ...definitions.workflows import (
     WorkflowDefinition,
 )
@@ -163,6 +164,11 @@ class TaskRun(OrchestratorBase):
                         f"Task {task.id!r} is paused at a human gate and must be resumed with "
                         f"`foreman approve` or `foreman deny`."
                     )
+            if current_task.blocked_reason == QUESTION_BLOCKED_REASON:
+                raise OrchestratorError(
+                    f"Task {task.id!r} waits for an answer to its agent's question: answer it "
+                    f"with `foreman task answer {task.task_key or task.id}` or on the task page."
+                )
             raise OrchestratorError(
                 f"Task {task.id!r} is blocked and cannot be run until it is resumed or unblocked."
             )

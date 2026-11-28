@@ -212,7 +212,12 @@ def check_role_says_how_to_end(role: RoleDefinition) -> None:
 
     prompt = role.prompt_template
     if role.completion.output.extract_decision:
-        missing = [word.upper() for word in role.completion.outcomes if word.upper() not in prompt]
+        # "ask" is a question in a record, not a decision on a line of its own.
+        missing = [
+            word.upper()
+            for word in role.completion.outcomes
+            if word != "ask" and word.upper() not in prompt
+        ]
         if missing:
             raise DefinitionError(
                 f"Role {role.id!r} may decide {', '.join(missing)} but its prompt never says so. "

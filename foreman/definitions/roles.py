@@ -10,7 +10,8 @@ from string import Formatter
 from typing import Any
 
 from ._toml import TOMLDecodeError, load_toml_file, load_toml_text
-from ..domain.outcomes import CANONICAL_OUTCOMES
+from ..domain.outcomes import ASK, CANONICAL_OUTCOMES
+from ..definitions.question import question_instructions
 from ..domain.errors import ForemanError
 from ..domain.sandbox import ACCEPT_OPEN_READS_FLAG
 from ..data import ROLES_DIR
@@ -423,7 +424,7 @@ def effective_approve_needs(declaration: Any, configured: str) -> str:
 
 
 #: Variables that sit alone on a line; the line goes when the value is empty.
-OPTIONAL_LINE_VARIABLES = ("environment_rules",)
+OPTIONAL_LINE_VARIABLES = ("environment_rules", "ask_format")
 
 
 def render_prompt(role: RoleDefinition, context: Mapping[str, Any]) -> str:
@@ -434,6 +435,8 @@ def render_prompt(role: RoleDefinition, context: Mapping[str, Any]) -> str:
     values["signal_format"] = SIGNAL_FORMAT_DOC
     record = role.completion.record
     values["record_format"] = record.instructions(role.completion.marker.strip()) if record else ""
+    # A role that may ask is told how, where its template puts it.
+    values["ask_format"] = question_instructions(role.completion.marker.strip()) if ASK in role.completion.outcomes else ""
     values["approve_needs_rule"] = (
         APPROVE_NEEDS_RULES[effective_approve_needs(record, role.completion.output.approve_needs)]
         if record is not None and record.kind == "review_verdict"
@@ -443,6 +446,10 @@ def render_prompt(role: RoleDefinition, context: Mapping[str, Any]) -> str:
         values[key] = _stringify_prompt_value(value)
 
     template = role.prompt_template
+    if values["ask_format"] and "{ask_format}" not in template:
+        # A project's own template that says nothing of asking still tells
+        # the agent how to, once it declares the outcome.
+        template = f"{template.rstrip()}\n\n{{ask_format}}\n"
     for name in OPTIONAL_LINE_VARIABLES:
         if not values.get(name):
             # A placeholder alone on its line leaves no empty line when unset.

@@ -14,6 +14,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 from ..domain.models import Project, Task
+from ..definitions.question import QUESTION_BLOCKED_REASON
 from ..store import ForemanStore
 from .layers import project_definitions
 from .workflows import WorkflowDefinition
@@ -30,7 +31,9 @@ HUMAN_GATE_BLOCKED_REASON = "Awaiting human approval"
 #: dead-letter state (loop limit, unhandled outcome, cost or time gate, branch
 #: violation, failure isolation, a user's Block) and is resolved with
 #: ``foreman task unblock`` or by editing the task.
-BLOCKED_KINDS: tuple[str, ...] = ("gate", "engine")
+#: ``question`` is an agent's question to a person (ADR-0041 section 4): the
+#: task waits for an answer, resolved with ``foreman task answer``.
+BLOCKED_KINDS: tuple[str, ...] = ("gate", "question", "engine")
 
 
 # ── Dead-letter classification ────────────────────────────────────────────────
@@ -127,6 +130,8 @@ def blocked_kind(task: Task, gates: WorkflowGateSteps) -> str | None:
 
     if task.status != "blocked":
         return None
+    if (task.blocked_reason or "") == QUESTION_BLOCKED_REASON:
+        return "question"
     step = task.workflow_current_step
     if step and gates.step_ids is not None and step in gates.step_ids:
         return "gate" if step in gates.gate_step_ids else "engine"
@@ -145,3 +150,46 @@ def blocked_kind_counts(
         if kind is not None:
             counts[kind] += 1
     return counts
+
+
+def capped_step_block(store: ForemanStore, project: Project | None, task: Task) -> str | None:
+    """The step whose own cap (``max_visits``) blocks a task, or None.
+
+    Told by the block itself, not by the counts: the task's latest
+    ``workflow.step_cap`` event names this step and the reason the task is
+    blocked with. A cost or time limit, a step out of models or a person's
+    block can also leave a task at a capped step with its count at the cap,
+    and those are not a cap's (sprint 69 review).
+    """
+
+    step_id = task.workflow_current_step
+    if task.status != "blocked" or not step_id or project is None or not project.workflow_id:
+        return None
+    try:
+        workflow = project_definitions(store, project.id).workflows.get(project.workflow_id)
+    except Exception:  # noqa: BLE001 - a broken definition must not break unblocking
+        return None
+    step = workflow.get_step(step_id) if workflow is not None else None
+    if step is None or step.max_visits is None:
+        return None
+    caps = [
+        event
+        for event in store.list_events(task_id=task.id)
+        if event.event_type == "workflow.step_cap"
+    ]
+    if not caps:
+        return None
+    latest = caps[-1].payload
+    if latest.get("step") != step_id or latest.get("reason") != task.blocked_reason:
+        return None
+    return step_id
+
+
+def step_cap(store: ForemanStore, project: Project | None, step_id: str) -> int | None:
+    """A step's ``max_visits``, or None."""
+
+    if project is None or not project.workflow_id:
+        return None
+    workflow = project_definitions(store, project.id).workflows.get(project.workflow_id)
+    step = workflow.get_step(step_id) if workflow is not None else None
+    return step.max_visits if step is not None else None

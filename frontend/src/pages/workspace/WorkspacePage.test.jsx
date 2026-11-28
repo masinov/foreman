@@ -207,6 +207,41 @@ describe("WorkspacePage", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Approved FOR-14. Foreman goes on with Merge.");
   });
 
+  it("lists a question an agent asked with its options, and Answer goes to the task page", async () => {
+    const routes = workspaceRoutes();
+    routes["GET /api/v1/needs-you?limit=5&offset=0"] = {
+      items: [
+        {
+          kind: "answer_question",
+          project_id: "foreman",
+          project_name: "Foreman",
+          sprint_id: "sprint-56",
+          sprint_title: "Sprint 56: engine truthfulness",
+          task_id: "task-ask",
+          task_key: "FOR-16",
+          task_title: "Store the thing",
+          since: "2026-11-11T10:00:00Z",
+          question: {
+            question: "Which store holds it?",
+            options: ["SQLite", "A file"],
+            recommendation: { option: 1, why: "Source of truth." },
+            step: "develop",
+          },
+        },
+      ],
+      total: 1,
+      limit: 5,
+      offset: 0,
+    };
+    renderApp("/dashboard", createFakeFetch(routes));
+    const row = (await screen.findByText("FOR-16")).closest("tr");
+    expect(within(row).getByText("Answer question")).toBeInTheDocument();
+    expect(row).toHaveTextContent("Which store holds it?");
+    expect(row).toHaveTextContent("2 options · recommends 1 · at Develop");
+    fireEvent.click(within(row).getByRole("button", { name: "Answer FOR-16" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/dashboard/tasks/task-ask"));
+  });
+
   it("shows an approval the API refused as a sentence", async () => {
     const routes = workspaceRoutes();
     routes["POST /api/v1/tasks/task-merge/approve"] = reply(409, {

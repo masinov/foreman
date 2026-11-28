@@ -6,9 +6,11 @@ from __future__ import annotations
 import argparse
 import sys
 
+from ...definitions.question import answer_words
 from ...mutations import MutationError
 from ...store import ForemanStore
 from ..common import (
+    format_step_visits,
     cli_mutations,
     print_lines,
     resolve_db_path_or_print,
@@ -58,7 +60,9 @@ def handle_task_unblock(args: argparse.Namespace) -> int:
         if task is None:
             return 1
         try:
-            cli_mutations(store).unblock_task(task)
+            cli_mutations(store).unblock_task(
+                task, reset_visits=getattr(args, "reset_visits", False)
+            )
         except MutationError as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -69,7 +73,45 @@ def handle_task_unblock(args: argparse.Namespace) -> int:
         f"Database: {db_path}",
         f"Task: {task.id} | {task.title}",
         f"Status: {task.status}",
-        "Step visits reset: yes",
+        (
+            "Step visits reset: yes"
+            if not task.step_visit_counts
+            else f"Step visits kept: {format_step_visits(task.step_visit_counts)}"
+        ),
+    )
+    return 0
+
+
+def handle_task_answer(args: argparse.Namespace) -> int:
+    """Handle ``foreman task answer``: answer the question an agent asked."""
+
+    db_path = resolve_db_path_or_print(args.db)
+    if db_path is None:
+        return 1
+
+    with ForemanStore(db_path) as store:
+        store.initialize()
+        task = resolve_task_or_print(store, args.task_id)
+        if task is None:
+            return 1
+        try:
+            result = cli_mutations(store).answer_question(
+                task, option=args.option, text=args.text
+            )
+        except MutationError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        engine_resident = store.get_engine_lock(result.task.project_id) is not None
+        db_path = store.db_path
+
+    print_lines(
+        "Answered task",
+        f"Database: {db_path}",
+        f"Task: {task.id} | {task.title}",
+        f"Answer: {answer_words(result.answer)}",
+        f"Answered by: {result.answer['answered_by']} at {result.answer['answered_at']}",
+        f"Step: {result.step} runs again with the answer"
+        + ("" if engine_resident else " when a worker runs (`foreman serve`)"),
     )
     return 0
 

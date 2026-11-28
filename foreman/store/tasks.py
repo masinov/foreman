@@ -297,6 +297,24 @@ class TaskStore(StoreBase):
                         (self._next_task_key(project_id), row["id"]),
                     )
 
+    @retried_on_lock
+    def claim_answered_question(self, task_id: str, waiting_reason: str) -> bool:
+        """Take a task off waiting for an answer, if it still waits; False when another answer got there first.
+
+        One conditional write, so two answers sent at once (the dashboard and
+        the CLI) cannot both be recorded: the second finds the task no longer
+        waiting.
+        """
+
+        def _claim(connection: sqlite3.Connection) -> int:
+            return connection.execute(
+                "UPDATE tasks SET status = 'in_progress', blocked_reason = NULL "
+                "WHERE id = ? AND status = 'blocked' AND blocked_reason = ?",
+                (task_id, waiting_reason),
+            ).rowcount
+
+        return self._write(_claim) > 0
+
     def get_task(self, task_id: str) -> Task | None:
         """Return one task by identifier."""
 

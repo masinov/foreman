@@ -40,11 +40,15 @@ class WorkflowStep:
     ``policy`` names the project setting that decides whether a
     ``_builtin:human_gate`` step needs a person (``human``) or auto-approves
     (``auto``). Gate steps without a policy always wait for a person.
+    ``max_visits`` caps how many times a task may enter the step.
     """
 
     id: str
     role: str
     policy: str | None = None
+    #: A cap on visits: the task is blocked instead of entering the step a
+    #: further time (ADR-0041 section 3). ``None`` is no cap of its own.
+    max_visits: int | None = None
 
 
 @dataclass(slots=True)
@@ -426,6 +430,25 @@ def _optional_policy(step_data: Mapping[str, Any], workflow_path: Path) -> str |
     return value
 
 
+def _optional_max_visits(step_data: Mapping[str, Any], workflow_path: Path) -> int | None:
+    value = step_data.get("max_visits")
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise WorkflowLoadError(
+            f"{workflow_path}: step {step_data.get('id')!r}: max_visits must be a "
+            f"positive integer, got {value!r}."
+        )
+    if step_data.get("role") == "_builtin:human_gate":
+        # A gate already waits for a person; a cap on it would block the task
+        # as a gate block, which unblocking refuses and approving skips.
+        raise WorkflowLoadError(
+            f"{workflow_path}: step {step_data.get('id')!r}: a human gate takes no "
+            "max_visits; cap the step that sends the task back to it instead."
+        )
+    return value
+
+
 def default_workflows_dir() -> Path:
     """Return the shipped workflows directory."""
 
@@ -506,6 +529,7 @@ def parse_workflow(
             id=_require_string(step_data, "id", workflow_path),
             role=_require_string(step_data, "role", workflow_path),
             policy=_optional_policy(step_data, workflow_path),
+            max_visits=_optional_max_visits(step_data, workflow_path),
         )
         for step_data in steps_data
     )

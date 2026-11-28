@@ -296,6 +296,8 @@ class TaskService(Service):
             # What a person at the gate is looking at, to name in the decision.
             "gate_version": self._gate_version(task, project, gates),
             "blocked_kind": blocked_kind(task, gates),
+            # The question an agent asked, while the task waits for the answer.
+            "question": self._pending_question(task),
             "completion_evidence": _serialize_completion_evidence(task.completion_evidence),
             "guidance": [
                 {
@@ -462,7 +464,12 @@ class TaskService(Service):
         return self.get_task(task.id)
 
     def unblock_task(
-        self, task_id: str, *, note: str | None = None, requested_by: str | None = None
+        self,
+        task_id: str,
+        *,
+        note: str | None = None,
+        reset_visits: bool = False,
+        requested_by: str | None = None,
     ) -> dict[str, Any]:
         """Return a blocked task to the queue (see ``Mutations.unblock_task``).
 
@@ -473,7 +480,7 @@ class TaskService(Service):
 
         task = self._require_task(task_id)
         try:
-            self._mutations(requested_by).unblock_task(task)
+            self._mutations(requested_by).unblock_task(task, reset_visits=reset_visits)
         except MutationError as exc:
             raise InvalidRequestError(str(exc)) from exc
         if note and note.strip():
@@ -573,6 +580,45 @@ class TaskService(Service):
                 version=result.version,
                 version_named=result.version_named,
             ),
+        }
+
+    def answer_question(
+        self,
+        task_id: str,
+        *,
+        option: int | None = None,
+        text: str | None = None,
+        requested_by: str | None = None,
+    ) -> dict[str, Any]:
+        """Answer the question a task waits on with an option, with words, or both.
+
+        Recording is all this does: the step that asked runs again with the
+        answer when the project's engine takes the task up.
+        """
+
+        task = self._require_task(task_id)
+        try:
+            result = self._mutations(requested_by).answer_question(task, option=option, text=text)
+        except MutationError as exc:
+            raise ActionFailedError(f"Failed to answer: {exc}") from exc
+        resident = self.store.get_engine_lock(task.project_id) is not None
+        held = HoldReader(self.store).hold(result.task) is not None
+        name = task.task_key or task.title
+        step = _humanize(result.step)
+        if held:
+            sentence = f"Answered {name}. {step} runs again on Resume."
+        elif resident:
+            sentence = f"Answered {name}. Foreman goes on with {step}."
+        else:
+            sentence = f"Answered {name}. {step} runs again when a worker runs."
+        return {
+            "status": "answered",
+            "task_id": task_id,
+            "next_step": result.step,
+            "engine_resident": resident,
+            "held": held,
+            "answer": result.answer,
+            "message": sentence,
         }
 
     def create_human_message(self, task_id: str, *, text: str) -> dict[str, Any]:

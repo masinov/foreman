@@ -15,6 +15,7 @@ from ..common import (
 from .changes import handle_task_add, handle_task_edit, handle_task_override
 from .lifecycle import (
     handle_task_accept,
+    handle_task_answer,
     handle_task_block,
     handle_task_cancel,
     handle_task_done,
@@ -42,6 +43,7 @@ def register_task(subparsers: argparse._SubParsersAction) -> None:
     _register_show(task_commands)
     _register_block(task_commands)
     _register_unblock(task_commands)
+    _register_answer(task_commands)
     _register_accept(task_commands)
     _register_done(task_commands)
     _register_reopen(task_commands)
@@ -218,11 +220,48 @@ def _register_unblock(task_commands: argparse._SubParsersAction) -> None:
 
     task_unblock = task_commands.add_parser("unblock", help="Unblock a task.")
     task_unblock.add_argument("task_id", help="Task id or key (FOR-56).")
+    task_unblock.add_argument(
+        "--reset-visits",
+        action="store_true",
+        help=(
+            "For a task blocked by a step's max_visits cap: start every step's visit "
+            "count over. Without it the counts are kept and the capped step runs once "
+            "more. Any other block resets the counts either way."
+        ),
+    )
     add_db_option(
         task_unblock,
         help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
     )
     set_handler(task_unblock, handle_task_unblock, "task unblock")
+
+
+def _register_answer(task_commands: argparse._SubParsersAction) -> None:
+    """`foreman task answer`."""
+
+    task_answer = task_commands.add_parser(
+        "answer",
+        help="Answer the question an agent asked, with an option or your own words.",
+        description=(
+            "Answer the question a task waits on (`foreman task show` prints it, with its "
+            "options and the recommendation). The step that asked runs again with the answer."
+        ),
+    )
+    task_answer.add_argument("task_id", help="Task id or key (FOR-56).")
+    task_answer.add_argument(
+        "--option",
+        type=int,
+        help="The number, from 1, of the option you choose.",
+    )
+    task_answer.add_argument(
+        "--text",
+        help="Your answer in your own words (alone, or with an option).",
+    )
+    add_db_option(
+        task_answer,
+        help_text=f"Path to the SQLite store containing the task. {DB_OPTION_NOTE}",
+    )
+    set_handler(task_answer, handle_task_answer, "task answer")
 
 
 def _register_accept(task_commands: argparse._SubParsersAction) -> None:

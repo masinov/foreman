@@ -124,6 +124,13 @@ class TaskApproval(_Body):
     version: str | None = None
 
 
+class TaskAnswer(_Body):
+    #: The number (from 1) of the option chosen, and/or the person's own words.
+    option: int | None = None
+    text: str | None = None
+    requested_by: str | None = None
+
+
 class TaskDenial(_Body):
     note: str | None = None
 
@@ -136,6 +143,8 @@ class TaskBlock(_Body):
 class TaskUnblock(_Body):
     #: Guidance for the next agent step, recorded with the unblock.
     note: str | None = None
+    #: For a task blocked by a step's cap: start every visit count over.
+    reset_visits: bool = False
     requested_by: str | None = None
 
 

@@ -28,6 +28,7 @@ from ..engine.control import (
 )
 from ..engine.limits import resolve_project_settings
 from ..mutations.gates import current_gate_version
+from ..mutations.questions import pending_question
 from ..store import ForemanStore
 from ..store.overview import MILESTONE_KINDS, MilestoneRow
 from .views import serialize_level_block
@@ -142,7 +143,9 @@ class WorkspaceReader:
                     requests[project.id] = (task.sprint_id, max(newest, since), number + 1)
                 continue
             gates = self._gate_steps(project)
-            if blocked_kind(task, gates) == "gate":
+            if blocked_kind(task, gates) == "question":
+                kind = "answer_question"
+            elif blocked_kind(task, gates) == "gate":
                 policy = gates.gate_policies.get(task.workflow_current_step or "")
                 kind = "approve_plan" if policy == PLAN_APPROVAL_POLICY else "approve_merge"
             else:
@@ -250,6 +253,11 @@ class WorkspaceReader:
         if item.kind in ("approve_merge", "approve_plan") and task is not None:
             # What the row shows a person, and what its Approve names.
             entry["gate_version"] = self._gate_version(projects[item.project_id], task)
+        if item.kind == "answer_question" and task is not None:
+            # The question itself: what a person weighs, and answers on the row's page.
+            found = pending_question(task, self.store.list_runs(task_id=task.id))
+            if found is not None:
+                entry["question"] = {**found[1], "step": found[0].workflow_step}
         if item.kind == "unblock" and task is not None:
             entry["blocked"] = {
                 "reason": (task.blocked_reason or "").strip() or None,

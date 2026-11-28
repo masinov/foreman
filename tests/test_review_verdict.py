@@ -383,6 +383,55 @@ class CommandMatchTests(unittest.TestCase):
         self.assertTrue(command_was_run("a && b", ["a", "b"]))
         self.assertFalse(command_was_run("a && b", ["a"]))
 
+    def test_a_command_inside_a_group_was_run(self) -> None:
+        cited = "./venv/bin/python -m pytest tests/test_routes_on_facts.py -q"
+        for ran in (
+            "(python -m pytest tests/test_routes_on_facts.py -q 2>&1 || ./venv/bin/python -m pytest tests/test_routes_on_facts.py -q 2>&1) | tail -8",
+            "(./venv/bin/python -m pytest tests/test_routes_on_facts.py -q)",
+            "{ ./venv/bin/python -m pytest tests/test_routes_on_facts.py -q; } | tail -3",
+            "cd /w && (./venv/bin/python -m pytest tests/test_routes_on_facts.py -q)",
+        ):
+            with self.subTest(ran=ran):
+                self.assertTrue(command_was_run(cited, [ran]))
+
+    def test_what_did_not_run_in_a_group_is_not_matched(self) -> None:
+        for cited, ran in (
+            ("pytest x", "echo pytest x"),
+            ("pytest x", "echo '(pytest x)'"),
+            ("pytest x", "echo \"(pytest x)\""),
+            ("pytest x", "(echo pytest x)"),
+            ("pytest x", "(pytest y || true)"),
+            ("pytest x", "{ echo pytest x; }"),
+        ):
+            with self.subTest(ran=ran):
+                self.assertFalse(command_was_run(cited, [ran]))
+
+    def test_a_command_only_named_in_text_or_defined_is_not_matched(self) -> None:
+        """Sprint 69 review: none of these runs the cited command."""
+
+        cited = "./venv/bin/python -m pytest tests -q"
+        for ran in (
+            "cat > /tmp/notes.md <<'EOF'\n- suite passes (./venv/bin/python -m pytest tests -q)\nEOF",
+            "cat <<EOF\n(./venv/bin/python -m pytest tests -q)\nEOF",
+            "python3 - <<'EOF'\nprint('(./venv/bin/python -m pytest tests -q)')\nEOF",
+            "run() { ./venv/bin/python -m pytest tests -q; }",
+            "cmd=(./venv/bin/python -m pytest tests -q); echo ${cmd[@]}",
+            "echo verified (./venv/bin/python -m pytest tests -q)",
+            "echo { ./venv/bin/python -m pytest tests -q; }",
+            "bash -c 'echo (./venv/bin/python -m pytest tests -q)'",
+            "echo \\$(./venv/bin/python -m pytest tests -q)",
+        ):
+            with self.subTest(ran=ran):
+                self.assertFalse(command_was_run(cited, [ran]))
+
+    def test_a_command_on_its_own_line_after_a_heredoc_was_run(self) -> None:
+        ran = "cat > /tmp/n <<'EOF'\nnotes\nEOF\n./venv/bin/python -m pytest tests -q"
+        self.assertTrue(command_was_run("./venv/bin/python -m pytest tests -q", [ran]))
+
+    def test_a_command_substitution_runs_what_is_inside_it(self) -> None:
+        self.assertTrue(command_was_run("pytest x", ["echo $(pytest x)"]))
+        self.assertFalse(command_was_run("pytest x", ["echo \"$(pytest y)\""]))
+
 
 class JudgementAndOldRolesTests(unittest.TestCase):
     setUp = BasisTests.setUp

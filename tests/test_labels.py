@@ -31,7 +31,6 @@ from foreman.mutations import MutationError, Mutations
 from foreman.services import Services
 from foreman.services.errors import InvalidRequestError
 from foreman.store import ForemanStore
-from foreman.store.migrations import MIGRATIONS
 
 LABELS = {"ui": "changes what a person sees", "needs-docs": "the manual changes too"}
 GROUPS = {
@@ -218,7 +217,9 @@ class StoreTests(_Project):
     def test_the_migration_gives_an_existing_task_none(self) -> None:
         from test_migrations import IncrementalUpgradeTests
 
-        before = max(version for version, _, _ in MIGRATIONS) - 1
+        # The labels column came with migration 37: start just before it, not
+        # before whatever the latest migration is.
+        before = 36
         old = IncrementalUpgradeTests()._apply_migrations_up_to(before)
         connection = old._connection
         try:
@@ -432,3 +433,27 @@ class CliTests(_Project):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReviewFixTests(_Project):
+    """Sprint 69 review of FOR-107."""
+
+    def test_patterns_that_would_crash_or_never_match_are_refused(self) -> None:
+        for bad in ("[!]x", "[z-a].py", "./docs/**", "docs//a", "docs/./a",
+                    "[[:alpha:]]", "C:/x", "docs/ ..", ".. /x"):
+            with self.subTest(bad=bad), self.assertRaises(LabelError):
+                parse_path_groups({"g": [bad]})
+
+    def test_a_trailing_slash_names_a_directory_at_any_depth(self) -> None:
+        self.assertTrue(matches_pattern("docs/a.md", "docs/"))
+        self.assertTrue(matches_pattern("tools/docs/a.md", "docs/"))
+        self.assertFalse(matches_pattern("docs", "docs/"))
+        self.assertFalse(matches_pattern("tools/docs", "docs/"))
+        # Without the trailing slash a file of that name is matched too.
+        self.assertTrue(matches_pattern("docs", "docs"))
+
+    def test_a_task_without_labels_is_added_whatever_the_other_settings_say(self) -> None:
+        self.project.settings["max_step_visits"] = "lots"
+        self.store.save_project(self.project)
+        task = self.mutations.add_task(self.store.get_sprint("s1"), title="T")
+        self.assertEqual(self.stored(task.id).labels, [])

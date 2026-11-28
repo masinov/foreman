@@ -204,6 +204,7 @@ def resolve_db_path_or_print(
 #: clears it.
 BLOCKED_KIND_HINTS = {
     "gate": "waiting for `foreman approve` or `foreman deny`",
+    "question": "an agent asked a question; answer it with `foreman task answer`",
     "engine": "blocked by the engine; clear with `foreman task unblock`",
 }
 

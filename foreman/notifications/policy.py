@@ -107,7 +107,8 @@ def kind_for_event(event_type: str, payload: Mapping[str, Any] | None = None) ->
         return None
     if kind == HUMAN_GATE:
         reason = (payload or {}).get("reason")
-        if reason != "human_gate":
+        # A question to a person waits for one as a gate does.
+        if reason not in ("human_gate", "question"):
             return None
     return kind
 

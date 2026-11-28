@@ -289,7 +289,7 @@ foreman task list <project-id> [--sprint SPRINT_ID] [--rests-on PATH[#HEADING]]
 foreman task show <task-id>           # task + worktree + recent runs + events
 foreman task accept <task-id>         # triage → todo
 foreman task block <task-id> --reason "..."  # only a task that has not started; a started one is stopped or closed
-foreman task unblock <task-id>
+foreman task unblock <task-id> [--reset-visits]
 foreman task done <task-id> --reason "..."   # finished outside the engine; nothing is checked
 foreman task reopen <task-id>         # done or cancelled → todo, workflow from the start
 foreman task edit <task-id> [--title T] [--type TYPE] [--priority N]
@@ -404,9 +404,15 @@ backlog work at once. `backlog accept` turns a request into backlog work,
 which matters where Foreman starts backlog work itself; `backlog plan` puts
 a request or backlog work into a sprint, and planning a request accepts it.
 
-`task unblock` refuses a task parked at a human gate (use `foreman approve` or
-`foreman deny` for those) and clears the engine's dead letters — see
-[Dead-letter kinds](#dead-letter-kinds).
+`foreman task answer <task> --option <n> | --text <words>` answers the question
+an agent asked ([Asking a person](#asking-a-person-the-ask-outcome)). `task
+unblock` refuses a task parked at a human gate (use `foreman approve` or
+`foreman deny` for those) or waiting for an answer, and clears the engine's dead letters — see
+[Dead-letter kinds](#dead-letter-kinds). Unblocking resets the step visit
+counts and starts the workflow over, except for a task a step's own cap
+blocked ([Capping a step](#capping-a-step-max_visits)): that one resumes at the
+capped step, its counts kept, and `--reset-visits` (or `reset_visits` in the
+API) starts every count over.
 
 `--depends-on` ids are validated to exist in the same project. Only a `done`
 dependency releases the task; if a dependency is **cancelled**, the engine blocks
@@ -944,7 +950,8 @@ develop".
 Agent/builtin terminal results normalize to a canonical set
 (`foreman/domain/outcomes.py`): `success`, `failure`, `error`, `killed`, `paused`,
 `conflict`, `done`, `go` (a routing step, above), plus reviewer decisions `approve`, `deny`, `steer`,
-`escalate`. Transitions are keyed `completion:<outcome>`. Unknown agent
+`escalate`, and `ask` (a question to a person, which is not routed: see
+[Asking a person](#asking-a-person-the-ask-outcome)). Transitions are keyed `completion:<outcome>`. Unknown agent
 outcomes normalize to `error` (deterministic fallback).
 
 The merge step (`_builtin:merge`) ends in `success`, `failure`, `conflict` or
@@ -963,6 +970,116 @@ Each step visit increments `step_visit_counts[step]`. Exceeding
 event and a `loop_limit` supervision trigger. The `completion:conflict`
 transition explicitly **resets** the visit budget (emitting
 `workflow.step_visit_reset`) so conflict recovery doesn't starve the loop.
+
+### Capping a step: `max_visits`
+
+A step may set `max_visits = <n>` (a positive integer):
+
+```toml
+[[steps]]
+id = "review"
+role = "code_reviewer"
+max_visits = 2
+```
+
+When the task is about to enter the step for the (n+1)th time it is blocked
+instead, before the step runs: the reason names the step and its cap ("Review
+ran twice, its cap: a person decides."), a `workflow.step_cap` event is
+recorded, and the task keeps the step as its resume point. A step's own cap is
+checked first; `max_step_visits` stays the overall stop for a loop through a
+step without a cap. A step that moves up its role's models on failure gets
+the same room for those failures under its cap as under `max_step_visits`:
+they are the ladder's, not rounds. A human gate takes no `max_visits` (the
+workflow is refused): it already waits for a person, so cap the step that
+sends the task back to it.
+
+The block is a dead letter of the `engine` kind: clear it with
+`foreman task unblock` or Unblock on the task page. The step then runs once
+more, and the count is **not** reset: the capped step's count drops by one (to
+n−1), the other counts stay, and the next entry blocks again. Say
+`foreman task unblock <task> --reset-visits` (the API's `reset_visits`) to start
+every count over, so the step has its n visits again. Only a block the cap
+made is taken for one (its `workflow.step_cap` event and reason): another
+block of a task that happens to sit at a capped step with its count at the
+cap (a cost or time limit, no model left, a person's block) unblocks as any
+other block does.
+
+Use `max_visits` when the answer to "it has gone round enough" is a person.
+When the workflow has another path at a count (send it to a different step,
+or to a person through a gate of its own), put the fact `visits:<step>>=<n>`
+on a route instead (see Routes); a cap has no path of its own.
+
+### Asking a person: the `ask` outcome
+
+Any agent role may declare `ask` among its outcomes (ADR-0041 section 4); the
+shipped `developer`, `code_reviewer` and `frontier_reviewer` do:
+
+```toml
+[completion]
+outcomes = ["done", "blocked", "error", "ask"]
+```
+
+A role that declares it is told, in its prompt, how to ask (`{ask_format}`, put
+after the template's own text; a template without the placeholder gets it
+appended). The shipped developer prompt says **when**: the task cannot be done
+as specified, the specification contradicts itself or the code, or a decision
+is one only the owner can take. It asks instead of guessing or blocking, and
+asking is not failing. The shipped reviewers may ask instead of returning a
+verdict they would have to guess at.
+
+**The record.** The question is returned as the step's `foreman-record` block,
+as the other records are, marked by `"outcome": "ask"`:
+
+```json
+{
+  "outcome": "ask",
+  "question": "Which store holds it?",
+  "options": ["SQLite", "A file"],
+  "recommendation": {"option": 1, "why": "It is the source of truth."}
+}
+```
+
+`question` is text, `options` are two or more different texts, and
+`recommendation.option` is the number (from 1) of one of them, with `why`. Anything
+else is a malformed record: the step ends as an `error` outcome ("The step's
+question is not usable: ..."), is asked once to return it again, and is routed
+like any error. The record is kept on the step's run.
+
+**Waiting.** The task waits the way it waits at a human gate: `blocked` at the
+step that asked (kind `question`, see [Dead-letter kinds](#dead-letter-kinds)),
+its lease released, and it holds the queue (ADR-0039): the engine starts no
+other task of the sprint while it waits, unless a user pauses it (ADR-0043). It
+appears in Needs you as "Answer question", and on the task page the question,
+its options, the recommendation (marked, with its reason) and a field for an
+answer in a person's own words are the first thing shown. A notification goes
+out as for a gate.
+
+**Answering.** A person answers with an option, with their own words, or both:
+
+```bash
+foreman task answer FOR-110 --option 2
+foreman task answer FOR-110 --text "Use a file, under /var/lib/foreman."
+```
+
+on the task page, or `POST /api/tasks/{id}/answer` with `{"option": 2,
+"text": "...", "requested_by": "ada"}` (`option` and `text` each optional, one
+required). The answer is recorded as a run of its own (outcome `answered`,
+backend `human`), whose record says who answered (the user, else the channel)
+and when, with a `human.question_answered` event; the Activity shows the
+question and the answer. Foreman records it and leaves the task at the step that
+asked, for the project's engine to run (as a gate decision does).
+
+**Going back into the step.** The step runs again with the question and the
+answer. When the role keeps its session (`session_persistence = true`) the
+session is resumed and the answer is the next message: the session already has
+the work. Otherwise the step runs again with its whole prompt and the question
+and the answer as a section of it. The question is not a visit: the step's visit
+count is given back when it asks, so it is the same after the answer as it
+would have been, and `max_visits` and `max_step_visits` do not count it.
+
+**What the human gate still does.** The gate keeps its approve, deny and steer
+for now (`foreman approve`, `foreman deny`, Send back). Making it one fixed
+question, as ADR-0041 section 4 intends, is a later task.
 
 ### Branch refresh before a develop pass
 
@@ -1476,7 +1593,7 @@ offending value, rather than running on silent defaults.
 | `generate_changelog` | `false` | when a sprint is finished, fold the `changes/<task key>.md` files into a section of `CHANGELOG.md` (newest sprint first, above what the file held before) and remove them, in the checkpoint's commit (ADR-0040). Off: the file and `changes/` are left as they are. `foreman changelog <project> [--sprint <id>]` does the same by hand |
 | `generate_copies` | `false` | Foreman writes `docs/STATUS.md` and `docs/sprints/current.md` from its database when a sprint starts and when it finishes (in the checkpoint's commit), and a finished sprint's archive copy `docs/sprints/archive/sprint-<n>-<slug>.md` (ADR-0040); a sprint's finish and the command also write `docs/sprints/backlog.md`. An archive file written by hand is never replaced. No task edits them. `foreman copies <project> [--sprint <id>]` writes them by hand |
 | `labels` | `{}` | the labels a task may carry: `{"<name>": "<one-line meaning>"}`. A name is lowercase words joined by `-` or `_` (`ui`, `needs-docs`). Set by `foreman config <project-id> --set labels='{"ui": "changes what a person sees"}'`; a bad name or an empty or many-line meaning is refused. Not host-level. Removing one edits no task (see Tasks › Labels) |
-| `path_groups` | `{}` | named groups of path patterns, for the routes' facts `changed:<group>` (any changed path is in the group) and `changed_only:<group>` (every changed path is in the listed groups): `{"<name>": ["<pattern>", ...]}`, such as `{"frontend": ["frontend/**"], "docs": ["docs/**", "*.md"]}`. A pattern is gitignore-style and relative to the repository: no `/` in it (`*.md`) matches at any depth, one with a `/` is anchored at the root (`docs/*.md`), `**` crosses directories, a directory matches everything under it. No leading `/` or `~`, no `..`, no `!`. A path in no group counts for none, so it defeats `changed_only:`. Not host-level |
+| `path_groups` | `{}` | named groups of path patterns, for the routes' facts `changed:<group>` (any changed path is in the group) and `changed_only:<group>` (every changed path is in the listed groups): `{"<name>": ["<pattern>", ...]}`, such as `{"frontend": ["frontend/**"], "docs": ["docs/**", "*.md"]}`. A pattern is gitignore-style and relative to the repository: one with no `/` except a trailing one (`*.md`, `docs/`) matches at any depth; one with a `/` at its start or in its middle is anchored at the root (`docs/*.md`); a trailing `/` matches a directory only (`docs/` is everything under any `docs` directory, not a file named `docs`); `**` crosses directories; a directory matches everything under it. No leading `/` or `~`, no `..`, no `!`, no `./`, `//` or `/./`, and no `[[:class:]]`: a pattern is refused when the setting is saved, not when it is first used. A path in no group counts for none, so it defeats `changed_only:`. Not host-level |
 | `adr_dir` | `docs/adr` | the folder whose decisions are numbered when a task merges (ADR-0040): a branch writes `<adr_dir>/new-<slug>.md`; the merge commit renames it to `ADR-NNNN-<slug>.md` (next free number), sets the number in its title line, rewrites references to it and regenerates the folder's `README.md` index from each ADR's title and status (the hand-written part above the list is kept). A merge that would leave two ADRs with one number is refused, naming the files. Empty, or no such folder: left alone |
 | `merge_push_remote` | `""` | name of the git remote the default branch is pushed to after each merge (for example `origin`). Empty: merges stay on this machine. A push that fails is recorded (`engine.push_failed`) and the merge stands |
 | `worktree_setup_timeout_seconds` | `1800` | wall-clock cap for `worktree_setup_command`; `0` disables the timeout |
@@ -1540,19 +1657,23 @@ started this".
 
 ### Dead-letter kinds
 
-`blocked` covers two different situations, and the dashboard, `foreman task
+`blocked` covers three different situations, and the dashboard, `foreman task
 show`, `foreman board`, and `foreman status` all name which one:
 
 | Kind | Means | Cleared by |
 |---|---|---|
 | `gate` | The task is parked at a `_builtin:human_gate` step, waiting for a decision. | `foreman approve` / `foreman deny`, or Approve/Deny on the card |
+| `question` | An agent asked a person a question and its step waits for the answer. | `foreman task answer`, or Answer on the task page |
 | `engine` | The engine's dead letter: loop limit, unhandled outcome, cost or time gate, branch violation, failure isolation, or a `stop_task`. | `foreman task unblock`, after fixing whatever stopped it |
 
 The kind is derived, not stored: the task's persisted `workflow_current_step`
 is looked up in the project's workflow, and a step run by
 `_builtin:human_gate` is a gate. A persisted step alone is not enough, because
 the engine also persists a resume point when it blocks a task after a failure.
-Project summaries carry `blocked_gate` and `blocked_engine` counts.
+A `question` is a task whose blocked reason is the engine's own "Waiting for an
+answer to a question" (set when the step asks, cleared by the answer).
+Project summaries carry `blocked_gate`, `blocked_question` and `blocked_engine`
+counts; `foreman status` counts a question with the tasks waiting on a person.
 
 ### Access and exposure
 

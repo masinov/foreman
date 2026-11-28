@@ -19,6 +19,7 @@ export const DECISIONS = {
   gate: "gate",
   accept: "accept",
   unblock: "unblock",
+  question: "question",
 };
 
 /** The default branch a task merges into, as the checks name it. */
@@ -48,6 +49,17 @@ export function decisionOf(task, checks) {
     };
   }
   if (task.status !== "blocked") return null;
+  if (task.blocked_kind === "question" && task.question) {
+    // An agent asked: the question and its options are the decision, and the
+    // person answers with one of them or in their own words.
+    return {
+      kind: DECISIONS.question,
+      question: task.question.question,
+      detail: `${task.question.role_id ? humanize(task.question.role_id) : "An agent"} asked this at ${humanize(task.question.step)}.`,
+      approve: "Answer",
+      sendBack: null,
+    };
+  }
   if (task.blocked_kind === "gate" || task.awaiting_human_gate) {
     const sendBack = {
       label: "Send back",
@@ -143,7 +155,7 @@ export function stepRows(task, workflow, engine = null) {
     const last = mine[mine.length - 1] ?? null;
     const here = task.workflow_current_step === step.id;
     let result;
-    if (here && task.status === "blocked" && (task.blocked_kind === "gate" || step.role === HUMAN_GATE)) {
+    if (here && task.status === "blocked" && (task.blocked_kind === "gate" || task.blocked_kind === "question" || step.role === HUMAN_GATE)) {
       result = { tone: "attention", word: "Waiting for you" };
     } else if (here && task.status === "blocked") {
       result = { tone: "attention", word: "Blocked here" };

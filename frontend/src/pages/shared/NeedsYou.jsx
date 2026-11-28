@@ -10,7 +10,7 @@ import { approveTask, unblockTask } from "../../api/tasks";
 import { useDelayedFlag } from "../../api/useResource";
 import { usePagedList } from "../../api/usePagedList";
 import { paths } from "../../app/paths";
-import { Link } from "../../app/router";
+import { Link, useNavigate } from "../../app/router";
 import { Button } from "../../ui/Button";
 import { Caret } from "../../ui/Caret";
 import { Mono } from "../../ui/Mono";
@@ -33,6 +33,7 @@ const KIND_WORDS = {
   [NEEDS_YOU_KINDS.answerRequests]: "Answer requests",
   [NEEDS_YOU_KINDS.approvePlan]: "Approve plan",
   [NEEDS_YOU_KINDS.approveMerge]: "Approve merge",
+  [NEEDS_YOU_KINDS.answerQuestion]: "Answer question",
   [NEEDS_YOU_KINDS.unblock]: "Blocked",
   [NEEDS_YOU_KINDS.settleOrder]: "Settle sprint order",
   [NEEDS_YOU_KINDS.finishSprint]: "Finish sprint",
@@ -108,6 +109,22 @@ function OrderProposal({ gate }) {
   );
 }
 
+/** The question an agent asked, and which option it recommends. */
+function QuestionFacts({ question }) {
+  if (!question) return <span className="quiet">A question</span>;
+  const recommended = question.recommendation?.option;
+  return (
+    <span className="needs-you__blocked" title={question.question}>
+      <span className="needs-you__reason">{question.question}</span>
+      <span className="quiet">
+        {`${question.options.length} options`}
+        {recommended ? ` · recommends ${recommended}` : ""}
+        {question.step ? ` · at ${humanize(question.step)}` : ""}
+      </span>
+    </span>
+  );
+}
+
 /** Why a task is blocked and the step it stopped at: what a person weighs before unblocking it. */
 function BlockedFacts({ blocked }) {
   const reason = blocked?.reason || "No reason recorded";
@@ -123,6 +140,7 @@ function BlockedFacts({ blocked }) {
 function Detail({ item }) {
   if (item.gate) return <OrderProposal gate={item.gate} />;
   if (item.kind === NEEDS_YOU_KINDS.approveMerge) return <MergeFacts evidence={item.evidence} commit={rowCommit(item)} />;
+  if (item.kind === NEEDS_YOU_KINDS.answerQuestion) return <QuestionFacts question={item.question} />;
   if (item.kind === NEEDS_YOU_KINDS.unblock || item.kind === NEEDS_YOU_KINDS.unblockSprint) {
     return <BlockedFacts blocked={item.blocked} />;
   }
@@ -147,6 +165,7 @@ function Detail({ item }) {
  */
 export function NeedsYou({ projectId = null, note, empty, onChanged }) {
   const client = useApiClient();
+  const navigate = useNavigate();
   const list = usePagedList(
     ["needs-you", projectId],
     (apiClient, options) => listNeedsYou(apiClient, { projectId, ...options }),
@@ -297,6 +316,19 @@ export function NeedsYou({ projectId = null, note, empty, onChanged }) {
               onClick={() => approve(item)}
             >
               {approvingId === item.task_id ? "Approving…" : "Approve"}
+            </Button>
+          );
+        }
+        if (item.kind === NEEDS_YOU_KINDS.answerQuestion) {
+          // The options and a field for words are on the task page, first thing on it.
+          return (
+            <Button
+              variant="gold-outline"
+              inRow
+              aria-label={`Answer ${itemName(item)}`}
+              onClick={() => navigate(paths.task(item.task_id))}
+            >
+              Answer
             </Button>
           );
         }

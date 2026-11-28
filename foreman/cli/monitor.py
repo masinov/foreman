@@ -222,8 +222,9 @@ def handle_board(args: argparse.Namespace) -> int:
     totals = sprint["totals"]
     blocked_counts = {"gate": 0, "engine": 0}
     for task in tasks:
-        if task["blocked_kind"] in blocked_counts:
-            blocked_counts[task["blocked_kind"]] += 1
+        if task["blocked_kind"] is not None:
+            # A question waits for a person, as a gate does.
+            blocked_counts["engine" if task["blocked_kind"] == "engine" else "gate"] += 1
     task_count = sum(counts.values())
     lines.extend(
         [

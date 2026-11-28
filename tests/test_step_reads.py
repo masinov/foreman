@@ -69,6 +69,26 @@ class ClassifyCommandTests(unittest.TestCase):
 
 
 class MiscountedCasesTests(unittest.TestCase):
+    def test_a_grouped_read_is_a_read_and_a_grouped_write_a_change(self) -> None:
+        self.assertEqual(classify_command("(cat a || cat b) | head -3"), "read")
+        self.assertEqual(classify_command("{ grep x f; ls; }"), "read")
+        self.assertEqual(classify_command("find . \\( -name a \\) -print"), "read")
+        self.assertEqual(classify_command("(cat a; rm b)"), "change")
+
+    def test_a_read_that_takes_a_substitution_is_a_read(self) -> None:
+        """Sprint 69 review: these were reads before FOR-111 and must stay reads."""
+
+        for line in (
+            "ls $(git rev-parse --show-toplevel)",
+            "cat $(git rev-parse --show-toplevel)/README.md",
+            "grep -n foo $(git ls-files '*.py')",
+            "cat $(which foreman)",
+            "cat a | (head; tail)",
+        ):
+            with self.subTest(line=line):
+                self.assertEqual(classify_command(line), "read")
+        self.assertEqual(classify_command("cat $(rm -rf x)"), "change")
+
     def test_a_greater_than_inside_quotes_is_not_a_write(self) -> None:
         for line in [
             "grep -rn '->' foreman",

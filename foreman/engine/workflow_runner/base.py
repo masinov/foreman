@@ -11,8 +11,10 @@ from ...definitions.workflows import WorkflowDefinition
 from ...domain.errors import EngineCommandInterrupt
 from ...domain.models import CompletionEvidence, Project, Run, Task
 from ...domain.outcomes import (
+    ASK,
     ERROR,
 )
+from ...definitions.question import ASKED_EVENT, QUESTION_BLOCKED_REASON, question_of
 from ...history.records import RunRecords
 from ...repo.context import ProjectContextProjection, relative_project_path
 from ...repo.git import (
@@ -37,6 +39,7 @@ from ..limits import resolve_project_settings
 from ..prompts import PromptBuilder
 from ..results import AgentExecutionResult
 from ..signals import SignalHandler
+from ..step_failures import step_cap_reason
 from ..task_worktrees import TaskWorktrees
 from ..task_writes import TaskWrites
 
@@ -114,6 +117,46 @@ class WorkflowRunnerBase:
             },
         )
         self.leases.release(task, project)
+
+    def _wait_for_answer(
+        self,
+        project: Project,
+        task: Task,
+        run: Run,
+        *,
+        step: str,
+        carried_output: str | None,
+    ) -> Task:
+        """Park a task at the step that asked a person a question, holding the queue.
+
+        It waits the way it waits at a human gate (ADR-0039): ``blocked``,
+        at ``step``, with its lease let go. The visit that asked did no work
+        the step is charged for: the question is not a visit, so the count
+        is given back and the step, run again with the answer, takes it up.
+        """
+
+        counts = dict(task.step_visit_counts)
+        if counts.get(step, 0) > 0:
+            counts[step] -= 1
+        task.step_visit_counts = counts
+        task.status = "blocked"
+        task.blocked_reason = QUESTION_BLOCKED_REASON
+        task.workflow_current_step = step
+        task.workflow_carried_output = carried_output
+        self.tasks.save(task)
+        question = question_of(run.record) or {}
+        self.records.emit_event(run, ASKED_EVENT, {"step": step, "role_id": run.role_id, **question})
+        self.records.emit_event(
+            run,
+            "workflow.paused",
+            {
+                "step": step,
+                "reason": "question",
+                "notify": self.records.notification_policy(project, task),
+            },
+        )
+        self.leases.release(task, project)
+        return self.store.get_task(task.id) or task
 
     def run_from_step(
         self,
@@ -310,7 +353,34 @@ class WorkflowRunnerBase:
                     )
                     break
 
-            visit_count = current_task.step_visit_counts.get(current_step, 0) + 1
+            # A step's own cap is checked first, before the step is entered
+            # and counted: a person decides (ADR-0041 section 3). A step that
+            # moves up its models gets room for those failures, as the
+            # project's max_step_visits does: they are the ladder's, not rounds.
+            prior_visits = current_task.step_visit_counts.get(current_step, 0)
+            if step_def.max_visits is not None and prior_visits >= step_def.max_visits + self._ladder_visits(
+                current_task, current_step, workflow
+            ):
+                reason = step_cap_reason(current_step, step_def.max_visits)
+                # The resume point is this step, whatever cleared it before
+                # (a resumed run starts with none): unblocking runs it once more.
+                current_task.workflow_current_step = current_step
+                self._block_at_step(
+                    current_task,
+                    current_step,
+                    detail=reason,
+                    event_type="workflow.step_cap",
+                    payload={
+                        "step": current_step,
+                        "visit_count": prior_visits,
+                        "max_visits": step_def.max_visits,
+                        "reason": reason,
+                    },
+                    attention_trigger="loop_limit",
+                )
+                break
+
+            visit_count = prior_visits + 1
             current_task.step_visit_counts[current_step] = visit_count
             self.tasks.save(current_task)
 
@@ -431,6 +501,16 @@ class WorkflowRunnerBase:
                     clear_resume_point=True,
                 )
                 break
+
+            if outcome == ASK:
+                # The step asked a person: the task waits, and the step runs
+                # again with the answer (ADR-0041 section 4). Only after the
+                # branch-leak check: a step that asked is checked like any other,
+                # or its leaked commits would look like the default branch
+                # merely moving once it runs again (sprint 69 review).
+                return self._wait_for_answer(
+                    project, current_task, run, step=current_step, carried_output=carried_output
+                )
 
             failed_step = self._charge_failure(
                 project, workflow, current_task, run, step_def, current_step, outcome
