@@ -6,7 +6,7 @@ The work filed in Foreman's backlog and not yet in a sprint, by priority (a lowe
 
 The owner's directions and the design decisions taken with the owner are not tasks. They are one file each in [`docs/directions/`](../directions/README.md).
 
-Filed 1, accepted 18.
+Filed 1, accepted 20.
 
 ## Filed, not accepted (1)
 
@@ -14,7 +14,7 @@ Filed 1, accepted 18.
 |-----|------|------|----------|----------|-------|
 | FOR-43 | Proposal card: the 'Then' row for a send-back and a summary line for earlier proposals | feature | 0 | agent:developer | 2026-11-12 |
 
-## Accepted, not planned (18)
+## Accepted, not planned (20)
 
 | Key | Task | Type | Priority | Filed by | Filed |
 |-----|------|------|----------|----------|-------|
@@ -36,3 +36,5 @@ Filed 1, accepted 18.
 | FOR-103 | A dead worker's engine lease is taken over at once on the same machine | fix | 0 | masis | 2026-11-27 |
 | FOR-104 | Reads before the first edit: a heredoc piped into Python, and &> and >\| writes | fix | 0 | masis | 2026-11-27 |
 | FOR-105 | The developer step runs as the operator, unsandboxed | feature | 0 | masis | 2026-11-27 |
+| FOR-106 | foreman db migrate runs while a worker or dashboard is using the database | fix | 0 | masis | 2026-11-27 |
+| FOR-112 | A question's answer: lost on a dropped session, unbounded asks, later rounds unaware | fix | 0 | masis | 2026-11-28 |

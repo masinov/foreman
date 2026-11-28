@@ -7,6 +7,64 @@ memory changes rather than versioned product releases.
 
 <!-- foreman:changelog - sprints below, newest first; earlier history follows -->
 
+## Sprint 69: routes on facts, a cap per step, a question to a person (2026-11-28)
+
+### fix-sprint-68-review: The independent review of sprint 68: the review sandbox and the database
+
+- A branch under review can no longer configure its reviewer: the step loads no project settings and runs no hook, so a `.claude/settings.json` committed on the branch does nothing.
+- An agent is never given the Claude Code session the engine was started from (`CLAUDE_CODE_MESSAGING_*`, `CLAUDE_CODE_SESSION_*`, `CLAUDECODE`, …), and a sandbox allowed unix sockets no longer opens `/run/user/<uid>/cc-socks`: a reviewer could talk to the operator's own session.
+- Each sandboxed step has a short temporary directory of its own, removed with it; Claude Code's shared `/tmp/claude-<uid>` is closed to it.
+- The database copy in a sandbox is opt-in (`sandbox_database_copy`) and holds only the project's own rows, without API tokens, notification destinations, the manager's conversations or leases, vacuumed.
+- Codex: a role only not given Bash keeps the shell it reads with (read-only, asked about the rest); a Codex sandbox excludes the host's `/tmp`; `CODEX_*` keys are masked; `accept_open_reads` is never passed to Claude Code.
+- A sandbox clone has the repository's git identity, is recognised as Foreman's without its marker, and the suite sets its own identity, so the tests pass inside a sandbox.
+- `FOREMAN_DB` is never given to the test command, the worktree setup command or an agent, and a project cannot pass it through; `worktree_link_paths` refuses the database, `.foreman/` and `.git`; discovery stops at `.foreman/`, and in a worktree says the database is out of reach on purpose.
+
+### fix-sprint-69-review: The independent review of sprint 69: questions, caps, labels and cited commands
+
+- A step that asks a person is checked for the task's commits on the default branch before it waits, as every other step is: committing to `main` and then asking no longer slipped the task's work past the check.
+- A person's answer reaches the step it answers even when the engine wrote a run in between (a Stop, a pause, crash recovery, a notice that a document changed), and is used once.
+- Two answers sent at once record only one; the other is refused. A person's name keeps its case in what the agent is told; `foreman run --task` on a waiting task says to answer it; a chosen option on the task page is cleared by choosing it again.
+- A review no longer gets credit for a command it only named: heredoc bodies are not commands, and `(` or `{` opens a group only where a command starts (not in a function's definition, an array, `echo (…)` or `echo { …; }`). A read that takes a `$( )` substitution is still a read.
+- A step's cap keeps its resume point when it blocks a resumed task; only a block the cap made is taken for one when unblocking; a human gate takes no `max_visits`; a step that moves up its models gets room for those failures under its cap.
+- Adding a task without labels never reads the project's settings; path patterns that would crash or never match (`[z-a]`, `./docs`, `docs//a`, `[[:alpha:]]`, `C:/x`) are refused when saved, and a trailing `/` matches a directory only, as in gitignore.
+
+### fix-verdict-ran-message: A refused review is told what its role accepts
+
+- When a review's approval is refused for a criterion without what the role needs, the message now says only what that role accepts. A reviewer that must cite a command it ran was told it could "read the code", did so, and was refused again (FOR-108's review, 2026-11-28); it is now told that reading is not enough and to run a command that shows the criterion, or mark it judgement with its reason.
+
+### FOR-107: Tasks carry labels, and a project names its labels and path groups
+
+- A project names its labels (`labels`: a name and a one-line meaning) and its path groups (`path_groups`: a name and gitignore-style patterns relative to the repository) in its settings; both are validated, shown by `foreman config`, and not host-level.
+- A task carries labels (migration 37; existing tasks get none): `foreman task add`, `task edit` and `backlog add` take `--label`, `task edit` also `--remove-label`; a label the project does not name is refused with the names it does, and removing a label from the setting leaves tasks as they are.
+- The API returns `labels` and `unknown_labels` on a task and sets them on create, file and edit; the task page shows them as a muted line under its title, a label the project no longer names marked "(unknown)".
+- `foreman.domain.labels` answers which path groups a set of changed paths falls in (`changed_in`, `changed_only_in`), for the routes that read `changed:` and `changed_only:`.
+
+### FOR-108: Routes chosen by facts, and a routing step without an agent
+
+- A transition may carry `when`, a list of facts that must all hold (`label:<name>`, `no_criteria`, `changed:<group>`, `changed_only:<group>[,<group>]`, `visits:<step>>=<n>`, each optionally prefixed `not:`). Routes from one step and trigger are tried in the file's order and the first whose facts hold is taken; the last has no `when` and is the default. Workflows without `when` behave as before.
+- `_builtin:route` is a step with no agent whose outcome is always `go`, so a workflow can choose a path before any agent runs.
+- A workflow is refused before it runs when a fact is unknown (`frozen_touched` by name, until write scope exists), a default is missing or not last, `visits:` names a missing step, a change fact is tested before any step that commits, or a route names a label or path group the project does not name (checked when a workflow is set for a project and when the engine starts).
+- Every route taken is recorded on the task with the facts that chose it (`workflow.route_taken`) and shown in the Activity: "Took the route to plan: no criteria", or "No route's facts held: the default, to develop". The workflow form refuses to save over routes it cannot show.
+- ADR-0041 has an amendment giving the syntax; the manual's Workflows section documents it.
+
+### FOR-109: A step can be capped: max_visits on a workflow step
+
+- A workflow step may set `max_visits = <n>` (a positive integer, validated when the workflow loads). Before the task enters the step for the (n+1)th time it is blocked, with a reason naming the step and the cap and a `workflow.step_cap` event; the project's `max_step_visits` still stops a loop in a step without a cap.
+- `foreman task unblock` and the task page's Unblock clear it: the task resumes at the capped step, which runs once more with the counts kept. `foreman task unblock --reset-visits` (API `reset_visits`) starts every count over.
+- The MANUAL documents `max_visits` and when to use it rather than a `visits:` route.
+
+### FOR-110: An agent may ask a person a question, and the answer goes back into its step
+
+- `ask` is an outcome any agent role may declare (the shipped developer and the code and frontier reviewers do). The question is a record with the question, two or more options and a recommendation; a malformed one is an error outcome.
+- The task waits as at a human gate, holds the queue, and shows in Needs you ("Answer question") and as the task page's decision, with the options, the recommendation marked and a field for an answer in words.
+- Answer with `foreman task answer <task> --option <n> | --text <words>`, on the task page, or `POST /api/tasks/{id}/answer`. Who answered and when is recorded and the Activity shows both. The same step resumes its session with the answer as the next message, or runs again with it in its prompt; its visit count does not grow.
+- The human gate keeps approve, deny and steer for now (see the manual).
+
+### FOR-111: A command run inside ( ) or { } is matched when a review cites it
+
+- A line is split at a subshell's `(` and `)` and a group's `{` and `}`, so a command run in a group counts as a simple command of its own.
+- `$( )` substitutions are looked into (the shell runs them); quoted text is not.
+
 ## Sprint 68: the database and the reviewer kept apart (2026-11-27)
 
 ### docs-direction-project-memory: A memory Foreman keeps, recorded as a direction
