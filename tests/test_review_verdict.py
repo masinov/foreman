@@ -142,6 +142,7 @@ class BasisTests(unittest.TestCase):
         self.assertEqual(reading.outcome, "error")
         self.assertIn("a command it ran or a file it read", reading.detail)
         self.assertIn("d", reading.detail)
+        self.assertIn("read the code", reading.detail)
 
     def test_ran_needs_a_command_or_a_judgement(self) -> None:
         ran = {"criterion": "a", "status": "verified", "evidence": "e", "ran": ["t"]}
@@ -152,6 +153,9 @@ class BasisTests(unittest.TestCase):
         self.assertEqual(reading.outcome, "error")
         self.assertIn("a command it ran, or judgement with its reason", reading.detail)
         self.assertIn("b", reading.detail)
+        # What it says to do is what this role accepts: never "read the code".
+        self.assertIn("Reading a file is not enough for this role", reading.detail)
+        self.assertNotIn("read the code", reading.detail)
 
     def test_stated_is_the_reviewers_word(self) -> None:
         report = {"criterion": "d", "status": "verified", "evidence": "the report", "from_report": True}
