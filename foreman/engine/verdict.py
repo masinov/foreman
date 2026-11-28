@@ -319,12 +319,25 @@ def check_verdict(
                 if approve_needs == "ran"
                 else "a command it ran or a file it read"
             )
+            # What to do says only what this role accepts: offering "read the
+            # code" to a role that needs a command it ran sent a reviewer
+            # round again with the same refused verdict (FOR-108, 2026-11-28).
+            if approve_needs == "ran":
+                how = (
+                    "Reading a file is not enough for this role: run a command that "
+                    "shows it (a test, or a grep of the document for what the "
+                    "criterion names) and list it under `ran`, or mark the criterion "
+                    "judgement and say why in its evidence."
+                )
+            else:
+                how = (
+                    "The developer's report is not a check: run something, read the "
+                    "code, or mark the criterion judgement and say why in its evidence."
+                )
             return (
                 f"{VERDICT_PROBLEM_PREFIX}: the reviewer returned APPROVE with criteria "
                 f"without what this role's approvals need ({needs}, or judgement with "
-                f"its reason): {'; '.join(bare)}. "
-                "The developer's report is not a check: run something, read the code, "
-                "or mark the criterion judgement and say why in its evidence."
+                f"its reason): {'; '.join(bare)}. {how}"
             )
     return None
 
